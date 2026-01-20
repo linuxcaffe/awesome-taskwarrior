@@ -2,7 +2,7 @@
 """
 tw.py - Universal wrapper and package manager for Taskwarrior extensions
 
-Version: 1.1.0
+Version: 1.2.0
 Author: awesome-taskwarrior project
 License: MIT
 """
@@ -15,7 +15,7 @@ from datetime import datetime
 from typing import List, Dict, Optional
 import configparser
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 DEBUG = os.environ.get('TW_DEBUG', '0') == '1'
 
 
@@ -484,8 +484,8 @@ class AppLister:
             
             print()
         
-        print("Use 'tw --info <name>' for details")
-        print("Use 'tw --install <name>' to install\n")
+        print("Use 'tw --info <n>' for details")
+        print("Use 'tw --install <n>' to install\n")
     
     def list_installed(self) -> None:
         installed = self.manifest.load()
@@ -592,6 +592,82 @@ class AppLister:
         print()
 
 
+def generate_completion_script():
+    """Generate bash completion script for tw"""
+    script = '''# Bash completion for tw (awesome-taskwarrior)
+_tw_completion() {
+    local cur prev words cword
+    _init_completion || return
+
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    # Complete tw flags
+    if [[ "$cur" == --* ]]; then
+        local flags="--list --list-installed --info --install --remove --update"
+        flags="$flags --version --help --debug --dry-run --get-completion"
+        COMPREPLY=($(compgen -W "$flags" -- "$cur"))
+        return 0
+    fi
+
+    # Complete app names after --info, --install, --remove, --update
+    case "$prev" in
+        --info|--install|--remove|--update)
+            local apps=$(tw --complete-apps 2>/dev/null)
+            COMPREPLY=($(compgen -W "$apps" -- "$cur"))
+            return 0
+            ;;
+    esac
+
+    # Complete tags after "tw --list"
+    if [[ "${words[1]}" == "--list" ]] && [[ "$cur" == +* ]]; then
+        local tags=$(tw --complete-tags 2>/dev/null)
+        COMPREPLY=($(compgen -W "$tags" -- "$cur"))
+        return 0
+    fi
+
+    # Complete "tags" literal after --list
+    if [[ "${words[1]}" == "--list" ]] && [[ "$cur" == "t"* ]]; then
+        COMPREPLY=($(compgen -W "tags" -- "$cur"))
+        return 0
+    fi
+
+    # Delegate to task completion for normal commands
+    if command -v _task &>/dev/null; then
+        # Reconstruct COMP_WORDS and COMP_CWORD as if 'task' was typed
+        local task_words=("task" "${words[@]:1}")
+        local task_cword=$((cword))
+        
+        COMP_WORDS=("${task_words[@]}")
+        COMP_CWORD=$task_cword
+        
+        _task
+        return 0
+    fi
+}
+
+complete -F _tw_completion tw
+'''
+    print(script)
+
+
+def complete_apps(registry: Registry):
+    """Output app names for completion"""
+    apps = registry.load_apps()
+    print(' '.join(sorted(apps.keys())))
+
+
+def complete_tags(registry: Registry):
+    """Output tags for completion"""
+    apps = registry.load_apps()
+    all_tags = set()
+    for app in apps.values():
+        if 'tags' in app:
+            tags = [t.strip() for t in app['tags'].split(',')]
+            all_tags.update(tags)
+    print(' '.join([f'+{tag}' for tag in sorted(all_tags)]))
+
+
 def handle_version(task_bin: TaskBinary) -> None:
     print(f"tw.py version {VERSION}")
     
@@ -648,6 +724,20 @@ def main():
     
     arg = sys.argv[1]
     
+    # Completion handlers (before other flags)
+    if arg == '--get-completion':
+        generate_completion_script()
+        return 0
+    
+    elif arg == '--complete-apps':
+        complete_apps(registry)
+        return 0
+    
+    elif arg == '--complete-tags':
+        complete_tags(registry)
+        return 0
+    
+    # Regular command handlers
     if arg == '--version':
         handle_version(task_bin)
         return 0
@@ -716,6 +806,11 @@ OPTIONS:
     --version               Show version
     --help, -h              Show this help
     --debug                 Enable debug output
+    --get-completion        Output bash completion script
+
+COMPLETION:
+    Add to ~/.bashrc:       eval "$(tw --get-completion)"
+    Then use tab completion with tw commands and app names
 
 EXAMPLES:
     tw --list
