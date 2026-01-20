@@ -243,15 +243,8 @@ Built for the Taskwarrior community, standing on the shoulders of:
 - All extension authors for their innovative work
 - Contributors and testers who make this possible
 
-## Related Projects
-
-- [Taskwarrior](https://taskwarrior.org/) - The task management system
-- [Timewarrior](https://timewarrior.net/) - Time tracking companion
-- [Bugwarrior](https://github.com/ralphbean/bugwarrior) - Issue tracker integration
-
 ---
 
 **awesome-taskwarrior** - Making Taskwarrior even more awesome, one extension at a time.
 
 awesome-taskwarrior is a curated collection of Taskwarrior extensions with a unified installation and management system. At its heart is tw.py, a universal wrapper that acts as both a transparent pass-through to Taskwarrior and a comprehensive package manager for Taskwarrior-related projects.
->>>>>>> 6017af9909b73e6e9e57e1ce2e615755481cd4b8
