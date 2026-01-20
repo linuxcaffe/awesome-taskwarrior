@@ -1,0 +1,40 @@
+# tw-priority.meta
+#
+# Real-world example: Maslow-based priority management
+# Demonstrates hook with external dependencies and interactive features
+
+name=tw-priority
+short_desc=Automatic priority management based on Maslow's hierarchy of needs
+version=0.3.5
+repo=https://github.com/linuxcaffe/tw-need_priority-hook
+type=hook
+install_script=tw-priority.install
+author=linuxcaffe
+wrapper=no
+
+long_desc=Intelligent priority management system that automatically assigns and
+  manages task priorities based on a 'need' attribute mapped to Maslow's hierarchy
+  of needs. Features include automatic context switching, interactive review mode,
+  priority pyramid visualization, and smart handling of priority inheritance.
+  Helps maintain focus by automatically elevating urgent needs and deferring
+  lower-priority work. Includes migration tools for existing tasks and
+  comprehensive debugging support.
+
+requires=python3>=3.6,taskwarrior>=2.6.2
+
+conflicts=
+
+provides=on-add_priority.py,on-modify_priority.py,on-exit_priority.py,nn.py,migrate_priority.py
+
+checksum_type=sha256
+checksum=
+
+tags=hook,priority,automation,productivity,maslow,context
+
+# Installation notes:
+# - Adds 'need' UDA with predefined hierarchy levels
+# - Provides 'nn' command-line tool for quick task creation
+# - Includes migration script for existing tasks
+# - Interactive review mode via on-exit hook
+# - Automatic context switching based on priority
+# - Pyramid visualization of priority distribution

@@ -1,0 +1,230 @@
+#!/bin/bash
+#
+# wrapper-template.install
+#
+# Template installer for wrapper applications
+#
+# INSTRUCTIONS:
+# 1. Copy this file to installers/<yourapp>.install
+# 2. Replace all <PLACEHOLDER> markers
+# 3. Implement wrapper pass-through logic
+# 4. Test with wrapper stack
+# 5. Make executable: chmod +x installers/yourapp.install
+
+# TODO: Replace with your app name
+YOURAPP="<YOURAPP-NAME>"
+
+# TODO: Replace with your repository URL
+REPO_URL="<https://github.com/USERNAME/REPO>"
+
+# TODO: Replace with your wrapper executable name
+# NOTE: This is the main script that will be called
+WRAPPER_EXEC="<WRAPPER-SCRIPT-NAME>"
+
+# Source common library functions
+source "$(dirname "$0")/../lib/tw-common.sh"
+
+#
+# REQUIRED: install() function
+#
+install() {
+    echo "Installing ${YOURAPP}..."
+    
+    # Step 1: Check dependencies
+    # TODO: Add dependency checks for your wrapper
+    # EXAMPLE: tw_check_python_version 3.6 || return 1
+    
+    tw_check_taskwarrior_version 2.6.2 || return 1
+    
+    # Step 2: Clone or update repository
+    local target_dir="${INSTALL_DIR}/${YOURAPP}"
+    tw_clone_or_update "$REPO_URL" "$target_dir" || return 1
+    
+    # Step 3: Install wrapper executable
+    # NOTE: Wrappers need to be in PATH
+    # Option A: Symlink to ~/bin (user installation)
+    # Option B: Copy to /usr/local/bin (system installation, requires sudo)
+    
+    local bin_dir="${HOME}/bin"
+    mkdir -p "$bin_dir" || return 1
+    
+    # TODO: Adjust the source path if your wrapper is in a subdirectory
+    local wrapper_source="${target_dir}/${WRAPPER_EXEC}"
+    local wrapper_target="${bin_dir}/$(basename ${WRAPPER_EXEC} .py)"  # Remove .py extension
+    
+    # Make wrapper executable
+    chmod +x "$wrapper_source" || return 1
+    
+    # Create symlink
+    ln -sf "$wrapper_source" "$wrapper_target" || return 1
+    
+    # Verify installation
+    if [ ! -x "$wrapper_target" ]; then
+        echo "Error: Failed to install wrapper executable" >&2
+        return 1
+    fi
+    
+    # Step 4: Configure wrapper chain (optional)
+    # NOTE: Users can manually configure in tw.config
+    # Or we can add it automatically:
+    
+    # TODO: Decide if you want to auto-add to wrapper stack
+    # tw_add_to_wrapper_stack "$YOURAPP"
+    
+    # Step 5: Additional setup (optional)
+    # TODO: Add any additional installation steps
+    # EXAMPLE: Create config files, set environment variables
+    
+    echo "✓ Installed ${YOURAPP}"
+    echo ""
+    echo "Usage:"
+    echo "  $(basename $wrapper_target) <task-command>    # Use directly"
+    echo "  tw --exec $(basename $wrapper_target) <cmd>   # Use via tw.py"
+    echo "  tw --wrap $(basename $wrapper_target)         # Set as default wrapper"
+    echo ""
+    
+    return 0
+}
+
+#
+# REQUIRED: uninstall() function
+#
+uninstall() {
+    echo "Uninstalling ${YOURAPP}..."
+    
+    # Step 1: Remove wrapper executable
+    local bin_dir="${HOME}/bin"
+    local wrapper_target="${bin_dir}/$(basename ${WRAPPER_EXEC} .py)"
+    
+    if [ -L "$wrapper_target" ]; then
+        rm -f "$wrapper_target" || {
+            echo "Warning: Could not remove $wrapper_target" >&2
+        }
+    fi
+    
+    # Step 2: Remove from wrapper stack
+    # TODO: Implement if you auto-added to stack
+    # tw_remove_from_wrapper_stack "$YOURAPP"
+    
+    # Step 3: Remove installation directory
+    local target_dir="${INSTALL_DIR}/${YOURAPP}"
+    if [ -d "$target_dir" ]; then
+        rm -rf "$target_dir" || {
+            echo "Warning: Could not remove $target_dir" >&2
+        }
+    fi
+    
+    # Step 4: Additional cleanup
+    # TODO: Remove any config files, logs, etc.
+    
+    echo "✓ Uninstalled ${YOURAPP}"
+    return 0
+}
+
+#
+# OPTIONAL: test() function
+#
+# test() {
+#     echo "Testing ${YOURAPP}..."
+#     
+#     local bin_dir="${HOME}/bin"
+#     local wrapper="${bin_dir}/$(basename ${WRAPPER_EXEC} .py)"
+#     
+#     # Test 1: Check wrapper is executable
+#     if [ ! -x "$wrapper" ]; then
+#         echo "Error: Wrapper not found or not executable" >&2
+#         return 1
+#     fi
+#     
+#     # Test 2: Test pass-through
+#     # NOTE: This should execute task and return its output
+#     if ! "$wrapper" version >/dev/null 2>&1; then
+#         echo "Error: Wrapper pass-through failed" >&2
+#         return 1
+#     fi
+#     
+#     # Test 3: Test wrapper-specific functionality
+#     # TODO: Add tests for your wrapper's features
+#     # EXAMPLE:
+#     # if ! "$wrapper" add "test task due:tomorrow" >/dev/null 2>&1; then
+#     #     echo "Error: Wrapper date parsing failed" >&2
+#     #     return 1
+#     # fi
+#     
+#     # Cleanup
+#     task rc.confirmation=no purge "test task" >/dev/null 2>&1
+#     
+#     echo "✓ All tests passed"
+#     return 0
+# }
+
+# Main entry point for standalone testing
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+    # Set defaults
+    : ${INSTALL_DIR:=~/.task}
+    : ${TW_DEBUG:=0}
+    
+    # Parse arguments
+    case "${1:-install}" in
+        install)
+            install
+            ;;
+        uninstall)
+            uninstall
+            ;;
+        test)
+            if declare -f test >/dev/null; then
+                test
+            else
+                echo "No test function defined"
+                exit 1
+            fi
+            ;;
+        *)
+            echo "Usage: $0 {install|uninstall|test}" >&2
+            exit 1
+            ;;
+    esac
+fi
+
+#
+# WRAPPER IMPLEMENTATION NOTES:
+#
+# Your wrapper script should follow this pattern:
+#
+# #!/usr/bin/env python3  (or #!/bin/bash)
+# import sys
+# import os
+# import subprocess
+#
+# def process_args(args):
+#     """Modify arguments as needed"""
+#     # Example: Expand date shortcuts
+#     # args = [arg.replace('tom', 'tomorrow') for arg in args]
+#     return args
+#
+# def main():
+#     # Get original arguments
+#     args = sys.argv[1:]
+#     
+#     # Process/modify arguments
+#     modified_args = process_args(args)
+#     
+#     # Get next wrapper in chain (or 'task' if none)
+#     next_wrapper = os.environ.get('TW_NEXT_WRAPPER', 'task')
+#     
+#     # Execute next in chain
+#     result = subprocess.run([next_wrapper] + modified_args)
+#     
+#     # Preserve exit code
+#     sys.exit(result.returncode)
+#
+# if __name__ == '__main__':
+#     main()
+#
+# Key Points:
+# - Read TW_NEXT_WRAPPER environment variable
+# - Preserve exit codes
+# - Handle errors gracefully
+# - Don't break existing task syntax
+# - Keep it fast (minimal overhead)

@@ -1,0 +1,285 @@
+#!/bin/bash
+#
+# taskwarrior.install - Built-in Taskwarrior 2.6.2 installer
+#
+# This is a special installer built into tw.py that provides an easy way
+# to install Taskwarrior 2.6.2 from pre-compiled binaries or source.
+#
+# Unlike other installers, this is invoked as:
+#   tw --install-taskwarrior
+#
+# NOT as a regular app installation.
+#
+
+# NOTE: This installer is called by tw.py with special context
+# Environment variables set by tw.py:
+#   $INSTALL_DIR - Installation directory
+#   $TW_BINDIR - Directory for executables
+#   $TW_DEBUG - Debug mode flag
+
+# Source common library functions
+source "$(dirname "$0")/../lib/tw-common.sh"
+
+# Constants
+TW_VERSION="2.6.2"
+TW_REPO="https://github.com/GothenburgBitFactory/taskwarrior"
+TW_TARBALL_URL="https://taskwarrior.org/download/task-${TW_VERSION}.tar.gz"
+
+# Installation methods in order of preference
+install() {
+    echo "Installing Taskwarrior ${TW_VERSION}..."
+    
+    # Method 1: Check if already installed and correct version
+    if command -v task >/dev/null 2>&1; then
+        local current_version
+        current_version=$(task --version 2>/dev/null | head -1)
+        if [[ "$current_version" == *"$TW_VERSION"* ]]; then
+            echo "✓ Taskwarrior $TW_VERSION already installed"
+            return 0
+        else
+            echo "Note: Found Taskwarrior $current_version, but $TW_VERSION preferred"
+            echo "Continuing with installation..."
+        fi
+    fi
+    
+    # Method 2: Try pre-compiled binary from awesome-taskwarrior repo
+    if install_from_binary; then
+        return 0
+    fi
+    
+    # Method 3: Try package manager (if version matches)
+    if install_from_package_manager; then
+        return 0
+    fi
+    
+    # Method 4: Build from source (last resort)
+    if install_from_source; then
+        return 0
+    fi
+    
+    echo "Error: All installation methods failed" >&2
+    return 1
+}
+
+# Install pre-compiled binary (preferred method)
+install_from_binary() {
+    echo "Attempting to install from pre-compiled binary..."
+    
+    # Detect platform
+    local platform
+    platform=$(uname -s)-$(uname -m)
+    
+    # TODO: Implement binary detection and installation
+    # For now, this is a placeholder
+    
+    local binary_dir="${TW_BINDIR}/bin"
+    local binary_path="${binary_dir}/task-${TW_VERSION}"
+    
+    # Check if binary exists in repo
+    if [ -f "$binary_path" ]; then
+        # Make executable
+        chmod +x "$binary_path" || return 1
+        
+        # Create symlink
+        ln -sf "$binary_path" "${TW_BINDIR}/task" || return 1
+        
+        # Verify installation
+        if "${TW_BINDIR}/task" --version >/dev/null 2>&1; then
+            echo "✓ Installed Taskwarrior ${TW_VERSION} from binary"
+            return 0
+        fi
+    fi
+    
+    echo "Note: Pre-compiled binary not available for ${platform}"
+    return 1
+}
+
+# Install from package manager (Ubuntu/Debian specific)
+install_from_package_manager() {
+    echo "Attempting to install from package manager..."
+    
+    # NOTE: Most package managers have older versions
+    # This method only works if the package version matches
+    
+    if ! command -v apt-get >/dev/null 2>&1; then
+        echo "Note: apt-get not available"
+        return 1
+    fi
+    
+    # Check available version
+    local available_version
+    available_version=$(apt-cache policy taskwarrior 2>/dev/null | grep Candidate | awk '{print $2}')
+    
+    if [[ "$available_version" != *"$TW_VERSION"* ]]; then
+        echo "Note: Package manager has version $available_version, not $TW_VERSION"
+        return 1
+    fi
+    
+    # Ask for confirmation (requires sudo)
+    echo "This will install Taskwarrior using apt-get (requires sudo)"
+    read -p "Continue? (y/N) " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        return 1
+    fi
+    
+    # Install
+    sudo apt-get update || return 1
+    sudo apt-get install -y taskwarrior || return 1
+    
+    # Verify
+    if task --version | grep -q "$TW_VERSION"; then
+        echo "✓ Installed Taskwarrior ${TW_VERSION} from package manager"
+        return 0
+    fi
+    
+    return 1
+}
+
+# Build from source (most reliable but slowest)
+install_from_source() {
+    echo "Attempting to build from source..."
+    
+    # Check for build dependencies
+    if ! check_build_deps; then
+        echo "Error: Missing build dependencies" >&2
+        return 1
+    fi
+    
+    # Create temporary build directory
+    local build_dir
+    build_dir=$(mktemp -d) || return 1
+    trap "rm -rf '$build_dir'" EXIT
+    
+    # Download source tarball
+    echo "Downloading source..."
+    if ! curl -L -o "${build_dir}/task-${TW_VERSION}.tar.gz" "$TW_TARBALL_URL"; then
+        echo "Error: Download failed" >&2
+        return 1
+    fi
+    
+    # Extract
+    echo "Extracting..."
+    tar -xzf "${build_dir}/task-${TW_VERSION}.tar.gz" -C "$build_dir" || return 1
+    
+    # Build
+    echo "Building (this may take a few minutes)..."
+    cd "${build_dir}/task-${TW_VERSION}" || return 1
+    
+    cmake -DCMAKE_BUILD_TYPE=Release . || return 1
+    make || return 1
+    
+    # Install to our binary directory
+    echo "Installing..."
+    mkdir -p "$TW_BINDIR" || return 1
+    cp src/task "${TW_BINDIR}/task-${TW_VERSION}" || return 1
+    ln -sf "${TW_BINDIR}/task-${TW_VERSION}" "${TW_BINDIR}/task" || return 1
+    
+    # Verify
+    if "${TW_BINDIR}/task" --version | grep -q "$TW_VERSION"; then
+        echo "✓ Built and installed Taskwarrior ${TW_VERSION} from source"
+        return 0
+    fi
+    
+    return 1
+}
+
+# Check for build dependencies
+check_build_deps() {
+    local missing=0
+    
+    # Required for building
+    local deps=("cmake" "make" "g++" "uuid-dev" "libgnutls28-dev")
+    
+    for dep in "${deps[@]}"; do
+        if ! command -v "$dep" >/dev/null 2>&1 && ! dpkg -l | grep -q "$dep"; then
+            echo "Missing dependency: $dep" >&2
+            missing=1
+        fi
+    done
+    
+    if [ $missing -eq 1 ]; then
+        echo ""
+        echo "Install build dependencies with:"
+        echo "  sudo apt-get install cmake make g++ uuid-dev libgnutls28-dev"
+        return 1
+    fi
+    
+    return 0
+}
+
+# Uninstall Taskwarrior (only if we installed it)
+uninstall() {
+    echo "Uninstalling Taskwarrior ${TW_VERSION}..."
+    
+    # Only remove if we installed it to our directory
+    if [ -L "${TW_BINDIR}/task" ]; then
+        local target
+        target=$(readlink "${TW_BINDIR}/task")
+        if [[ "$target" == *"task-${TW_VERSION}"* ]]; then
+            rm -f "${TW_BINDIR}/task" || return 1
+            rm -f "${TW_BINDIR}/task-${TW_VERSION}" || return 1
+            echo "✓ Uninstalled Taskwarrior ${TW_VERSION}"
+            return 0
+        fi
+    fi
+    
+    echo "Note: Taskwarrior not installed by tw.py, not removing"
+    return 0
+}
+
+# Test installation
+test() {
+    echo "Testing Taskwarrior installation..."
+    
+    # Check command exists
+    if ! command -v task >/dev/null 2>&1; then
+        echo "Error: task command not found" >&2
+        return 1
+    fi
+    
+    # Check version
+    local version
+    version=$(task --version 2>/dev/null | head -1)
+    if [[ ! "$version" == *"$TW_VERSION"* ]]; then
+        echo "Warning: Found version $version, expected $TW_VERSION"
+        # Don't fail, just warn
+    fi
+    
+    # Test basic functionality
+    if ! task rc.confirmation=no add "test task" >/dev/null 2>&1; then
+        echo "Error: Failed to add test task" >&2
+        return 1
+    fi
+    
+    # Clean up test task
+    task rc.confirmation=no purge "test task" >/dev/null 2>&1
+    
+    echo "✓ Taskwarrior ${TW_VERSION} working correctly"
+    return 0
+}
+
+# Main entry point (for testing standalone)
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+    # Set defaults if not running under tw.py
+    : ${INSTALL_DIR:=~/.task}
+    : ${TW_BINDIR:=~/bin}
+    : ${TW_DEBUG:=0}
+    
+    # Parse arguments
+    case "${1:-install}" in
+        install)
+            install
+            ;;
+        uninstall)
+            uninstall
+            ;;
+        test)
+            test
+            ;;
+        *)
+            echo "Usage: $0 {install|uninstall|test}" >&2
+            exit 1
+            ;;
+    esac
+fi

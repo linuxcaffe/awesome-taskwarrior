@@ -1,0 +1,366 @@
+# tw.config.example
+#
+# Configuration file for tw.py wrapper and package manager
+#
+# INSTALLATION:
+# Copy this file to one of these locations:
+#   1. ~/.task/tw.config (per-user, recommended)
+#   2. Same directory as tw.py (portable installation)
+#   3. /etc/tw.config (system-wide, requires root)
+#
+# tw.py searches in this order and uses the first found.
+#
+# FORMAT:
+# - INI-style configuration with [sections]
+# - Lines starting with # are comments
+# - Key=value pairs (no spaces around =)
+# - Boolean values: yes/no, true/false, 1/0
+
+# =============================================================================
+# PATH CONFIGURATION
+# =============================================================================
+
+[paths]
+# Directory where tw.py itself lives (must be in $PATH)
+# Default: auto-detect from tw.py location
+executable_dir=~/bin
+
+# Taskwarrior binary location
+# Options:
+#   auto - Search $PATH for task binary
+#   /path/to/task - Explicit path
+# Default: auto
+taskwarrior_bin=auto
+
+# Base directory for installing apps
+# This is where hooks, wrappers, and utilities are installed
+# Default: ~/.task
+install_root=~/.task
+
+# Hook installation directory
+# Default: ~/.task/hooks
+hooks_dir=~/.task/hooks
+
+# Taskwarrior data directory
+# Default: ~/.task/data
+data_dir=~/.task/data
+
+# Location of .taskrc file
+# Default: ~/.taskrc
+taskrc=~/.taskrc
+
+# System-wide installation paths (requires sudo for installation)
+# Uncomment and modify if you want system-wide installation
+# [paths.system]
+# executable_dir=/usr/local/bin
+# install_root=/usr/share/taskwarrior
+# hooks_dir=/usr/share/taskwarrior/hooks
+
+# =============================================================================
+# GENERAL SETTINGS
+# =============================================================================
+
+[settings]
+# Prefer system-installed taskwarrior over bundled version
+# If yes, uses 'task' from $PATH even if tw.py includes a bundled version
+# Default: yes
+prefer_system_task=yes
+
+# Automatically check for updates when running tw --check
+# If yes, connects to git repositories to check for new versions
+# Default: no
+auto_update=no
+
+# Show detailed output during operations
+# If yes, displays progress, git operations, and additional info
+# Default: yes
+verbose=yes
+
+# Confirm before dangerous operations (remove, purge, update-all)
+# If yes, prompts for confirmation before proceeding
+# Recommended: yes
+confirm_dangerous=yes
+
+# Show colored output where supported
+# Default: yes
+color=yes
+
+# Maximum number of concurrent installations (for --install-all)
+# Default: 3
+max_concurrent=3
+
+# =============================================================================
+# WRAPPER CONFIGURATION
+# =============================================================================
+
+[wrappers]
+# Wrapper stack (applied in order, bottom to top)
+# When you run: tw next
+# Command flows through: nicedates → cmx → task
+#
+# Syntax: comma-separated list of wrapper names
+# Empty = no wrappers, direct pass-through to task
+# Default: empty
+stack=nicedates,cmx
+
+# Enable wrapper stack
+# If no, all wrappers are bypassed (same as tw --no-wrap)
+# Default: yes
+enabled=yes
+
+# Per-command wrapper overrides
+# Specify different wrappers for specific commands
+# Format: command=wrapper1,wrapper2
+# If empty, uses default stack
+[wrappers.commands]
+next=nicedates
+list=cmx
+span=cmx
+# Add more command-specific wrappers as needed
+
+# =============================================================================
+# UPDATE BEHAVIOR
+# =============================================================================
+
+[updates]
+# How often to check for updates (in days)
+# Used by tw --check to determine if update check is needed
+# Default: 7
+check_interval=7
+
+# Automatically backup before updates
+# If yes, creates backup of installation before updating
+# Recommended: yes
+backup_before_update=yes
+
+# Backup directory
+# Default: ~/.task/backups
+backup_dir=~/.task/backups
+
+# Keep last N backups (older ones are deleted)
+# Default: 5
+keep_backups=5
+
+# Update strategy for apps
+# Options:
+#   prompt - Ask before updating each app
+#   auto - Update all without prompting
+#   notify - Only notify about available updates
+# Default: prompt
+update_strategy=prompt
+
+# =============================================================================
+# DEBUG CONFIGURATION
+# =============================================================================
+
+[debug]
+# Enable global debug mode
+# If yes, equivalent to always using --debug flag
+# Default: no
+enable=no
+
+# Propagate debug flag to sub-projects
+# If yes, sets TW_DEBUG=1 environment variable for hooks and wrappers
+# Default: yes
+propagate=yes
+
+# Debug log directory
+# Where to write debug logs when debug mode is active
+# Default: ~/.task/logs
+log_dir=~/.task/logs
+
+# Log level (error, warn, info, debug)
+# Default: debug
+log_level=debug
+
+# Keep debug logs for N days
+# Older logs are automatically cleaned up
+# Default: 30
+keep_logs_days=30
+
+# =============================================================================
+# INSTALLATION DEFAULTS
+# =============================================================================
+
+[installation]
+# Default installation scope
+# Options:
+#   user - Install to user directories (no sudo required)
+#   system - Install to system directories (requires sudo)
+# Default: user
+scope=user
+
+# Verify checksums before installation
+# If yes, verifies SHA256 checksums from .meta files
+# Recommended: yes
+verify_checksums=yes
+
+# Run tests after installation
+# If yes, runs app's test() function after successful install
+# Default: yes
+run_tests=yes
+
+# Clean up failed installations
+# If yes, removes partial installations on failure
+# Default: yes
+cleanup_on_failure=yes
+
+# =============================================================================
+# REGISTRY CONFIGURATION
+# =============================================================================
+
+[registry]
+# Local registry directory
+# Location of .meta files for available apps
+# Default: <tw.py-dir>/registry.d
+registry_dir=registry.d
+
+# Remote registry URL (for future use)
+# URL to fetch updated registry from
+# Default: empty (local only)
+# remote_url=https://github.com/linuxcaffe/awesome-taskwarrior/registry.d
+
+# Auto-update registry
+# If yes, pulls latest registry on tw --list
+# Default: no
+auto_update=no
+
+# =============================================================================
+# DEPENDENCY RESOLUTION
+# =============================================================================
+
+[dependencies]
+# Automatically install dependencies
+# If yes, attempts to install missing dependencies
+# If no, only checks and reports missing dependencies
+# Default: no (report only)
+auto_install=no
+
+# Use system package manager for dependencies
+# If yes, offers to install via apt/yum/etc
+# Default: yes
+use_package_manager=yes
+
+# Strict dependency checking
+# If yes, refuses to install if any dependency is missing
+# If no, warns but allows installation
+# Default: no
+strict=no
+
+# =============================================================================
+# NETWORK CONFIGURATION
+# =============================================================================
+
+[network]
+# Network timeout for git operations (seconds)
+# Default: 30
+timeout=30
+
+# Retry failed network operations
+# Number of retries for failed git clone/pull
+# Default: 3
+retries=3
+
+# Use SSH for git operations (if available)
+# If yes, prefers git@github.com over https://github.com
+# Default: no
+prefer_ssh=no
+
+# =============================================================================
+# USER INTERFACE
+# =============================================================================
+
+[ui]
+# Show progress bars for long operations
+# Default: yes
+show_progress=yes
+
+# Table format for --list output
+# Options: simple, grid, fancy, plain
+# Default: fancy
+table_format=fancy
+
+# Show icons in output (requires Unicode font)
+# Default: yes
+show_icons=yes
+
+# Pagination for long output
+# If yes, pipes through less/more
+# Default: yes
+paginate=yes
+
+# Items per page (for --list)
+# Default: 20
+items_per_page=20
+
+# =============================================================================
+# ADVANCED SETTINGS
+# =============================================================================
+
+[advanced]
+# Allow concurrent hook execution
+# WARNING: May cause race conditions
+# Default: no
+concurrent_hooks=no
+
+# Hook execution timeout (seconds)
+# Kills hooks that run longer than this
+# Default: 30
+hook_timeout=30
+
+# Enable experimental features
+# Default: no
+experimental=no
+
+# Custom Python path for hooks
+# Override system Python for hook execution
+# Default: empty (use system python3)
+# python_path=/usr/bin/python3.9
+
+# =============================================================================
+# PROJECT-SPECIFIC OVERRIDES
+# =============================================================================
+
+# You can override settings for specific projects
+# Uncomment and modify as needed
+
+# [project.tw-recurrence]
+# debug.enable=yes
+# updates.auto_update=yes
+
+# [project.nicedates]
+# wrappers.enabled=yes
+# debug.propagate=yes
+
+# =============================================================================
+# ALIASES (Future Feature)
+# =============================================================================
+
+# [aliases]
+# Custom command aliases
+# install-all=--install tw-recurrence tw-priority nicedates
+# update-all=--update-all
+# check-all=--check
+
+# =============================================================================
+# NOTES
+# =============================================================================
+
+# Environment Variables:
+# tw.py respects these environment variables which override config:
+#   TW_DEBUG=1          - Enable debug mode
+#   TW_NO_WRAP=1        - Disable all wrappers
+#   TW_CONFIG=/path     - Use alternate config file
+#   TW_INSTALL_DIR=/path - Override install_root
+
+# Config Priority (highest to lowest):
+#   1. Command-line flags (--debug, --no-wrap, etc.)
+#   2. Environment variables
+#   3. Project-specific overrides (if any)
+#   4. This config file
+#   5. Built-in defaults
+
+# Getting Help:
+#   tw --help           - Show all available commands
+#   tw --help wrappers  - Show wrapper-specific help
+#   tw --help config    - Show configuration help

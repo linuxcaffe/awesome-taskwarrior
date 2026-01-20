@@ -1,0 +1,42 @@
+# tw-recurrence.meta
+#
+# Real-world example: Advanced recurrence system for Taskwarrior
+# This demonstrates a complex hook-based extension
+
+name=tw-recurrence
+short_desc=Advanced recurrence system beyond Taskwarrior's built-in capabilities
+version=1.0.0
+repo=https://github.com/linuxcaffe/tw-recurrence_overhaul-hook
+type=hook
+install_script=tw-recurrence.install
+author=linuxcaffe
+wrapper=no
+
+long_desc=Comprehensive recurrence enhancement for Taskwarrior supporting both
+  'chained' recurrence (completion-based spawning) and 'periodic' recurrence
+  (time-based spawning). Features include instance pile-up control, relative
+  date calculations, template-instance relationship management, and sophisticated
+  recurrence pattern handling that extends beyond Taskwarrior's native
+  capabilities. Designed for power users who need fine-grained control over
+  recurring task behavior.
+
+requires=python3>=3.6,taskwarrior>=2.6.2
+
+# Note: Conflicts with Taskwarrior's built-in recurrence
+# Users must disable native recurrence to use this
+conflicts=
+
+provides=on-add-recurrence.py,on-modify-recurrence.py,on-exit-recurrence.py
+
+checksum_type=sha256
+# Note: Checksum should be updated on each release
+checksum=
+
+tags=hook,recurrence,scheduling,automation,advanced
+
+# Installation notes:
+# - Creates ~/.task/hooks/recurrence/ directory structure
+# - Adds multiple UDAs for recurrence management
+# - Requires Python 3.6+ for modern date handling
+# - Comprehensive test suite included
+# - Extensive documentation in repository
