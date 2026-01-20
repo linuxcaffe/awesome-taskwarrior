@@ -186,7 +186,7 @@ See [dev/API.md](dev/API.md) for complete function reference for:
 ## Target Platform
 
 - **Taskwarrior 2.6.2** and 2.x branch
-- NOT compatible with Taskwarrior 3.x
+- NOT designed for, or tested with Taskwarrior 3.x
 - Well-made PRs for 3.x compatibility considered
 
 ## Project Structure
