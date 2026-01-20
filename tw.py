@@ -144,7 +144,7 @@ class PathManager:
         ).expanduser()
         
         # Registry and installers are relative to tw.py location
-        tw_dir = Path(__file__).parent
+        tw_dir = Path(__file__).resolve().parent
         self.registry_dir = tw_dir / 'registry.d'
         self.installers_dir = tw_dir / 'installers'
         self.manifest_file = tw_dir / 'installed' / '.manifest'
