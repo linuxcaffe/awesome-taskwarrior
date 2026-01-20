@@ -64,11 +64,12 @@ tw --install nicedates
 - **tw-recurrence** - Advanced recurrence beyond Taskwarrior's built-in system
   - Chained recurrence (completion-based spawning)
   - Periodic recurrence (time-based spawning)
-  - Instance pile-up control
-  
+  - New reports - recurring, templates and instances
+   
 - **tw-priority** - Automatic priority management based on Maslow's hierarchy of needs
-  - Context switching
-  - Interactive review mode
+  - Dynamic context switching to focus on real-life priorities (1,2,3,4,5,6)
+  - Automatic priority assignment, based on user's need.rc file settings
+  - Interactive review mode, quickly review task priority settings, one at a time
   - Priority pyramid visualization
 
 ### Wrappers
