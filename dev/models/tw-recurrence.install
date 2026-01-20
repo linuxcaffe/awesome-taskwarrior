@@ -1,0 +1,217 @@
+#!/bin/bash
+#
+# tw-recurrence.install
+#
+# Real-world example: Installer for advanced recurrence system
+# Demonstrates complex hook installation with multiple files and UDAs
+
+APPNAME="tw-recurrence"
+REPO_URL="https://github.com/linuxcaffe/tw-recurrence_overhaul-hook"
+HOOK_DIR_NAME="recurrence"
+
+# Source common library
+source "$(dirname "$0")/../lib/tw-common.sh"
+
+install() {
+    echo "Installing ${APPNAME}..."
+    
+    # Check Python version (required for date handling)
+    tw_check_python_version 3.6 || {
+        echo "Error: Python 3.6+ required for date parsing"
+        return 1
+    }
+    
+    # Check Taskwarrior version
+    tw_check_taskwarrior_version 2.6.2 || return 1
+    
+    # Clone repository to hooks subdirectory
+    local target_dir="${HOOKS_DIR}/${HOOK_DIR_NAME}"
+    tw_clone_or_update "$REPO_URL" "$target_dir" || return 1
+    
+    # Create symlinks for all three hooks
+    tw_symlink_hook "${target_dir}/on-add_recurrence.py" || return 1
+    tw_symlink_hook "${target_dir}/on-modify_recurrence.py" || return 1
+    tw_symlink_hook "${target_dir}/on-exit_recurrence.py" || return 1
+    
+    # Add UDAs for recurrence management
+    echo "Adding recurrence UDAs to taskrc..."
+    
+    # Template identification
+    tw_add_config "uda.recur_template.type=string"
+    tw_add_config "uda.recur_template.label=Recurrence Template"
+    
+    # Instance tracking
+    tw_add_config "uda.recur_parent.type=string"
+    tw_add_config "uda.recur_parent.label=Parent Template UUID"
+    
+    # Recurrence pattern
+    tw_add_config "uda.recur_pattern.type=string"
+    tw_add_config "uda.recur_pattern.label=Recurrence Pattern"
+    
+    # Recurrence type (chained or periodic)
+    tw_add_config "uda.recur_type.type=string"
+    tw_add_config "uda.recur_type.label=Recurrence Type"
+    tw_add_config "uda.recur_type.values=chained,periodic"
+    
+    # Pile-up control
+    tw_add_config "uda.recur_limit.type=numeric"
+    tw_add_config "uda.recur_limit.label=Max Pending Instances"
+    
+    # Instance counter
+    tw_add_config "uda.recur_instance.type=numeric"
+    tw_add_config "uda.recur_instance.label=Instance Number"
+    
+    # Add custom report for templates
+    tw_add_config "report.templates.description=Recurrence Templates"
+    tw_add_config "report.templates.columns=id,description,recur_pattern,recur_type"
+    tw_add_config "report.templates.filter=status:pending recur_template.any:"
+    tw_add_config "report.templates.labels=ID,Description,Pattern,Type"
+    
+    echo "✓ Installed ${APPNAME}"
+    echo ""
+    echo "Usage:"
+    echo "  task add 'Daily standup' recur:daily recur_type:chained"
+    echo "  task add 'Weekly review' recur:weekly recur_type:periodic"
+    echo "  task templates    # View all recurrence templates"
+    echo ""
+    echo "See repository documentation for advanced patterns and features."
+    
+    return 0
+}
+
+uninstall() {
+    echo "Uninstalling ${APPNAME}..."
+    
+    # Remove hooks
+    tw_remove_hook "on-add-recurrence.py"
+    tw_remove_hook "on-modify-recurrence.py"
+    tw_remove_hook "on-exit-recurrence.py"
+    
+    # Remove UDAs
+    tw_remove_config "uda.recur_template"
+    tw_remove_config "uda.recur_parent"
+    tw_remove_config "uda.recur_pattern"
+    tw_remove_config "uda.recur_type"
+    tw_remove_config "uda.recur_limit"
+    tw_remove_config "uda.recur_instance"
+    
+    # Remove custom report
+    tw_remove_config "report.templates"
+    
+    # Remove installation directory
+    local target_dir="${HOOKS_DIR}/${HOOK_DIR_NAME}"
+    if [ -d "$target_dir" ]; then
+        rm -rf "$target_dir"
+    fi
+    
+    echo "✓ Uninstalled ${APPNAME}"
+    echo ""
+    echo "Note: Existing recurring tasks retain their UDA values."
+    echo "To clean up, run: task recur_template.any: modify recur_template:"
+    
+    return 0
+}
+
+update() {
+    echo "Updating ${APPNAME}..."
+    
+    local target_dir="${HOOKS_DIR}/${HOOK_DIR_NAME}"
+    
+    if [ ! -d "$target_dir/.git" ]; then
+        echo "Error: Not a git repository, use reinstall"
+        return 1
+    fi
+    
+    # Store current commit for rollback
+    local old_commit
+    old_commit=$(cd "$target_dir" && git rev-parse HEAD)
+    
+    # Update repository
+    cd "$target_dir" || return 1
+    git pull || {
+        echo "Error: Git pull failed"
+        return 1
+    }
+    
+    local new_commit
+    new_commit=$(git rev-parse HEAD)
+    
+    if [ "$old_commit" = "$new_commit" ]; then
+        echo "Already up to date"
+    else
+        echo "✓ Updated ${APPNAME} from ${old_commit:0:7} to ${new_commit:0:7}"
+    fi
+    
+    return 0
+}
+
+test() {
+    echo "Testing ${APPNAME}..."
+    
+    # Test 1: Verify hooks exist and are executable
+    tw_test_hook "on-add-recurrence.py" || return 1
+    tw_test_hook "on-modify-recurrence.py" || return 1
+    tw_test_hook "on-exit-recurrence.py" || return 1
+    
+    # Test 2: Verify UDAs are configured
+    tw_test_config "uda.recur_template.type" "string" || return 1
+    tw_test_config "uda.recur_pattern.type" "string" || return 1
+    
+    # Test 3: Test basic chained recurrence
+    echo "Testing chained recurrence..."
+    local task_id
+    task_id=$(task add "test recurrence" recur:daily recur_type:chained | grep -oP "Created task \K\d+")
+    
+    if [ -z "$task_id" ]; then
+        echo "Error: Failed to create test task"
+        return 1
+    fi
+    
+    # Verify template was created
+    local template_uuid
+    template_uuid=$(task $task_id _get recur_template)
+    
+    if [ -z "$template_uuid" ]; then
+        echo "Error: Template UUID not set"
+        return 1
+    fi
+    
+    # Test 4: Test instance spawning (complete the task)
+    task rc.confirmation=no $task_id done >/dev/null 2>&1
+    
+    # Check if new instance was spawned
+    local new_instances
+    new_instances=$(task recur_parent:$template_uuid status:pending count)
+    
+    if [ "$new_instances" -lt 1 ]; then
+        echo "Error: No new instance spawned"
+        return 1
+    fi
+    
+    # Cleanup all test tasks
+    echo "Cleaning up test data..."
+    task rc.confirmation=no recur_parent:$template_uuid purge >/dev/null 2>&1
+    task rc.confirmation=no recur_template:$template_uuid purge >/dev/null 2>&1
+    
+    echo "✓ All tests passed"
+    return 0
+}
+
+# Main entry point
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+    : ${INSTALL_DIR:=~/.task}
+    : ${HOOKS_DIR:=~/.task/hooks}
+    : ${TASKRC:=~/.taskrc}
+    : ${TW_DEBUG:=0}
+    
+    case "${1:-install}" in
+        install) install ;;
+        uninstall) uninstall ;;
+        update) update ;;
+        test) test ;;
+        *)
+            echo "Usage: $0 {install|uninstall|update|test}" >&2
+            exit 1
+            ;;
+    esac
+fi
