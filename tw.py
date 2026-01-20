@@ -2,35 +2,25 @@
 """
 tw.py - Universal wrapper and package manager for Taskwarrior extensions
 
-Version: 1.0.0
+Version: 1.1.0
 Author: awesome-taskwarrior project
 License: MIT
-
-This script serves dual purposes:
-1. Transparent pass-through wrapper for Taskwarrior commands
-2. Package manager for Taskwarrior extensions (hooks, wrappers, utilities)
 """
 
 import sys
 import os
 import subprocess
-import argparse
-import json
-import hashlib
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional
 import configparser
-import shutil
 
-VERSION = "1.0.0"
-
-# Enable debug mode via environment or flag
+VERSION = "1.1.0"
 DEBUG = os.environ.get('TW_DEBUG', '0') == '1'
 
 
 class Colors:
-    """ANSI color codes for terminal output"""
+    """ANSI color codes"""
     RESET = '\033[0m'
     RED = '\033[0;31m'
     GREEN = '\033[0;32m'
@@ -40,56 +30,46 @@ class Colors:
     
     @classmethod
     def enabled(cls):
-        """Check if colors should be used"""
         return sys.stdout.isatty()
 
 
 def colorize(text: str, color: str) -> str:
-    """Add color to text if terminal supports it"""
     if Colors.enabled():
         return f"{color}{text}{Colors.RESET}"
     return text
 
 
 def debug_print(msg: str) -> None:
-    """Print debug message if debug mode enabled"""
     if DEBUG:
         print(f"DEBUG: {msg}", file=sys.stderr)
 
 
 def error(msg: str) -> None:
-    """Print error message"""
     print(colorize(f"Error: {msg}", Colors.RED), file=sys.stderr)
 
 
 def warning(msg: str) -> None:
-    """Print warning message"""
     print(colorize(f"Warning: {msg}", Colors.YELLOW), file=sys.stderr)
 
 
 def info(msg: str) -> None:
-    """Print info message"""
     print(colorize(msg, Colors.BLUE))
 
 
 def success(msg: str) -> None:
-    """Print success message"""
     print(colorize(msg, Colors.GREEN))
 
 
 class Config:
-    """Configuration management for tw.py"""
-    
     def __init__(self):
         self.config = configparser.ConfigParser()
         self.config_path = self._find_config()
         self.load()
         
     def _find_config(self) -> Optional[Path]:
-        """Find configuration file in standard locations"""
         search_paths = [
             Path.home() / '.task' / 'tw.config',
-            Path(__file__).parent / 'tw.config',
+            Path(__file__).resolve().parent / 'tw.config',
             Path('/etc/tw.config'),
         ]
         
@@ -102,7 +82,6 @@ class Config:
         return None
     
     def load(self) -> None:
-        """Load configuration from file"""
         if self.config_path:
             try:
                 self.config.read(self.config_path)
@@ -110,14 +89,12 @@ class Config:
                 warning(f"Could not read config file: {e}")
     
     def get(self, section: str, key: str, fallback=None):
-        """Get configuration value"""
         try:
             return self.config.get(section, key)
         except (configparser.NoSectionError, configparser.NoOptionError):
             return fallback
     
     def getboolean(self, section: str, key: str, fallback=False):
-        """Get boolean configuration value"""
         try:
             return self.config.getboolean(section, key)
         except (configparser.NoSectionError, configparser.NoOptionError, ValueError):
@@ -125,12 +102,9 @@ class Config:
 
 
 class PathManager:
-    """Manage paths for installation and execution"""
-    
     def __init__(self, config: Config):
         self.config = config
         
-        # Get paths from config or use defaults
         self.install_root = Path(
             config.get('paths', 'install_root', str(Path.home() / '.task'))
         ).expanduser()
@@ -143,14 +117,12 @@ class PathManager:
             config.get('paths', 'taskrc', str(Path.home() / '.taskrc'))
         ).expanduser()
         
-        # Registry and installers are relative to tw.py location
         tw_dir = Path(__file__).resolve().parent
         self.registry_dir = tw_dir / 'registry.d'
         self.installers_dir = tw_dir / 'installers'
         self.manifest_file = tw_dir / 'installed' / '.manifest'
         self.lib_dir = tw_dir / 'lib'
         
-        # Ensure critical directories exist
         self.install_root.mkdir(parents=True, exist_ok=True)
         self.hooks_dir.mkdir(parents=True, exist_ok=True)
         self.manifest_file.parent.mkdir(parents=True, exist_ok=True)
@@ -159,15 +131,11 @@ class PathManager:
 
 
 class TaskBinary:
-    """Manage Taskwarrior binary location and execution"""
-    
     def __init__(self, config: Config):
         self.config = config
         self.binary_path = self._find_task()
     
     def _find_task(self) -> Optional[str]:
-        """Locate task binary"""
-        # Check config first
         configured = self.config.get('paths', 'taskwarrior_bin', 'auto')
         
         if configured != 'auto':
@@ -177,7 +145,6 @@ class TaskBinary:
             else:
                 warning(f"Configured task binary not found: {configured}")
         
-        # Search PATH
         path_env = os.environ.get('PATH', '')
         for path_dir in path_env.split(os.pathsep):
             task_path = os.path.join(path_dir, 'task')
@@ -188,7 +155,6 @@ class TaskBinary:
         return None
     
     def get_version(self) -> Optional[str]:
-        """Get Taskwarrior version"""
         if not self.binary_path:
             return None
         
@@ -199,21 +165,17 @@ class TaskBinary:
                 text=True,
                 check=True
             )
-            # Parse version (format: "2.6.2")
             return result.stdout.strip().split()[0]
         except Exception:
             return None
 
 
 class Registry:
-    """Manage registry of available applications"""
-    
     def __init__(self, paths: PathManager):
         self.paths = paths
         self._apps = None
     
     def load_apps(self) -> Dict[str, Dict]:
-        """Load all .meta files from registry"""
         if self._apps is not None:
             return self._apps
         
@@ -235,7 +197,6 @@ class Registry:
         return self._apps
     
     def _parse_meta(self, meta_file: Path) -> Optional[Dict]:
-        """Parse a .meta file"""
         app = {}
         current_key = None
         current_value = []
@@ -244,47 +205,38 @@ class Registry:
             for line in f:
                 line = line.rstrip()
                 
-                # Skip comments and empty lines
                 if not line or line.startswith('#'):
                     continue
                 
-                # Check if this is a continuation line (starts with whitespace)
                 if line[0].isspace():
                     if current_key:
                         current_value.append(line.strip())
                     continue
                 
-                # Save previous key-value if exists
                 if current_key:
                     app[current_key] = '\n'.join(current_value) if len(current_value) > 1 else current_value[0]
                 
-                # Parse new key-value
                 if '=' in line:
                     key, value = line.split('=', 1)
                     current_key = key.strip()
                     current_value = [value.strip()]
         
-        # Save last key-value
         if current_key:
             app[current_key] = '\n'.join(current_value) if len(current_value) > 1 else current_value[0]
         
         return app if 'name' in app else None
     
     def get_app(self, name: str) -> Optional[Dict]:
-        """Get app metadata by name"""
         apps = self.load_apps()
         return apps.get(name)
 
 
 class Manifest:
-    """Manage installation manifest"""
-    
     def __init__(self, paths: PathManager):
         self.paths = paths
         self._installed = None
     
     def load(self) -> Dict[str, Dict]:
-        """Load installed apps from manifest"""
         if self._installed is not None:
             return self._installed
         
@@ -313,7 +265,6 @@ class Manifest:
         return self._installed
     
     def save(self) -> None:
-        """Save manifest to disk"""
         with open(self.paths.manifest_file, 'w') as f:
             f.write("# awesome-taskwarrior installation manifest\n")
             f.write("# Format: name|version|checksum|install_date|repo_url\n")
@@ -324,7 +275,6 @@ class Manifest:
                 f.write(f"{data['install_date']}|{data['repo_url']}\n")
     
     def add(self, name: str, version: str, checksum: str, repo_url: str) -> None:
-        """Add app to manifest"""
         installed = self.load()
         installed[name] = {
             'version': version,
@@ -335,27 +285,23 @@ class Manifest:
         self.save()
     
     def remove(self, name: str) -> None:
-        """Remove app from manifest"""
         installed = self.load()
         if name in installed:
             del installed[name]
             self.save()
     
     def is_installed(self, name: str) -> bool:
-        """Check if app is installed"""
         return name in self.load()
 
 
 class Installer:
-    """Handle app installation, updates, and removal"""
-    
-    def __init__(self, paths: PathManager, registry: Registry, manifest: Manifest):
+    def __init__(self, paths: PathManager, registry: Registry, manifest: Manifest, dry_run: bool = False):
         self.paths = paths
         self.registry = registry
         self.manifest = manifest
+        self.dry_run = dry_run
     
     def install(self, name: str) -> bool:
-        """Install an app"""
         app = self.registry.get_app(name)
         if not app:
             error(f"App not found in registry: {name}")
@@ -366,20 +312,34 @@ class Installer:
             info("Use --update to update, or --remove then --install to reinstall")
             return False
         
+        if self.dry_run:
+            info(f"[DRY RUN] Would install {name}...")
+            print(f"  Repository: {app.get('repo', 'unknown')}")
+            print(f"  Version: {app.get('version', 'unknown')}")
+            print(f"  Type: {app.get('type', 'unknown')}")
+            if 'provides' in app:
+                print(f"  Provides: {app['provides']}")
+            if 'requires' in app:
+                print(f"  Requires: {app['requires']}")
+            print(f"  Installer: {app['install_script']}")
+            print(f"  Would clone to: {self.paths.install_root / name}")
+            if app.get('type') == 'hook':
+                print(f"  Would create hooks in: {self.paths.hooks_dir}")
+            print(f"  Would add to manifest")
+            success(f"[DRY RUN] Installation preview complete")
+            return True
+        
         info(f"Installing {name}...")
         
-        # Get installer script
         installer_script = self.paths.installers_dir / app['install_script']
         if not installer_script.exists():
             error(f"Installer script not found: {installer_script}")
             return False
         
-        # Run installer
         if not self._run_installer(installer_script, 'install'):
             error(f"Installation failed for {name}")
             return False
         
-        # Add to manifest
         self.manifest.add(
             name,
             app.get('version', 'unknown'),
@@ -391,22 +351,28 @@ class Installer:
         return True
     
     def remove(self, name: str) -> bool:
-        """Remove an app"""
         if not self.manifest.is_installed(name):
             error(f"{name} is not installed")
             return False
         
         app = self.registry.get_app(name)
-        if not app:
-            warning(f"{name} not in registry, attempting removal anyway")
+        
+        if self.dry_run:
+            info(f"[DRY RUN] Would remove {name}...")
+            installed_info = self.manifest.load()[name]
+            print(f"  Installed version: {installed_info['version']}")
+            print(f"  Install date: {installed_info['install_date']}")
+            if app:
+                print(f"  Would run uninstaller: {app['install_script']}")
+            print(f"  Would remove from manifest")
+            success(f"[DRY RUN] Removal preview complete")
+            return True
         
         info(f"Removing {name}...")
         
-        # Get installer script
         if app:
             installer_script = self.paths.installers_dir / app['install_script']
         else:
-            # Try to guess installer name
             installer_script = self.paths.installers_dir / f"{name}.install"
         
         if installer_script.exists():
@@ -416,14 +382,11 @@ class Installer:
         else:
             warning(f"Installer script not found, removing from manifest only")
         
-        # Remove from manifest
         self.manifest.remove(name)
-        
         success(f"✓ Removed {name}")
         return True
     
     def update(self, name: str) -> bool:
-        """Update an app"""
         if not self.manifest.is_installed(name):
             error(f"{name} is not installed")
             return False
@@ -433,6 +396,15 @@ class Installer:
             error(f"App not found in registry: {name}")
             return False
         
+        if self.dry_run:
+            info(f"[DRY RUN] Would update {name}...")
+            installed_info = self.manifest.load()[name]
+            print(f"  Current version: {installed_info['version']}")
+            print(f"  Available version: {app.get('version', 'unknown')}")
+            print(f"  Would run updater or reinstall")
+            success(f"[DRY RUN] Update preview complete")
+            return True
+        
         info(f"Updating {name}...")
         
         installer_script = self.paths.installers_dir / app['install_script']
@@ -440,7 +412,6 @@ class Installer:
             error(f"Installer script not found: {installer_script}")
             return False
         
-        # Try update function, fall back to reinstall
         if self._run_installer(installer_script, 'update', allow_fail=True):
             success(f"✓ Updated {name}")
         else:
@@ -451,7 +422,6 @@ class Installer:
         return True
     
     def _run_installer(self, script: Path, command: str, allow_fail: bool = False) -> bool:
-        """Run installer script"""
         env = os.environ.copy()
         env['INSTALL_DIR'] = str(self.paths.install_root)
         env['HOOKS_DIR'] = str(self.paths.hooks_dir)
@@ -477,14 +447,11 @@ class Installer:
 
 
 class AppLister:
-    """Handle listing and displaying apps"""
-    
     def __init__(self, registry: Registry, manifest: Manifest):
         self.registry = registry
         self.manifest = manifest
     
     def list_all(self) -> None:
-        """List all available apps"""
         apps = self.registry.load_apps()
         installed = self.manifest.load()
         
@@ -492,7 +459,6 @@ class AppLister:
             info("No apps available in registry")
             return
         
-        # Group by type
         by_type = {}
         for name, app in apps.items():
             app_type = app.get('type', 'unknown')
@@ -522,7 +488,6 @@ class AppLister:
         print("Use 'tw --install <name>' to install\n")
     
     def list_installed(self) -> None:
-        """List installed apps"""
         installed = self.manifest.load()
         
         if not installed:
@@ -537,8 +502,59 @@ class AppLister:
         
         print()
     
+    def list_tags(self) -> None:
+        apps = self.registry.load_apps()
+        
+        all_tags = set()
+        for app in apps.values():
+            if 'tags' in app:
+                tags = [t.strip() for t in app['tags'].split(',')]
+                all_tags.update(tags)
+        
+        if not all_tags:
+            info("No tags defined")
+            return
+        
+        print(colorize("\nAvailable Tags:\n", Colors.BOLD))
+        for tag in sorted(all_tags):
+            count = sum(1 for app in apps.values() 
+                       if 'tags' in app and tag in app['tags'])
+            print(f"  +{tag:20} ({count} app{'s' if count != 1 else ''})")
+        print()
+        print("Use 'tw --list +tag1 +tag2' to filter\n")
+    
+    def list_by_tags(self, tags: List[str]) -> None:
+        apps = self.registry.load_apps()
+        installed = self.manifest.load()
+        
+        matching = []
+        for name, app in apps.items():
+            if 'tags' not in app:
+                continue
+            app_tags = [t.strip() for t in app['tags'].split(',')]
+            if all(tag in app_tags for tag in tags):
+                matching.append((name, app))
+        
+        if not matching:
+            info(f"No apps with tags: {', '.join(['+'+t for t in tags])}")
+            return
+        
+        tag_display = ' '.join([colorize(f'+{t}', Colors.BLUE) for t in tags])
+        print(f"\nApps matching {tag_display}:\n")
+        
+        for name, app in sorted(matching):
+            status = ""
+            if name in installed:
+                status = colorize(f"[installed v{installed[name]['version']}]", Colors.GREEN)
+            
+            desc = app.get('short_desc', 'No description')
+            all_tags = app.get('tags', '')
+            print(f"  {name:20} {status:30} {desc}")
+            print(f"    Tags: {all_tags}")
+        
+        print()
+    
     def show_info(self, name: str) -> None:
-        """Show detailed info about an app"""
         app = self.registry.get_app(name)
         if not app:
             error(f"App not found: {name}")
@@ -563,6 +579,10 @@ class AppLister:
         if 'requires' in app:
             print(f"Requires:    {app['requires']}")
         
+        if 'tags' in app:
+            tags = ' '.join([f'+{t.strip()}' for t in app['tags'].split(',')])
+            print(f"Tags:        {tags}")
+        
         if 'wrapper' in app and app['wrapper'] == 'yes':
             print(colorize("Wrapper:     Yes (can be used in wrapper chain)", Colors.BLUE))
         
@@ -573,7 +593,6 @@ class AppLister:
 
 
 def handle_version(task_bin: TaskBinary) -> None:
-    """Handle --version flag"""
     print(f"tw.py version {VERSION}")
     
     if task_bin.binary_path:
@@ -587,54 +606,13 @@ def handle_version(task_bin: TaskBinary) -> None:
         print("Install with: tw --install-taskwarrior")
 
 
-def handle_list(lister: AppLister, installed_only: bool = False) -> None:
-    """Handle --list and --list-installed flags"""
-    if installed_only:
-        lister.list_installed()
-    else:
-        lister.list_all()
-
-
-def handle_info(lister: AppLister, app_name: str) -> None:
-    """Handle --info flag"""
-    lister.show_info(app_name)
-
-
-def handle_install_taskwarrior(paths: PathManager) -> int:
-    """Handle --install-taskwarrior flag"""
-    installer_script = paths.installers_dir / 'taskwarrior.install'
-    
-    if not installer_script.exists():
-        error("Taskwarrior installer not found")
-        return 1
-    
-    info("Installing Taskwarrior 2.6.2...")
-    
-    env = os.environ.copy()
-    env['INSTALL_DIR'] = str(paths.install_root)
-    env['TW_BINDIR'] = str(Path.home() / 'bin')
-    env['TW_DEBUG'] = '1' if DEBUG else '0'
-    
-    try:
-        result = subprocess.run(
-            ['bash', str(installer_script), 'install'],
-            env=env
-        )
-        return result.returncode
-    except Exception as e:
-        error(f"Installation failed: {e}")
-        return 1
-
-
 def passthrough_to_task(task_bin: TaskBinary, args: List[str]) -> int:
-    """Pass through command to task"""
     if not task_bin.binary_path:
         error("Taskwarrior not found in PATH")
         print("Install with: tw --install-taskwarrior")
         return 1
     
-    cmd = [task_bin.binary_path] + args
-    debug_print(f"Passthrough: {' '.join(cmd)}")
+    debug_print(f"Passthrough: {' '.join([task_bin.binary_path] + args)}")
     
     try:
         os.execv(task_bin.binary_path, ['task'] + args)
@@ -644,49 +622,59 @@ def passthrough_to_task(task_bin: TaskBinary, args: List[str]) -> int:
 
 
 def main():
-    """Main entry point"""
     global DEBUG
     
-    # Check for --debug flag early
+    dry_run = False
     if '--debug' in sys.argv:
         DEBUG = True
         sys.argv.remove('--debug')
         debug_print("Debug mode enabled")
     
-    # Initialize components
+    if '--dry-run' in sys.argv:
+        dry_run = True
+        sys.argv.remove('--dry-run')
+        info("[DRY RUN MODE]\n")
+    
     config = Config()
     paths = PathManager(config)
     task_bin = TaskBinary(config)
     registry = Registry(paths)
     manifest = Manifest(paths)
-    installer = Installer(paths, registry, manifest)
+    installer = Installer(paths, registry, manifest, dry_run)
     lister = AppLister(registry, manifest)
     
-    # Parse arguments
     if len(sys.argv) < 2:
-        # No arguments, pass through to task
         return passthrough_to_task(task_bin, [])
     
     arg = sys.argv[1]
     
-    # Handle our flags
     if arg == '--version':
         handle_version(task_bin)
         return 0
     
     elif arg == '--list':
-        handle_list(lister, installed_only=False)
+        if len(sys.argv) > 2:
+            if sys.argv[2] == 'tags':
+                lister.list_tags()
+                return 0
+            elif sys.argv[2].startswith('+'):
+                tags = [a[1:] for a in sys.argv[2:] if a.startswith('+')]
+                if tags:
+                    lister.list_by_tags(tags)
+                    return 0
+        
+        lister.list_all()
         return 0
     
     elif arg == '--list-installed':
-        handle_list(lister, installed_only=True)
+        lister.list_installed()
         return 0
     
     elif arg == '--info':
         if len(sys.argv) < 3:
             error("--info requires app name")
             return 1
-        handle_info(lister, sys.argv[2])
+        lister.show_info(sys.argv[2])
         return 0
     
     elif arg == '--install':
@@ -707,9 +695,6 @@ def main():
             return 1
         return 0 if installer.update(sys.argv[2]) else 1
     
-    elif arg == '--install-taskwarrior':
-        return handle_install_taskwarrior(paths)
-    
     elif arg == '--help' or arg == '-h':
         print(f"""tw.py v{VERSION} - Taskwarrior wrapper and extension manager
 
@@ -718,33 +703,33 @@ USAGE:
 
 PACKAGE MANAGEMENT:
     --list                  List all available extensions
+    --list tags             List all available tags
+    --list +tag1 +tag2      Filter by tags (AND logic)
     --list-installed        List installed extensions
-    --info <app>            Show detailed info about an app
-    --install <app>         Install an extension
-    --remove <app>          Remove an extension
-    --update <app>          Update an extension
-    --install-taskwarrior   Install Taskwarrior 2.6.2
+    --info <app>            Show detailed info
+    --install <app>         Install extension
+    --remove <app>          Remove extension
+    --update <app>          Update extension
 
-INFORMATION:
-    --version               Show version information
-    --help, -h              Show this help message
+OPTIONS:
+    --dry-run               Preview without making changes
+    --version               Show version
+    --help, -h              Show this help
     --debug                 Enable debug output
 
-PASS-THROUGH:
-    Any other arguments are passed directly to Taskwarrior.
-
 EXAMPLES:
-    tw --list               # Browse available extensions
+    tw --list
+    tw --list tags
+    tw --list +hook +scheduling
+    tw --dry-run --install tw-recurrence
     tw --install tw-recurrence
-    tw next                 # Normal task command
-    tw add "Buy milk" due:tomorrow
+    tw next
 
-For more information, see README.md and DEVELOPERS.md
+For more: README.md and DEVELOPERS.md
 """)
         return 0
     
     else:
-        # Pass through to task
         return passthrough_to_task(task_bin, sys.argv[1:])
 
 
