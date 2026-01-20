@@ -2,7 +2,7 @@
 """
 tw.py - Universal wrapper and package manager for Taskwarrior extensions
 
-Version: 1.2.0
+Version: 1.2.1
 Author: awesome-taskwarrior project
 License: MIT
 """
@@ -15,7 +15,7 @@ from datetime import datetime
 from typing import List, Dict, Optional
 import configparser
 
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 DEBUG = os.environ.get('TW_DEBUG', '0') == '1'
 
 
@@ -597,7 +597,7 @@ def generate_completion_script():
     script = '''# Bash completion for tw (awesome-taskwarrior)
 _tw_completion() {
     local cur prev words cword
-    _init_completion || return
+    _init_completion -n : || return
 
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
@@ -619,31 +619,54 @@ _tw_completion() {
             ;;
     esac
 
-    # Complete tags after "tw --list"
-    if [[ "${words[1]}" == "--list" ]] && [[ "$cur" == +* ]]; then
+    # Special handling for --list
+    if [[ "$prev" == "--list" ]]; then
+        # Complete "tags" or "+tag"
+        if [[ "$cur" == +* ]]; then
+            local tags=$(tw --complete-tags 2>/dev/null)
+            COMPREPLY=($(compgen -W "$tags" -- "$cur"))
+        else
+            COMPREPLY=($(compgen -W "tags" -- "$cur"))
+        fi
+        return 0
+    fi
+
+    # Complete additional tags after "tw --list +sometag"
+    if [[ "${COMP_WORDS[1]}" == "--list" ]] && [[ "$cur" == +* ]]; then
         local tags=$(tw --complete-tags 2>/dev/null)
         COMPREPLY=($(compgen -W "$tags" -- "$cur"))
         return 0
     fi
 
-    # Complete "tags" literal after --list
-    if [[ "${words[1]}" == "--list" ]] && [[ "$cur" == "t"* ]]; then
-        COMPREPLY=($(compgen -W "tags" -- "$cur"))
+    # For tw-specific commands that need no further completion
+    case "${COMP_WORDS[1]}" in
+        --list-installed|--version|--help|--get-completion|-h)
+            return 0
+            ;;
+    esac
+
+    # If first word is a tw flag, no further completion
+    if [[ "${COMP_WORDS[1]}" == --* ]]; then
         return 0
     fi
 
-    # Delegate to task completion for normal commands
-    if command -v _task &>/dev/null; then
-        # Reconstruct COMP_WORDS and COMP_CWORD as if 'task' was typed
-        local task_words=("task" "${words[@]:1}")
-        local task_cword=$((cword))
-        
-        COMP_WORDS=("${task_words[@]}")
-        COMP_CWORD=$task_cword
+    # Otherwise, delegate to task completion for normal task commands
+    if declare -F _task >/dev/null 2>&1; then
+        # Modify COMP_WORDS in place for task
+        local i
+        for ((i=0; i < ${#COMP_WORDS[@]}; i++)); do
+            if [[ $i -eq 0 ]]; then
+                COMP_WORDS[i]="task"
+            fi
+        done
         
         _task
         return 0
     fi
+    
+    # No task completion available, return empty to avoid file completion
+    COMPREPLY=()
+    return 0
 }
 
 complete -F _tw_completion tw

@@ -1,0 +1,193 @@
+works great! (app info needs tweaking, but I'll do that.
+Now riddle me this; when I'm working on one of the apps, outside of this wonderful context window, how should I ask future Claude to make the app conform to these requirements and templates?
+1:59 p.m.
+
+Great question! Here's how to get the best results from future Claude sessions:
+📋 The Perfect Prompt Template
+
+I'm working on a Taskwarrior extension called [APP_NAME] that needs to integrate 
+with the awesome-taskwarrior ecosystem.
+
+Project Context:
+- Target: Taskwarrior 2.6.2 (NOT 3.x)
+- Type: [hook/wrapper/utility]
+- Current repo: [YOUR_REPO_URL]
+
+Reference Files:
+I've attached/uploaded:
+- The project knowledge base (includes DEVELOPERS.md, API.md, templates)
+- My current [hook/wrapper] code
+- [any other relevant files]
+
+What I Need:
+[Be specific: create .meta file / update installer / fix bug / add feature]
+
+Requirements:
+- Follow awesome-taskwarrior conventions
+- Use lib/tw-common.sh functions (for bash)
+- Use lib/tw-wrapper.py (for Python wrappers)
+- Include proper error handling
+- Support --dry-run in installers
+
+Please review the templates in dev/models/ and create/update the files following 
+those patterns.
+
+🎯 Specific Scenarios
+Creating a new app:
+
+I want to add [APP_NAME] to awesome-taskwarrior.
+
+It's a [hook/wrapper] that [brief description].
+
+Please create:
+1. registry.d/[app-name].meta
+2. installers/[app-name].install
+
+Following the templates in dev/models/ and using the actual repo at [URL].
+
+Updating an existing installer:
+
+The tw-recurrence installer needs to [describe change].
+
+Current installer is attached. Please update it following the template 
+in dev/models/hook-template.install and using tw-common.sh library functions.
+
+Debugging installation issues:
+
+tw --install [app-name] is failing with: [error message]
+
+Attached:
+- installers/[app-name].install
+- Debug output from tw --debug --install [app-name]
+
+The installer should use tw-common.sh functions. What's wrong?
+
+💡 Pro Tips
+
+1. Always mention the project knowledge:
+
+This project has comprehensive documentation in the knowledge base including 
+DEVELOPERS.md and API.md. Please reference those for conventions.
+
+2. Be specific about which template to use:
+
+Use dev/models/hook-template.install as the starting point, not a generic bash script.
+
+3. Request incremental changes:
+
+Don't rewrite the whole file - just show me the changes needed for [specific feature].
+
+4. Ask for explanations:
+
+Explain how this follows the awesome-taskwarrior patterns before generating code.
+
+📦 What to Include
+
+Always helpful:
+
+    Link to DEVELOPERS.md: "Follow the architecture in DEVELOPERS.md"
+    Link to API.md: "Use functions documented in dev/API.md"
+    Mention templates: "Match the style in dev/models/"
+
+For installers:
+
+    "Use tw-common.sh library functions (see dev/API.md)"
+    "Follow hook-template.install or wrapper-template.install"
+    "Include install(), uninstall(), and test() functions"
+
+For .meta files:
+
+    "Follow the format in dev/models/[hook/wrapper]-template.meta"
+    "All required fields must be present"
+    "Tags should match existing taxonomy"
+
+🔄 The Magic Phrase
+
+End with:
+
+Before generating, confirm you understand the awesome-taskwarrior conventions 
+and which template applies.
+
+This makes Claude review the docs first!
+📝 Example Full Prompt
+
+I'm adding my tw-nicedates wrapper to awesome-taskwarrior.
+
+Project knowledge contains:
+- DEVELOPERS.md (architecture)
+- dev/API.md (function reference)  
+- dev/models/wrapper-template.meta and .install (templates)
+
+Current repo: https://github.com/linuxcaffe/tw-nicedates-hook
+The wrapper is nicedates.py and requires python3-dateutil.
+
+Please create:
+1. registry.d/nicedates.meta
+2. installers/nicedates.install
+
+Following wrapper-template patterns and using tw-common.sh functions.
+The installer should install to ~/bin and handle the dateutil dependency.
+
+Confirm you've reviewed the templates before generating.
+
+This approach ensures Claude:
+
+    ✅ Searches project knowledge first
+    ✅ Uses the right templates
+    ✅ Follows established patterns
+    ✅ Includes all required functions
+
+Want me to create a "CONTRIBUTING.md" file with these prompting guidelines for the repo?
+
+yes
+2:03 p.m.
+
+Perfect! Here's your CONTRIBUTING.md - a comprehensive guide that serves dual purposes:
+📚 What It Covers
+For Human Contributors
+
+    Step-by-step guides for adding extensions
+    Testing checklists before submission
+    Code style guidelines for consistency
+    PR templates for smooth reviews
+
+For Working with Claude
+
+    Prompt templates for common tasks
+    Best practices for AI-assisted development
+    Reference strategy (always mention the knowledge base)
+    Example prompts for creating/updating/debugging
+
+🎯 Key Features
+
+Section: "Working with Claude (AI Assistant)" includes:
+
+    How to reference project knowledge
+    Prompt templates for creating .meta files
+    Prompt templates for creating installers
+    Debugging prompts with examples
+    DO/DON'T lists for effective prompting
+
+The Magic Phrases:
+
+    "Confirm you've reviewed the templates before generating"
+    "Please reference DEVELOPERS.md and API.md for conventions"
+    "Follow the template in dev/models/..."
+
+💡 Usage
+
+When starting a new session with Claude:
+
+I'm working on awesome-taskwarrior. See CONTRIBUTING.md section 
+"Working with Claude" for how to help me effectively.
+
+[Then use one of the prompt templates from that section]
+
+This ensures Claude:
+
+    Searches the project knowledge first
+    Uses the right templates
+    Follows established conventions
+    Provides consistent results
+
+Now you have a complete framework for both human and AI-assisted development! 🚀
