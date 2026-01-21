@@ -60,6 +60,7 @@ Create `registry.d/yourapp.meta`:
 
 ```ini
 name=yourapp
+short_name=yourapp
 short_desc=One-line description (max 80 chars)
 version=1.0.0
 repo=https://github.com/username/yourapp
@@ -79,10 +80,11 @@ tags=hook,automation,productivity
 ```
 
 **Required fields:**
-- name, short_desc, version, repo, type, install_script
+- name, short_name, short_desc, version, repo, type, install_script
 
 **Important:**
-- Use lowercase with hyphens for names
+- Use lowercase with hyphens for names (e.g., `tw-recurrence`)
+- `short_name` should be the directory name without `tw-` prefix (e.g., `recurrence`)
 - Tags should match existing taxonomy (see `tw --list tags`)
 - Multi-line values must have indented continuations
 
@@ -94,6 +96,7 @@ Create `installers/yourapp.install`:
 #!/bin/bash
 
 APPNAME="yourapp"
+SHORT_NAME="yourapp"
 REPO_URL="https://github.com/username/yourapp"
 
 # Source common library
@@ -106,17 +109,19 @@ install() {
     tw_check_python_version 3.6 || return 1
     tw_check_taskwarrior_version 2.6.2 || return 1
     
-    # Clone repository
-    local target_dir="${HOOKS_DIR}/${APPNAME}"
-    tw_clone_or_update "$REPO_URL" "$target_dir" || return 1
+    # Clone repository to proper location
+    tw_clone_to_project hook "$SHORT_NAME" "$REPO_URL" || return 1
     
-    # Install hooks
-    tw_symlink_hook "${target_dir}/on-add-yourapp.py" || return 1
+    local project_dir="${HOOKS_DIR}/${SHORT_NAME}"
+    
+    # Install hooks (v1.3.0 signature)
+    tw_symlink_hook "$project_dir" "on-add-yourapp.py" || return 1
     
     # Add configuration
     tw_add_config "uda.yourapp.type=string"
     
     echo "✓ Installed ${APPNAME}"
+    echo "  Project files in: ${project_dir}"
     return 0
 }
 
@@ -125,7 +130,7 @@ uninstall() {
     
     tw_remove_hook "on-add-yourapp.py"
     tw_remove_config "uda.yourapp"
-    rm -rf "${HOOKS_DIR}/${APPNAME}"
+    rm -rf "${HOOKS_DIR}/${SHORT_NAME}"
     
     echo "✓ Uninstalled ${APPNAME}"
     return 0
@@ -143,6 +148,9 @@ test() {
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     : ${INSTALL_DIR:=~/.task}
     : ${HOOKS_DIR:=~/.task/hooks}
+    : ${SCRIPTS_DIR:=~/.task/scripts}
+    : ${CONFIG_DIR:=~/.task/config}
+    : ${LOGS_DIR:=~/.task/logs}
     : ${TASKRC:=~/.taskrc}
     : ${TW_DEBUG:=0}
     
@@ -157,6 +165,35 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     esac
 fi
 ```
+
+### Understanding the Directory Structure
+
+When your extension is installed, it follows this structure:
+
+**For Hooks:**
+```
+~/.task/hooks/
+├── on-add-yourapp.py -> yourapp/on-add-yourapp.py  # Symlink
+└── yourapp/                                         # Project directory
+    ├── on-add-yourapp.py                            # Actual file
+    ├── on-modify-yourapp.py
+    └── test/
+```
+
+**For Wrappers:**
+```
+~/.task/scripts/
+├── yourapp -> yourapp/yourapp.py                   # Symlink
+└── yourapp/                                        # Project directory
+    ├── yourapp.py                                  # Actual file
+    └── README.md
+```
+
+**Key Points:**
+- Apps are cloned to subdirectories (`hooks/yourapp/`, `scripts/yourapp/`)
+- Active hooks/wrappers are symlinked to the parent directory
+- This keeps projects organized and allows multiple files per app
+- Logs go to `~/.task/logs/yourapp/`
 
 **Required functions:**
 - `install()` - Must return 0 on success
@@ -338,7 +375,8 @@ tw --check yourapp
 
 # Verify installation
 tw --list-installed
-ls -la ~/.task/hooks/
+ls -la ~/.task/hooks/      # For hooks
+ls -la ~/.task/scripts/    # For wrappers
 
 # Test functionality
 task add "test task"  # Should trigger your hook

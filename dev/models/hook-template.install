@@ -12,16 +12,21 @@
 # 5. Test with: tw --install yourapp
 # 6. Make executable: chmod +x installers/yourapp.install
 
-# TODO: Replace <YOURAPP> with your app name (lowercase, hyphens)
-# EXAMPLE: YOURAPP="tw-recurrence"
-YOURAPP="<YOURAPP-NAME>"
+# TODO: Replace <YOURAPP> with your full app name (matches .meta file)
+# EXAMPLE: APPNAME="tw-recurrence"
+APPNAME="<YOURAPP-NAME>"
+
+# TODO: Replace <SHORT_NAME> with directory name (no 'tw-' prefix)
+# EXAMPLE: SHORT_NAME="recurrence"
+# NOTE: This creates ~/.task/hooks/<SHORT_NAME>/
+SHORT_NAME="<SHORT-NAME>"
 
 # TODO: Replace <REPO_URL> with your git repository URL
-# EXAMPLE: REPO_URL="https://github.com/username/tw-yourapp"
+# EXAMPLE: REPO_URL="https://github.com/username/tw-recurrence_overhaul-hook"
 REPO_URL="<https://github.com/USERNAME/REPO>"
 
 # Source common library functions
-# NOTE: This provides utility functions like tw_check_python_version, tw_symlink_hook, etc.
+# NOTE: This provides tw_clone_to_project, tw_symlink_hook, etc.
 source "$(dirname "$0")/../lib/tw-common.sh"
 
 #
@@ -31,7 +36,7 @@ source "$(dirname "$0")/../lib/tw-common.sh"
 # MUST return 0 on success, non-zero on failure
 #
 install() {
-    echo "Installing ${YOURAPP}..."
+    echo "Installing ${APPNAME}..."
     
     # Step 1: Check dependencies
     # TODO: Add dependency checks as needed
@@ -40,23 +45,22 @@ install() {
     
     tw_check_taskwarrior_version 2.6.2 || return 1
     
-    # Step 2: Clone or update repository
-    # NOTE: This clones to $INSTALL_DIR/<yourapp>
-    # TODO: Adjust the target directory name if needed
+    # Step 2: Clone repository to proper location
+    # NOTE: This clones to ~/.task/hooks/<SHORT_NAME>/
+    # EXAMPLE: tw_clone_to_project hook recurrence "https://github.com/user/tw-recurrence_overhaul-hook"
     
-    local target_dir="${INSTALL_DIR}/${YOURAPP}"
-    tw_clone_or_update "$REPO_URL" "$target_dir" || return 1
+    tw_clone_to_project hook "$SHORT_NAME" "$REPO_URL" || return 1
+    
+    local project_dir="${HOOKS_DIR}/${SHORT_NAME}"
     
     # Step 3: Create hook symlinks
+    # NOTE: Creates symlinks in ~/.task/hooks/ pointing to files in project subdirectory
     # TODO: Add symlinks for each hook file your app provides
-    # EXAMPLE: tw_symlink_hook "${target_dir}/on-add-yourapp.py" || return 1
-    # EXAMPLE: tw_symlink_hook "${target_dir}/on-modify-yourapp.py" || return 1
-    # EXAMPLE: tw_symlink_hook "${target_dir}/on-exit-yourapp.py" || return 1
+    # EXAMPLE: tw_symlink_hook "$project_dir" "on-add-yourapp.py" || return 1
+    # EXAMPLE: tw_symlink_hook "$project_dir" "on-modify-yourapp.py" || return 1
+    # EXAMPLE: tw_symlink_hook "$project_dir" "on-exit-yourapp.py" || return 1
     
-    # NOTE: If your hooks are in a subdirectory:
-    # tw_symlink_hook "${target_dir}/src/on-add-yourapp.py" "on-add-yourapp.py" || return 1
-    
-    tw_symlink_hook "${target_dir}/<HOOK-FILE>" || return 1
+    tw_symlink_hook "$project_dir" "<HOOK-FILE>" || return 1
     
     # Step 4: Add taskrc configuration
     # TODO: Add any UDA definitions or configuration needed
@@ -67,11 +71,19 @@ install() {
     # NOTE: Configuration is added to user's .taskrc
     # NOTE: Check if config already exists before adding
     
-    # Step 5: Additional setup (optional)
-    # TODO: Add any additional installation steps
-    # EXAMPLE: Create directories, copy config files, etc.
+    # Step 5: Add custom reports (optional)
+    # EXAMPLE: tw_add_config "report.yourapp.description=Custom report"
+    # EXAMPLE: tw_add_config "report.yourapp.columns=id,description,status"
+    # EXAMPLE: tw_add_config "report.yourapp.filter=+yourapp_tag"
     
-    echo "✓ Installed ${YOURAPP}"
+    # Step 6: Additional setup (optional)
+    # TODO: Add any additional installation steps
+    # EXAMPLE: Create log directories, copy config files, etc.
+    
+    echo "✓ Installed ${APPNAME}"
+    echo "  Hooks installed in: ${HOOKS_DIR}/"
+    echo "  Project files in: ${project_dir}"
+    echo "  Logs will go to: ${LOGS_DIR}/${SHORT_NAME}/"
     return 0
 }
 
@@ -79,13 +91,14 @@ install() {
 # REQUIRED: uninstall() function
 #
 # This function handles removal of your hook
-# MUST clean up all traces of the installation
+# MUST return 0 on success, non-zero on failure
+# MUST clean up ALL files and configuration
 #
 uninstall() {
-    echo "Uninstalling ${YOURAPP}..."
+    echo "Uninstalling ${APPNAME}..."
     
     # Step 1: Remove hook symlinks
-    # TODO: Remove all hooks installed by this app
+    # TODO: Remove all hook symlinks created during install
     # EXAMPLE: tw_remove_hook "on-add-yourapp.py"
     # EXAMPLE: tw_remove_hook "on-modify-yourapp.py"
     # EXAMPLE: tw_remove_hook "on-exit-yourapp.py"
@@ -93,131 +106,152 @@ uninstall() {
     tw_remove_hook "<HOOK-FILE>"
     
     # Step 2: Remove configuration
-    # TODO: Remove all UDAs and config added by this app
+    # TODO: Remove all taskrc configuration added during install
+    # NOTE: Use the base config name (e.g., "uda.yourapp_status", not "uda.yourapp_status.type")
     # EXAMPLE: tw_remove_config "uda.yourapp_status"
+    # EXAMPLE: tw_remove_config "report.yourapp"
     
-    # NOTE: This removes all config lines matching the pattern
-    
-    # Step 3: Remove installation directory
-    # NOTE: This removes the cloned repository
-    # TODO: Adjust directory name if different from $YOURAPP
-    
-    local target_dir="${INSTALL_DIR}/${YOURAPP}"
-    if [ -d "$target_dir" ]; then
-        rm -rf "$target_dir" || {
-            echo "Warning: Could not remove $target_dir" >&2
-        }
-    fi
+    # Step 3: Remove project directory
+    # NOTE: This removes the entire project including any test files
+    rm -rf "${HOOKS_DIR}/${SHORT_NAME}"
     
     # Step 4: Additional cleanup (optional)
-    # TODO: Remove any other files created by this app
-    # EXAMPLE: Remove log files, cache directories, etc.
+    # TODO: Remove any additional files or directories created
+    # EXAMPLE: rm -rf "${LOGS_DIR}/${SHORT_NAME}"
     
-    echo "✓ Uninstalled ${YOURAPP}"
+    echo "✓ Uninstalled ${APPNAME}"
     return 0
 }
 
 #
 # OPTIONAL: update() function
 #
-# If not provided, tw.py will call uninstall() then install()
-# Implement this if you want custom update logic
+# This function handles updating your hook
+# If not provided, tw.py will uninstall then reinstall
+# Return 0 on success, non-zero to trigger uninstall/reinstall
 #
-# update() {
-#     echo "Updating ${YOURAPP}..."
-#     
-#     local target_dir="${INSTALL_DIR}/${YOURAPP}"
-#     
-#     # Update git repository
-#     if [ -d "$target_dir/.git" ]; then
-#         cd "$target_dir" || return 1
-#         git pull || return 1
-#         echo "✓ Updated ${YOURAPP}"
-#         return 0
-#     else
-#         echo "Error: Not a git repository, use reinstall" >&2
-#         return 1
-#     fi
-# }
+update() {
+    echo "Updating ${APPNAME}..."
+    
+    local project_dir="${HOOKS_DIR}/${SHORT_NAME}"
+    
+    # Try git pull
+    if [ -d "$project_dir/.git" ]; then
+        tw_info "Pulling latest changes..."
+        cd "$project_dir" && git pull || return 1
+        echo "✓ Updated ${APPNAME}"
+        return 0
+    else
+        # No git repo, trigger reinstall
+        return 1
+    fi
+}
 
 #
 # OPTIONAL: test() function
 #
-# Runs tests to verify installation
-# Called by: tw --check yourapp
+# This function tests the installation
+# Useful for verifying everything is properly installed
+# Return 0 if all tests pass, non-zero on failure
 #
-# test() {
-#     echo "Testing ${YOURAPP}..."
-#     
-#     # Test 1: Check hooks exist and are executable
-#     # EXAMPLE: tw_test_hook "on-add-yourapp.py" || return 1
-#     
-#     # Test 2: Check configuration
-#     # EXAMPLE: tw_test_config "uda.yourapp_status.type" "string" || return 1
-#     
-#     # Test 3: Test basic functionality
-#     # EXAMPLE: tw_test_cmd "task add test yourapp_status:pending" || return 1
-#     
-#     # Test 4: Cleanup test data
-#     # EXAMPLE: tw_test_cleanup
-#     
-#     echo "✓ All tests passed"
-#     return 0
-# }
+test() {
+    echo "Testing ${APPNAME}..."
+    
+    local project_dir="${HOOKS_DIR}/${SHORT_NAME}"
+    
+    # Test 1: Hook symlinks exist and are executable
+    # TODO: Test each hook file
+    # EXAMPLE: tw_test_hook "on-add-yourapp.py" || return 1
+    # EXAMPLE: tw_test_hook "on-modify-yourapp.py" || return 1
+    
+    tw_test_hook "<HOOK-FILE>" || return 1
+    
+    # Test 2: Configuration exists
+    # TODO: Test critical config values
+    # EXAMPLE: tw_test_config "uda.yourapp_status.type" "string" || return 1
+    
+    # Test 3: Project directory exists
+    if [ ! -d "$project_dir" ]; then
+        tw_error "Project directory not found: $project_dir"
+        return 1
+    fi
+    
+    # Test 4: Additional tests (optional)
+    # TODO: Add any app-specific tests
+    # EXAMPLE: Test that hook can parse tasks
+    # EXAMPLE: Test that hook responds correctly
+    
+    echo "✓ All tests passed"
+    return 0
+}
 
-#
-# OPTIONAL: check_deps() function
-#
-# Additional dependency checks beyond standard ones
-# Called before install()
-#
-# check_deps() {
-#     # Check for non-standard dependencies
-#     # EXAMPLE:
-#     # command -v jq >/dev/null 2>&1 || {
-#     #     echo "Error: jq is required but not installed"
-#     #     echo "Install with: sudo apt install jq"
-#     #     return 1
-#     # }
-#     
-#     return 0
-# }
-
-# Main entry point for standalone testing
+# Main entry point
+# NOTE: This allows the script to be sourced or executed directly
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
-    # Set defaults if not running under tw.py
+    # Set defaults if not provided by environment
     : ${INSTALL_DIR:=~/.task}
     : ${HOOKS_DIR:=~/.task/hooks}
+    : ${SCRIPTS_DIR:=~/.task/scripts}
+    : ${CONFIG_DIR:=~/.task/config}
+    : ${LOGS_DIR:=~/.task/logs}
     : ${TASKRC:=~/.taskrc}
     : ${TW_DEBUG:=0}
     
-    # Parse arguments
+    # Route to appropriate function
     case "${1:-install}" in
-        install)
-            install
-            ;;
-        uninstall)
-            uninstall
-            ;;
-        update)
-            if declare -f update >/dev/null; then
-                update
-            else
-                echo "No custom update function, use: tw --update $YOURAPP"
-                exit 1
-            fi
-            ;;
-        test)
-            if declare -f test >/dev/null; then
-                test
-            else
-                echo "No test function defined"
-                exit 1
-            fi
-            ;;
+        install) install ;;
+        uninstall) uninstall ;;
+        update) update ;;
+        test) test ;;
         *)
             echo "Usage: $0 {install|uninstall|update|test}" >&2
             exit 1
             ;;
     esac
 fi
+
+# TEMPLATE NOTES:
+#
+# Directory Structure (v1.3.0+):
+#   ~/.task/
+#   ├── hooks/                  # Hook symlinks (on-add-*.py, etc.)
+#   │   └── <SHORT_NAME>/       # Your project files
+#   ├── scripts/                # Wrapper/utility symlinks
+#   ├── config/                 # Config files
+#   └── logs/                   # Debug and test logs
+#
+# Key Functions (from tw-common.sh):
+#   tw_clone_to_project         # Clone to type-appropriate directory
+#   tw_symlink_hook             # Create hook symlink
+#   tw_remove_hook              # Remove hook symlink
+#   tw_check_python_version     # Verify Python version
+#   tw_check_taskwarrior_version # Verify Taskwarrior version
+#   tw_check_command            # Verify command exists
+#   tw_add_config               # Add taskrc configuration
+#   tw_remove_config            # Remove taskrc configuration
+#   tw_test_hook                # Test hook installation
+#   tw_test_config              # Test config value
+#
+# Environment Variables:
+#   $INSTALL_DIR                # ~/.task (default)
+#   $HOOKS_DIR                  # ~/.task/hooks (default)
+#   $SCRIPTS_DIR                # ~/.task/scripts (default)
+#   $CONFIG_DIR                 # ~/.task/config (default)
+#   $LOGS_DIR                   # ~/.task/logs (default)
+#   $TASKRC                     # ~/.taskrc (default)
+#   $TW_DEBUG                   # 0 or 1
+#
+# Best Practices:
+#   - Always check dependencies before making changes
+#   - Use tw_* functions instead of direct commands
+#   - Provide helpful error messages
+#   - Clean up completely in uninstall()
+#   - Test with both install and uninstall
+#   - Keep install() and uninstall() symmetric
+#   - Use SHORT_NAME consistently throughout
+#   - Document any non-obvious behavior
+#
+# See Also:
+#   - dev/API.md for complete function reference
+#   - dev/models/tw-recurrence.install for working example
+#   - DEVELOPERS.md for architecture details

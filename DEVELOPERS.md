@@ -44,6 +44,49 @@ awesome-taskwarrior/
     └── API.md                # Function reference
 ```
 
+### User Installation Structure
+
+When apps are installed, they follow this directory structure:
+
+```
+~/.task/
+├── hooks/                          # Hook projects and active symlinks
+│   ├── on-add_recurrence.py -> recurrence/on-add_recurrence.py
+│   ├── on-modify_recurrence.py -> recurrence/on-modify_recurrence.py
+│   ├── recurrence/                 # tw-recurrence project files
+│   │   ├── on-add_recurrence.py
+│   │   ├── on-modify_recurrence.py
+│   │   ├── on-exit_recurrence.py
+│   │   └── test/
+│   ├── priority/                   # tw-priority project files
+│   │   ├── on-add_priority.py
+│   │   └── ...
+│   └── ...
+├── scripts/                        # Wrapper projects and active symlinks
+│   ├── nicedates -> nicedates/nicedates.py
+│   ├── nicedates/                  # nicedates project files
+│   │   ├── nicedates.py
+│   │   └── README.md
+│   └── ...
+├── config/                         # Configuration files
+│   ├── tw.config                   # Main tw.py configuration
+│   ├── custom.rc                   # User-specific taskrc includes
+│   └── ...
+├── logs/                           # Debug and test logs
+│   ├── recurrence/                 # Logs for recurrence hooks
+│   └── ...
+├── pending.data                    # Taskwarrior data files
+├── completed.data
+└── undo.data
+```
+
+**Key Principles:**
+
+1. **Project Subdirectories**: Each app gets its own subdirectory (`hooks/recurrence/`, `scripts/nicedates/`)
+2. **Active Symlinks**: Hooks and wrappers are symlinked to the root of their respective directories for Taskwarrior to find them
+3. **Type-Based Organization**: Apps are organized by type (hooks/, scripts/, config/)
+4. **Centralized Logs**: All logs go to `logs/` with app-specific subdirectories
+
 ### Component Responsibilities
 
 **tw.py**
@@ -85,6 +128,7 @@ Format: INI-style key=value pairs
 ```ini
 # Required fields
 name=tw-recurrence
+short_name=recurrence
 short_desc=One-line description
 version=1.0.0
 repo=https://github.com/user/repo
@@ -106,7 +150,8 @@ tags=hook,recurrence,scheduling
 
 **Field Descriptions:**
 
-- `name`: Unique identifier (no spaces)
+- `name`: Unique identifier (no spaces, e.g., tw-recurrence)
+- `short_name`: Directory name without tw- prefix (e.g., recurrence)
 - `short_desc`: One-line description for list view
 - `long_desc`: Detailed description (optional)
 - `version`: Current version (app's own versioning scheme)
@@ -130,6 +175,11 @@ Format: Bash script with required functions
 
 ```bash
 #!/bin/bash
+
+APPNAME="tw-recurrence"
+SHORT_NAME="recurrence"
+REPO_URL="https://github.com/user/tw-recurrence_overhaul-hook"
+
 # Source common library
 source "$(dirname "$0")/../lib/tw-common.sh"
 
@@ -137,40 +187,48 @@ source "$(dirname "$0")/../lib/tw-common.sh"
 install() {
     # Check dependencies (using tw-common.sh functions)
     tw_check_python_version 3.6 || return 1
+    tw_check_taskwarrior_version 2.6.2 || return 1
     
-    # Clone or update repository
-    tw_clone_or_update "$REPO_URL" "$INSTALL_DIR/tw-recurrence" || return 1
+    # Clone to proper location based on type
+    tw_clone_to_project hook "$SHORT_NAME" "$REPO_URL" || return 1
     
-    # Create symlinks for hooks
-    tw_symlink_hook "on-add-recurrence.py" || return 1
+    local project_dir="${HOOKS_DIR}/${SHORT_NAME}"
+    
+    # Create symlinks for hooks (v1.3.0 signature)
+    tw_symlink_hook "$project_dir" "on-add_recurrence.py" || return 1
+    tw_symlink_hook "$project_dir" "on-modify_recurrence.py" || return 1
     
     # Add taskrc configuration
     tw_add_config "uda.recur_template.type=string" || return 1
     
-    echo "✓ Installed tw-recurrence"
+    echo "✓ Installed ${APPNAME}"
+    echo "  Project files in: ${project_dir}"
     return 0
 }
 
 # REQUIRED: Uninstall function
 uninstall() {
     # Remove hooks
-    tw_remove_hook "on-add-recurrence.py"
+    tw_remove_hook "on-add_recurrence.py"
+    tw_remove_hook "on-modify_recurrence.py"
     
     # Remove configuration
     tw_remove_config "uda.recur_template"
     
-    # Remove installation directory
-    rm -rf "$INSTALL_DIR/tw-recurrence"
+    # Remove project directory
+    rm -rf "${HOOKS_DIR}/${SHORT_NAME}"
     
-    echo "✓ Uninstalled tw-recurrence"
+    echo "✓ Uninstalled ${APPNAME}"
     return 0
 }
 
 # OPTIONAL: Update function (if different from reinstall)
 update() {
-    cd "$INSTALL_DIR/tw-recurrence" || return 1
+    local project_dir="${HOOKS_DIR}/${SHORT_NAME}"
+    
+    cd "$project_dir" || return 1
     git pull || return 1
-    echo "✓ Updated tw-recurrence"
+    echo "✓ Updated ${APPNAME}"
     return 0
 }
 
@@ -211,8 +269,11 @@ check_deps() {
 **Environment Variables Available:**
 
 - `$INSTALL_DIR`: Base installation directory (~/.task or system)
+- `$HOOKS_DIR`: Hook installation directory (~/.task/hooks)
+- `$SCRIPTS_DIR`: Scripts/wrappers directory (~/.task/scripts)
+- `$CONFIG_DIR`: Configuration files directory (~/.task/config)
+- `$LOGS_DIR`: Logs directory (~/.task/logs)
 - `$TASKRC`: Path to user's .taskrc file
-- `$HOOKS_DIR`: Hook installation directory
 - `$TW_DEBUG`: Set to "1" when --debug flag used
 
 ### Configuration File (tw.config)
@@ -228,6 +289,9 @@ executable_dir=~/bin
 taskwarrior_bin=auto                    # or explicit path
 install_root=~/.task
 hooks_dir=~/.task/hooks
+scripts_dir=~/.task/scripts
+config_dir=~/.task/config
+logs_dir=~/.task/logs
 data_dir=~/.task/data
 
 # System-wide installation (requires sudo)

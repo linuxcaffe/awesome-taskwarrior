@@ -1,17 +1,22 @@
 # awesome-taskwarrior API Reference
 
-This document provides detailed reference for library functions available to installers and wrappers.
+**Version:** 1.3.0  
+**Last Updated:** January 2026
+
+This document provides detailed reference for library functions available to installers and wrappers in the awesome-taskwarrior ecosystem.
 
 ## Table of Contents
 
 - [Bash Library (tw-common.sh)](#bash-library-tw-commonsh)
+  - [Environment Variables](#environment-variables)
   - [Utility Functions](#utility-functions)
   - [Dependency Checking](#dependency-checking)
+  - [Project Directory Management](#project-directory-management)
   - [Repository Management](#repository-management)
   - [Hook Management](#hook-management)
+  - [Wrapper Management](#wrapper-management)
   - [Configuration Management](#configuration-management)
   - [Testing Utilities](#testing-utilities)
-  - [Wrapper Management](#wrapper-management)
   - [File Operations](#file-operations)
 - [Python Library (tw-wrapper.py)](#python-library-tw-wrapperpy)
   - [TaskWrapper Class](#taskwrapper-class)
@@ -29,11 +34,44 @@ Library for install scripts providing standardized installation, configuration, 
 source "$(dirname "$0")/../lib/tw-common.sh"
 ```
 
+### Environment Variables
+
+The following environment variables are available to all installer scripts. They are automatically set by tw.py and can be overridden if needed.
+
 **Available Environment Variables:**
 - `$INSTALL_DIR` - Base installation directory (default: `~/.task`)
 - `$HOOKS_DIR` - Hook installation directory (default: `~/.task/hooks`)
+- `$SCRIPTS_DIR` - Scripts/wrappers directory (default: `~/.task/scripts`)
+- `$CONFIG_DIR` - Configuration files directory (default: `~/.task/config`)
+- `$LOGS_DIR` - Logs directory (default: `~/.task/logs`)
 - `$TASKRC` - Path to .taskrc file (default: `~/.taskrc`)
 - `$TW_DEBUG` - Debug flag (`0` or `1`)
+
+**Directory Structure:**
+```
+~/.task/
+├── hooks/          # Hook projects and symlinks
+├── scripts/        # Wrapper projects and symlinks
+├── config/         # Configuration files
+└── logs/           # Debug and test logs
+```
+
+**Usage in installers:**
+```bash
+# These are automatically set when run via tw.py
+echo "Installing to: ${INSTALL_DIR}"
+echo "Hooks go in: ${HOOKS_DIR}"
+echo "Scripts go in: ${SCRIPTS_DIR}"
+
+# You can also set defaults for standalone testing
+: ${INSTALL_DIR:=~/.task}
+: ${HOOKS_DIR:=~/.task/hooks}
+: ${SCRIPTS_DIR:=~/.task/scripts}
+: ${CONFIG_DIR:=~/.task/config}
+: ${LOGS_DIR:=~/.task/logs}
+```
+
+---
 
 ### Utility Functions
 
@@ -61,6 +99,8 @@ tw_msg "$COLOR_GREEN" "Installation successful"
 - `$COLOR_YELLOW` - Yellow (warnings)
 - `$COLOR_BLUE` - Blue (info/debug)
 
+---
+
 #### tw_error
 Print error message to stderr.
 
@@ -69,10 +109,21 @@ Print error message to stderr.
 tw_error MESSAGE
 ```
 
+**Parameters:**
+- `MESSAGE` - Error message to display
+
+**Returns:**
+- Prints to stderr, does not exit
+
 **Example:**
 ```bash
-tw_error "Installation failed"
+if [ ! -f "$config_file" ]; then
+    tw_error "Configuration file not found: $config_file"
+    return 1
+fi
 ```
+
+---
 
 #### tw_warn
 Print warning message to stderr.
@@ -82,10 +133,20 @@ Print warning message to stderr.
 tw_warn MESSAGE
 ```
 
+**Parameters:**
+- `MESSAGE` - Warning message to display
+
+**Returns:**
+- Prints to stderr, does not exit
+
 **Example:**
 ```bash
-tw_warn "Configuration already exists"
+if [ -f "$existing_hook" ]; then
+    tw_warn "Hook already exists, will be replaced"
+fi
 ```
+
+---
 
 #### tw_info
 Print informational message.
@@ -95,10 +156,16 @@ Print informational message.
 tw_info MESSAGE
 ```
 
+**Parameters:**
+- `MESSAGE` - Info message to display
+
 **Example:**
 ```bash
 tw_info "Downloading repository..."
+tw_info "Configuration updated successfully"
 ```
+
+---
 
 #### tw_success
 Print success message.
@@ -108,28 +175,52 @@ Print success message.
 tw_success MESSAGE
 ```
 
+**Parameters:**
+- `MESSAGE` - Success message to display
+
 **Example:**
 ```bash
-tw_success "Installation complete"
+tw_success "✓ Installation complete"
+tw_success "All tests passed"
 ```
 
+---
+
 #### tw_debug
-Print debug message (only if `TW_DEBUG=1`).
+Print debug message (only if TW_DEBUG=1).
 
 **Syntax:**
 ```bash
 tw_debug MESSAGE
 ```
 
+**Parameters:**
+- `MESSAGE` - Debug message to display
+
+**Returns:**
+- Only prints if `TW_DEBUG=1`
+
 **Example:**
 ```bash
-tw_debug "Processing hook: on-add-test.py"
+tw_debug "Processing file: $filename"
+tw_debug "Current state: $state"
 ```
+
+**Usage:**
+```bash
+# Enable debug output
+TW_DEBUG=1 bash installers/yourapp.install install
+
+# Or via tw.py
+tw --debug --install yourapp
+```
+
+---
 
 ### Dependency Checking
 
 #### tw_check_python_version
-Check if Python version meets minimum requirement.
+Check if Python version meets requirements.
 
 **Syntax:**
 ```bash
@@ -137,22 +228,29 @@ tw_check_python_version MAJOR.MINOR
 ```
 
 **Parameters:**
-- `MAJOR.MINOR` - Minimum required version (e.g., "3.6")
+- `MAJOR.MINOR` - Minimum required Python version (e.g., `3.6`)
 
 **Returns:**
-- `0` - Version requirement met
-- `1` - Version requirement not met or Python not found
+- 0 if version meets requirement
+- 1 if version too old or Python not found
 
 **Example:**
 ```bash
-tw_check_python_version 3.6 || {
-    echo "Python 3.6+ required"
-    return 1
-}
+# Require Python 3.6 or higher
+tw_check_python_version 3.6 || return 1
+
+# Require Python 3.8 or higher
+tw_check_python_version 3.8 || return 1
 ```
 
+**Error Messages:**
+- If python3 not found: Suggests installation command
+- If version too old: Shows required vs actual version
+
+---
+
 #### tw_check_taskwarrior_version
-Check if Taskwarrior version meets minimum requirement.
+Check if Taskwarrior version meets requirements.
 
 **Syntax:**
 ```bash
@@ -160,42 +258,169 @@ tw_check_taskwarrior_version MAJOR.MINOR.PATCH
 ```
 
 **Parameters:**
-- `MAJOR.MINOR.PATCH` - Minimum required version (e.g., "2.6.2")
+- `MAJOR.MINOR.PATCH` - Minimum required version (e.g., `2.6.2`)
 
 **Returns:**
-- `0` - Version requirement met
-- `1` - Version requirement not met or Taskwarrior not found
+- 0 if version meets requirement
+- 1 if version too old or Taskwarrior not found
 
 **Example:**
 ```bash
+# Require Taskwarrior 2.6.2 or higher (always recommended)
 tw_check_taskwarrior_version 2.6.2 || return 1
+
+# Require specific version
+tw_check_taskwarrior_version 2.6.0 || return 1
 ```
 
+**Note:**
+- awesome-taskwarrior targets Taskwarrior 2.6.2 and the 2.x branch
+- Not compatible with Taskwarrior 3.x
+
+---
+
 #### tw_check_command
-Check if a command exists in PATH.
+Check if a command/tool is available in PATH.
 
 **Syntax:**
 ```bash
-tw_check_command COMMAND [INSTALL_HINT]
+tw_check_command COMMAND
 ```
 
 **Parameters:**
-- `COMMAND` - Command name to check
-- `INSTALL_HINT` - Optional message explaining how to install
+- `COMMAND` - Command name to check (e.g., `jq`, `git`)
 
 **Returns:**
-- `0` - Command found
-- `1` - Command not found
+- 0 if command exists
+- 1 if command not found
 
 **Example:**
 ```bash
-tw_check_command jq "Install with: sudo apt install jq" || return 1
+# Check for jq (JSON processor)
+tw_check_command "jq" || {
+    tw_error "jq is required but not installed"
+    return 1
+}
+
+# Check for git
+tw_check_command "git" || return 1
 ```
+
+---
+
+### Project Directory Management
+
+These functions help manage installation to the correct directory based on app type.
+
+#### tw_get_install_dir
+Get the correct installation directory based on app type.
+
+**Syntax:**
+```bash
+tw_get_install_dir TYPE SHORT_NAME
+```
+
+**Parameters:**
+- `TYPE` - App type: `hook`, `wrapper`, `utility`, or `config`
+- `SHORT_NAME` - Short name for the app (e.g., `recurrence`)
+
+**Returns:**
+- Echoes the full path to installation directory
+- Returns 1 on invalid type
+
+**Example:**
+```bash
+install_dir=$(tw_get_install_dir hook recurrence)
+# Returns: ~/.task/hooks/recurrence
+
+install_dir=$(tw_get_install_dir wrapper nicedates)
+# Returns: ~/.task/scripts/nicedates
+
+install_dir=$(tw_get_install_dir config custom)
+# Returns: ~/.task/config/custom
+```
+
+**Directory Mapping:**
+- `hook` → `$HOOKS_DIR/SHORT_NAME`
+- `wrapper` → `$SCRIPTS_DIR/SHORT_NAME`
+- `utility` → `$SCRIPTS_DIR/SHORT_NAME`
+- `config` → `$CONFIG_DIR/SHORT_NAME`
+
+**Usage Pattern:**
+```bash
+local type="hook"
+local short_name="recurrence"
+local project_dir=$(tw_get_install_dir "$type" "$short_name")
+
+if [ -d "$project_dir" ]; then
+    tw_info "Project already exists at: $project_dir"
+fi
+```
+
+---
+
+#### tw_clone_to_project
+Clone repository to the appropriate location based on app type.
+
+**Syntax:**
+```bash
+tw_clone_to_project TYPE SHORT_NAME REPO_URL [BRANCH]
+```
+
+**Parameters:**
+- `TYPE` - App type: `hook`, `wrapper`, `utility`, or `config`
+- `SHORT_NAME` - Short name for the app
+- `REPO_URL` - Git repository URL
+- `BRANCH` - (Optional) Git branch to checkout
+
+**Returns:**
+- 0 on success
+- 1 on failure (e.g., git error, network issue)
+
+**Example:**
+```bash
+# Clone a hook project
+tw_clone_to_project hook recurrence "https://github.com/linuxcaffe/tw-recurrence_overhaul-hook"
+# Clones to: ~/.task/hooks/recurrence/
+
+# Clone a wrapper project on specific branch
+tw_clone_to_project wrapper nicedates "https://github.com/user/nicedates" main
+# Clones to: ~/.task/scripts/nicedates/ (main branch)
+
+# Clone a utility
+tw_clone_to_project utility cmx "https://github.com/user/cmx"
+# Clones to: ~/.task/scripts/cmx/
+```
+
+**Behavior:**
+- Creates parent directory if needed
+- If directory exists, runs `git pull` to update
+- Checks out specified branch if provided
+- Uses `tw_clone_or_update` internally
+
+**Complete Install Example:**
+```bash
+install() {
+    local short_name="recurrence"
+    local repo_url="https://github.com/user/tw-recurrence_overhaul-hook"
+    
+    # Clone to correct location
+    tw_clone_to_project hook "$short_name" "$repo_url" || return 1
+    
+    # Get the project directory
+    local project_dir="${HOOKS_DIR}/${short_name}"
+    
+    # Install hooks from project
+    tw_symlink_hook "$project_dir" "on-add_recurrence.py" || return 1
+}
+```
+
+---
 
 ### Repository Management
 
 #### tw_clone_or_update
-Clone a git repository or update if already exists.
+Clone git repository or update if it exists.
 
 **Syntax:**
 ```bash
@@ -204,302 +429,456 @@ tw_clone_or_update REPO_URL TARGET_DIR [BRANCH]
 
 **Parameters:**
 - `REPO_URL` - Git repository URL
-- `TARGET_DIR` - Destination directory
-- `BRANCH` - Optional branch name (default: repository default)
+- `TARGET_DIR` - Target directory for clone
+- `BRANCH` - (Optional) Branch to checkout
 
 **Returns:**
-- `0` - Clone/update successful
-- `1` - Operation failed
+- 0 on success
+- 1 on failure
 
 **Example:**
 ```bash
-tw_clone_or_update \
-    "https://github.com/user/repo" \
-    "$INSTALL_DIR/myapp" \
-    "main" || return 1
+# Clone to specific directory
+tw_clone_or_update "https://github.com/user/repo" "${HOOKS_DIR}/myapp"
+
+# Clone specific branch
+tw_clone_or_update "https://github.com/user/repo" "${HOOKS_DIR}/myapp" develop
 ```
 
-**Notes:**
-- Creates parent directories if needed
-- Automatically detects existing repository and updates instead of cloning
-- Preserves local working directory
+**Behavior:**
+- If target doesn't exist: Clones repository
+- If target exists with .git: Runs `git pull`
+- If target exists without .git: Returns error
+- Creates parent directories as needed
+
+**Note:**
+- Use `tw_clone_to_project` instead for new installers (handles type-based directories)
+- This is a lower-level function kept for compatibility
+
+---
 
 ### Hook Management
 
-#### tw_symlink_hook
-Create symlink for a hook in the hooks directory.
+Hook management functions for creating and removing hook symlinks. Updated in v1.3.0 to support project subdirectories.
 
-**Syntax:**
+#### tw_symlink_hook
+Create symlink for a hook in the hooks directory root.
+
+**Syntax (v1.3.0):**
 ```bash
-tw_symlink_hook SOURCE_PATH [LINK_NAME]
+tw_symlink_hook PROJECT_DIR HOOK_FILE
 ```
 
 **Parameters:**
-- `SOURCE_PATH` - Full path to hook script
-- `LINK_NAME` - Optional link name (default: basename of source)
+- `PROJECT_DIR` - Full path to project directory (e.g., `${HOOKS_DIR}/recurrence`)
+- `HOOK_FILE` - Hook filename (e.g., `on-add_recurrence.py`)
 
 **Returns:**
-- `0` - Symlink created
-- `1` - Operation failed
+- 0 on success
+- 1 on failure (file not found, permission error, etc.)
 
 **Example:**
 ```bash
-# Simple symlink (uses basename)
-tw_symlink_hook "${target_dir}/on-add-test.py" || return 1
+# Install recurrence hooks
+local project_dir="${HOOKS_DIR}/recurrence"
+tw_symlink_hook "$project_dir" "on-add_recurrence.py"
+tw_symlink_hook "$project_dir" "on-modify_recurrence.py"
+tw_symlink_hook "$project_dir" "on-exit_recurrence.py"
 
-# Custom link name
-tw_symlink_hook "${target_dir}/src/hook.py" "on-add-custom.py" || return 1
+# Creates:
+# ~/.task/hooks/on-add_recurrence.py -> ~/.task/hooks/recurrence/on-add_recurrence.py
+# ~/.task/hooks/on-modify_recurrence.py -> ~/.task/hooks/recurrence/on-modify_recurrence.py
+# ~/.task/hooks/on-exit_recurrence.py -> ~/.task/hooks/recurrence/on-exit_recurrence.py
 ```
 
-**Notes:**
-- Automatically makes source file executable
+**Behavior:**
+- Verifies source file exists in project directory
+- Makes source executable (`chmod +x`)
 - Removes existing symlink/file if present
-- Creates hooks directory if needed
+- Creates symlink in `$HOOKS_DIR` root pointing to file in project subdirectory
+
+**Complete Example:**
+```bash
+install() {
+    # Clone project
+    tw_clone_to_project hook recurrence "$REPO_URL" || return 1
+    
+    local project_dir="${HOOKS_DIR}/recurrence"
+    
+    # Install all hooks
+    for hook in on-add on-modify on-exit; do
+        tw_symlink_hook "$project_dir" "${hook}_recurrence.py" || return 1
+    done
+}
+```
+
+**Migration from v1.0.0:**
+```bash
+# OLD (v1.0.0):
+tw_symlink_hook "${HOOKS_DIR}/${APPNAME}/on-add-test.py"
+
+# NEW (v1.3.0):
+local project_dir="${HOOKS_DIR}/${SHORT_NAME}"
+tw_symlink_hook "$project_dir" "on-add-test.py"
+```
+
+---
 
 #### tw_remove_hook
 Remove hook symlink from hooks directory.
 
 **Syntax:**
 ```bash
-tw_remove_hook HOOK_NAME
+tw_remove_hook HOOK_FILE
 ```
 
 **Parameters:**
-- `HOOK_NAME` - Name of hook to remove
+- `HOOK_FILE` - Hook filename to remove (e.g., `on-add_recurrence.py`)
 
 **Returns:**
-- `0` - Hook removed or didn't exist
-- `1` - Hook exists but couldn't be removed
+- 0 on success
+- 1 on failure or if not a symlink (safety check)
 
 **Example:**
 ```bash
-tw_remove_hook "on-add-test.py"
+# Remove single hook
+tw_remove_hook "on-add_recurrence.py"
+# Removes: ~/.task/hooks/on-add_recurrence.py
+
+# Remove multiple hooks
+tw_remove_hook "on-add_recurrence.py"
+tw_remove_hook "on-modify_recurrence.py"
+tw_remove_hook "on-exit_recurrence.py"
 ```
 
-**Notes:**
-- Only removes symlinks, not regular files
-- Warns if file exists but is not a symlink
+**Behavior:**
+- Only removes symlinks (safety check)
+- Warns if file exists but isn't a symlink
+- Returns success if symlink doesn't exist
+
+**Complete Uninstall Example:**
+```bash
+uninstall() {
+    # Remove all hooks
+    tw_remove_hook "on-add_recurrence.py"
+    tw_remove_hook "on-modify_recurrence.py"
+    tw_remove_hook "on-exit_recurrence.py"
+    
+    # Remove configuration
+    tw_remove_config "uda.recur_type"
+    
+    # Remove project directory
+    rm -rf "${HOOKS_DIR}/recurrence"
+}
+```
+
+---
+
+### Wrapper Management
+
+Functions for managing wrapper scripts and utilities in the scripts directory.
+
+#### tw_symlink_wrapper
+Create symlink for a wrapper/utility script.
+
+**Syntax:**
+```bash
+tw_symlink_wrapper PROJECT_DIR SCRIPT_FILE [LINK_NAME]
+```
+
+**Parameters:**
+- `PROJECT_DIR` - Full path to project directory (e.g., `${SCRIPTS_DIR}/nicedates`)
+- `SCRIPT_FILE` - Script filename in project (e.g., `nicedates.py`)
+- `LINK_NAME` - (Optional) Name for symlink (default: basename of SCRIPT_FILE)
+
+**Returns:**
+- 0 on success
+- 1 on failure
+
+**Example:**
+```bash
+# Install nicedates wrapper
+local project_dir="${SCRIPTS_DIR}/nicedates"
+tw_symlink_wrapper "$project_dir" "nicedates.py" "nicedates"
+
+# Creates:
+# ~/.task/scripts/nicedates -> ~/.task/scripts/nicedates/nicedates.py
+
+# Install with automatic link name (removes .py extension)
+tw_symlink_wrapper "$project_dir" "nicedates.py"
+# Creates: ~/.task/scripts/nicedates.py -> ~/.task/scripts/nicedates/nicedates.py
+```
+
+**Behavior:**
+- Verifies source file exists
+- Makes source executable (`chmod +x`)
+- Removes existing symlink/file if present
+- Creates symlink in `$SCRIPTS_DIR` root
+
+**Complete Example:**
+```bash
+install() {
+    local short_name="nicedates"
+    
+    # Clone wrapper project
+    tw_clone_to_project wrapper "$short_name" "$REPO_URL" || return 1
+    
+    local project_dir="${SCRIPTS_DIR}/${short_name}"
+    
+    # Create wrapper symlink
+    tw_symlink_wrapper "$project_dir" "nicedates.py" "nicedates" || return 1
+    
+    # Inform user about PATH
+    if [[ ":$PATH:" != *":${SCRIPTS_DIR}:"* ]]; then
+        tw_info "Add to your ~/.bashrc:"
+        tw_info "  export PATH=\"\$HOME/.task/scripts:\$PATH\""
+    fi
+}
+```
+
+---
+
+#### tw_remove_wrapper
+Remove wrapper symlink from scripts directory.
+
+**Syntax:**
+```bash
+tw_remove_wrapper LINK_NAME
+```
+
+**Parameters:**
+- `LINK_NAME` - Wrapper name to remove (e.g., `nicedates`)
+
+**Returns:**
+- 0 on success
+- 1 on failure or if not a symlink
+
+**Example:**
+```bash
+# Remove wrapper symlink
+tw_remove_wrapper "nicedates"
+# Removes: ~/.task/scripts/nicedates
+
+# Multiple wrappers
+tw_remove_wrapper "nicedates"
+tw_remove_wrapper "cmx"
+```
+
+**Behavior:**
+- Only removes symlinks (safety check)
+- Warns if file exists but isn't a symlink
+- Returns success if symlink doesn't exist
+
+**Complete Uninstall Example:**
+```bash
+uninstall() {
+    # Remove wrapper symlink
+    tw_remove_wrapper "nicedates"
+    
+    # Remove configuration
+    tw_remove_config "wrapper.nicedates"
+    
+    # Remove project directory
+    rm -rf "${SCRIPTS_DIR}/nicedates"
+}
+```
+
+---
 
 ### Configuration Management
 
 #### tw_add_config
-Add configuration line to taskrc.
+Add configuration line to .taskrc.
 
 **Syntax:**
 ```bash
-tw_add_config "KEY=VALUE"
+tw_add_config CONFIG_LINE
 ```
 
 **Parameters:**
-- `KEY=VALUE` - Configuration line in taskrc format
+- `CONFIG_LINE` - Configuration line to add (key=value format)
 
 **Returns:**
-- `0` - Configuration added
-- `1` - Operation failed
+- 0 on success
+- 1 on failure
 
 **Example:**
 ```bash
-tw_add_config "uda.myapp.type=string"
-tw_add_config "uda.myapp.label=My App"
-tw_add_config "urgency.uda.myapp.coefficient=5.0"
+# Add UDA definition
+tw_add_config "uda.recur_type.type=string"
+tw_add_config "uda.recur_type.label=Recurrence Type"
+tw_add_config "uda.recur_type.values=chained,periodic"
+
+# Add custom report
+tw_add_config "report.recurring.description=Recurring tasks"
+tw_add_config "report.recurring.columns=id,description,recur"
+tw_add_config "report.recurring.filter=+TEMPLATE"
+
+# Add color scheme
+tw_add_config "color.active=bold white on red"
 ```
 
-**Notes:**
-- Skips if key already exists (idempotent)
-- Creates taskrc if it doesn't exist
-- Appends to end of file
+**Behavior:**
+- Checks if configuration already exists (idempotent)
+- Appends to user's .taskrc if not present
+- Creates .taskrc if it doesn't exist
+- Preserves existing configuration
 
-#### tw_remove_config
-Remove configuration lines from taskrc.
-
-**Syntax:**
-```bash
-tw_remove_config "KEY_PREFIX"
-```
-
-**Parameters:**
-- `KEY_PREFIX` - Prefix of configuration keys to remove
-
-**Returns:**
-- `0` - Configuration removed
-- `1` - Operation failed
-
-**Example:**
-```bash
-# Remove all UDA config
-tw_remove_config "uda.myapp"
-
-# Remove specific config
-tw_remove_config "uda.myapp.type"
-```
-
-**Notes:**
-- Removes all lines starting with prefix
-- Creates backup before modification
-- Restores backup on failure
+---
 
 #### tw_config_exists
-Check if configuration key exists in taskrc.
+Check if configuration exists in .taskrc.
 
 **Syntax:**
 ```bash
-tw_config_exists "KEY"
+tw_config_exists CONFIG_KEY
 ```
 
 **Parameters:**
-- `KEY` - Configuration key to check
+- `CONFIG_KEY` - Configuration key to check
 
 **Returns:**
-- `0` - Key exists
-- `1` - Key doesn't exist or taskrc not found
+- 0 if configuration exists
+- 1 if not found
 
 **Example:**
 ```bash
-if tw_config_exists "uda.myapp.type"; then
-    echo "Already configured"
+if tw_config_exists "uda.recur_type.type"; then
+    tw_info "Configuration already exists"
+else
+    tw_add_config "uda.recur_type.type=string"
 fi
 ```
+
+---
+
+#### tw_remove_config
+Remove configuration from .taskrc.
+
+**Syntax:**
+```bash
+tw_remove_config CONFIG_PREFIX
+```
+
+**Parameters:**
+- `CONFIG_PREFIX` - Configuration prefix to remove (e.g., `uda.recur_type`)
+
+**Returns:**
+- 0 on success
+
+**Example:**
+```bash
+# Remove all uda.recur_type.* lines
+tw_remove_config "uda.recur_type"
+
+# Remove custom report
+tw_remove_config "report.recurring"
+
+# Remove color configuration
+tw_remove_config "color.active"
+```
+
+**Behavior:**
+- Removes all lines matching the prefix
+- Safe to call even if configuration doesn't exist
+- Uses sed for atomic operation
+
+**Complete Example:**
+```bash
+uninstall() {
+    # Remove all related configuration
+    tw_remove_config "uda.recur_type"
+    tw_remove_config "uda.recur_template"
+    tw_remove_config "uda.recur_instance"
+    tw_remove_config "report.recurring"
+}
+```
+
+---
 
 ### Testing Utilities
 
 #### tw_test_hook
-Test if hook exists and is executable.
+Test if hook is installed and executable.
 
 **Syntax:**
 ```bash
-tw_test_hook "HOOK_NAME"
+tw_test_hook HOOK_FILE
 ```
 
 **Parameters:**
-- `HOOK_NAME` - Name of hook to test
+- `HOOK_FILE` - Hook filename to test
 
 **Returns:**
-- `0` - Hook exists and is executable
-- `1` - Hook missing or not executable
-
-**Example:**
-```bash
-tw_test_hook "on-add-test.py" || return 1
-```
-
-#### tw_test_config
-Test if configuration value matches expected value.
-
-**Syntax:**
-```bash
-tw_test_config "KEY" "EXPECTED_VALUE"
-```
-
-**Parameters:**
-- `KEY` - Configuration key
-- `EXPECTED_VALUE` - Expected value
-
-**Returns:**
-- `0` - Value matches
-- `1` - Value doesn't match or key not found
-
-**Example:**
-```bash
-tw_test_config "uda.myapp.type" "string" || return 1
-```
-
-#### tw_test_cmd
-Run a task command and check for success.
-
-**Syntax:**
-```bash
-tw_test_cmd "COMMAND"
-```
-
-**Parameters:**
-- `COMMAND` - Full command to execute
-
-**Returns:**
-- `0` - Command succeeded
-- `1` - Command failed
-
-**Example:**
-```bash
-tw_test_cmd "task add test task" || return 1
-```
-
-**Notes:**
-- Suppresses output (both stdout and stderr)
-- Use for testing functionality, not output
-
-#### tw_test_cleanup
-Clean up test data from Taskwarrior.
-
-**Syntax:**
-```bash
-tw_test_cleanup
-```
-
-**Returns:**
-- `0` - Always succeeds
-
-**Example:**
-```bash
-# After running tests
-tw_test_cleanup
-```
-
-**Notes:**
-- Removes tasks with "test" or "TEST" in description
-- Safe to call even if no test data exists
-
-#### tw_test_setup
-Setup test environment and verify it's safe to test.
-
-**Syntax:**
-```bash
-tw_test_setup
-```
-
-**Returns:**
-- `0` - Safe to proceed with testing
-- `1` - User aborted or unsafe
+- 0 if hook exists and is executable
+- 1 if hook missing or not executable
 
 **Example:**
 ```bash
 test() {
-    tw_test_setup || return 1
-    
-    # Run tests...
-    
-    tw_test_cleanup
+    tw_test_hook "on-add_recurrence.py" || return 1
+    tw_test_hook "on-modify_recurrence.py" || return 1
+    tw_test_hook "on-exit_recurrence.py" || return 1
+    echo "All hooks installed correctly"
 }
 ```
 
-**Notes:**
-- Checks for `TW_TEST_ENV=1` environment variable
-- Prompts user if testing with production data
+---
 
-### Wrapper Management
-
-#### tw_add_to_wrapper_stack
-Add application to wrapper stack in tw.config.
+#### tw_test_config
+Test if configuration has expected value.
 
 **Syntax:**
 ```bash
-tw_add_to_wrapper_stack "APP_NAME"
+tw_test_config CONFIG_KEY EXPECTED_VALUE
 ```
 
 **Parameters:**
-- `APP_NAME` - Name of wrapper application
+- `CONFIG_KEY` - Configuration key to test
+- `EXPECTED_VALUE` - Expected value
 
 **Returns:**
-- `0` - Added to stack (or already present)
-- `1` - Operation failed
+- 0 if value matches
+- 1 if value doesn't match or key not found
 
 **Example:**
 ```bash
-tw_add_to_wrapper_stack "nicedates"
+test() {
+    tw_test_config "uda.recur_type.type" "string" || return 1
+    tw_test_config "uda.recur_type.values" "chained,periodic" || return 1
+    echo "Configuration correct"
+}
 ```
 
-**Notes:**
-- Currently displays manual instructions
-- Full implementation pending proper INI parsing
+---
+
+#### tw_test_cmd
+Test if task command executes successfully.
+
+**Syntax:**
+```bash
+tw_test_cmd ARGS...
+```
+
+**Parameters:**
+- `ARGS...` - Arguments to pass to task command
+
+**Returns:**
+- 0 if command succeeds
+- 1 if command fails
+
+**Example:**
+```bash
+test() {
+    # Test that task can list
+    tw_test_cmd list || return 1
+    
+    # Test custom report
+    tw_test_cmd recurring || return 1
+}
+```
+
+---
 
 ### File Operations
 
@@ -508,81 +887,63 @@ Create timestamped backup of a file.
 
 **Syntax:**
 ```bash
-tw_backup_file "FILE_PATH"
+tw_backup_file FILE
 ```
 
 **Parameters:**
-- `FILE_PATH` - File to backup
+- `FILE` - File to backup
 
 **Returns:**
-- `0` - Backup created
-- `1` - Backup failed
+- 0 on success
+- 1 on failure
 
 **Example:**
 ```bash
-tw_backup_file "$TASKRC" || return 1
+# Backup .taskrc before modifying
+tw_backup_file "$TASKRC"
+# Creates: ~/.taskrc.backup.20260121-143022
+
+# Backup hook before replacing
+tw_backup_file "${HOOKS_DIR}/on-add-test.py"
 ```
 
-**Notes:**
-- Backup filename: `<original>.bak.YYYYMMDD-HHMMSS`
-- No-op if file doesn't exist
+**Behavior:**
+- Creates backup with timestamp: `FILE.backup.YYYYMMDD-HHMMSS`
+- Only backs up if file exists
+- Preserves original file permissions
 
 ---
 
 ## Python Library (tw-wrapper.py)
 
-Library for creating wrapper applications that integrate with tw.py's wrapper chain.
+Library for building wrapper applications in Python.
 
-**Import in your wrapper:**
+**Include in your script:**
 ```python
 from tw_wrapper import TaskWrapper, main
 ```
 
 ### TaskWrapper Class
 
-Base class for wrapper applications.
+Base class for creating Taskwarrior wrappers.
 
-#### Constructor
-
+**Basic Structure:**
 ```python
-def __init__(self)
-```
+from tw_wrapper import TaskWrapper, main
 
-**Attributes:**
-- `self.debug` - Debug mode flag (from `TW_DEBUG` environment variable)
-- `self.next_wrapper` - Next wrapper/task in chain (from `TW_NEXT_WRAPPER`)
-
-**Example:**
-```python
 class MyWrapper(TaskWrapper):
-    def __init__(self):
-        super().__init__()
-        # Your initialization
+    def process_args(self, args):
+        # Modify arguments before passing to task
+        return modified_args
+
+if __name__ == '__main__':
+    main(MyWrapper)
 ```
 
-#### debug_print
+**Methods:**
 
-```python
-def debug_print(self, msg: str) -> None
-```
-
-Print debug message if debug mode is enabled.
-
-**Parameters:**
-- `msg` - Debug message
-
-**Example:**
-```python
-self.debug_print("Processing arguments")
-```
-
-#### process_args
-
-```python
-def process_args(self, args: List[str]) -> List[str]
-```
-
-Process and modify arguments. **Override this method** in your wrapper.
+#### process_args(args)
+Override to modify arguments before passing to task.
 
 **Parameters:**
 - `args` - List of command-line arguments
@@ -593,191 +954,126 @@ Process and modify arguments. **Override this method** in your wrapper.
 **Example:**
 ```python
 def process_args(self, args):
-    # Replace date shortcuts
-    return [arg.replace('tom', 'tomorrow') for arg in args]
+    # Convert natural language dates
+    modified = []
+    for arg in args:
+        if arg.startswith('due:'):
+            date_str = arg[4:]
+            parsed = parse_natural_date(date_str)
+            modified.append(f'due:{parsed}')
+        else:
+            modified.append(arg)
+    return modified
 ```
 
-#### should_bypass
+---
 
-```python
-def should_bypass(self, args: List[str]) -> bool
-```
-
-Check if wrapper should be bypassed for this command.
-
-**Parameters:**
-- `args` - Command-line arguments
+#### should_bypass()
+Override to determine if wrapper should bypass processing.
 
 **Returns:**
-- `True` if wrapper should be bypassed
+- True to bypass (pass directly to task)
+- False to process normally
 
 **Example:**
 ```python
-def should_bypass(self, args):
-    # Bypass for help/version
-    if args and args[0] in ('--help', '--version'):
+def should_bypass(self):
+    # Bypass for version and help
+    if '--version' in self.args or '--help' in self.args:
         return True
     return False
 ```
 
-**Default behavior:**
-- Bypasses for `--help`, `-h`, `--version`, `-V`
+---
 
-#### execute
-
-```python
-def execute(self, args: List[str]) -> int
-```
-
-Execute next wrapper/task in chain.
+#### execute(args)
+Execute task command with modified arguments.
 
 **Parameters:**
-- `args` - Arguments to pass
+- `args` - Arguments to pass to task
 
 **Returns:**
-- Exit code from executed command
+- Exit code from task
 
 **Example:**
 ```python
-# Usually called automatically, but can be used manually:
-return self.execute(modified_args)
+# Usually called automatically, but can override
+def execute(self, args):
+    # Add custom logging
+    log_command(args)
+    return super().execute(args)
 ```
 
-#### run
-
-```python
-def run(self, args: List[str]) -> int
-```
-
-Main entry point. Usually not overridden.
-
-**Parameters:**
-- `args` - Command-line arguments
-
-**Returns:**
-- Exit code
-
-**Flow:**
-1. Check if should bypass
-2. Call `process_args()`
-3. Execute next in chain
-4. Return exit code
+---
 
 ### Python Utility Functions
 
-#### expand_date_shortcuts
-
-```python
-def expand_date_shortcuts(args: List[str], shortcuts: dict) -> List[str]
-```
-
-Expand date shortcuts in arguments.
-
-**Parameters:**
-- `args` - Argument list
-- `shortcuts` - Dictionary mapping shortcuts to expansions
-
-**Returns:**
-- Arguments with shortcuts expanded
+#### expand_date_shortcuts(text)
+Expand date shortcuts like "tomorrow", "nextweek".
 
 **Example:**
 ```python
-shortcuts = {
-    'tom': 'tomorrow',
-    'eow': 'eow',
-    'eom': 'eom'
-}
-args = expand_date_shortcuts(args, shortcuts)
+from tw_wrapper import expand_date_shortcuts
+
+date = expand_date_shortcuts("tomorrow")
+# Returns: "2026-01-22" (if today is 2026-01-21)
 ```
 
-#### inject_context
+---
 
-```python
-def inject_context(args: List[str], context: str) -> List[str]
-```
-
-Inject context into arguments.
-
-**Parameters:**
-- `args` - Argument list
-- `context` - Context name
-
-**Returns:**
-- Arguments with context injected
+#### inject_context(args, context)
+Inject context into filter arguments.
 
 **Example:**
 ```python
-args = inject_context(args, 'work')
-# Result: ['rc.context=work', 'list']
+from tw_wrapper import inject_context
+
+args = inject_context(['list'], '@work')
+# Returns: ['list', '+work']
 ```
 
-#### add_default_tags
-
-```python
-def add_default_tags(args: List[str], tags: List[str]) -> List[str]
-```
-
-Add default tags to 'add' commands.
-
-**Parameters:**
-- `args` - Argument list
-- `tags` - List of tag names (without `+`)
-
-**Returns:**
-- Arguments with tags added
-
-**Example:**
-```python
-args = add_default_tags(args, ['urgent', 'work'])
-# For 'add' command, adds +urgent +work
-```
+---
 
 ### Example Wrappers
 
-#### DateParsingWrapper
-
-Demonstrates date shortcut expansion.
-
+#### Date Parsing Wrapper
 ```python
-from tw_wrapper import TaskWrapper, expand_date_shortcuts, main
+from tw_wrapper import TaskWrapper, main
+from dateutil.parser import parse
 
 class DateParsingWrapper(TaskWrapper):
-    def __init__(self):
-        super().__init__()
-        self.date_shortcuts = {
-            'tom': 'tomorrow',
-            'tod': 'today',
-            'eow': 'eow',
-        }
-    
     def process_args(self, args):
-        return expand_date_shortcuts(args, self.date_shortcuts)
+        modified = []
+        for arg in args:
+            if ':' in arg:
+                key, value = arg.split(':', 1)
+                if key in ['due', 'scheduled', 'wait', 'until']:
+                    try:
+                        parsed = parse(value)
+                        modified.append(f'{key}:{parsed.strftime("%Y-%m-%d")}')
+                        continue
+                    except:
+                        pass
+            modified.append(arg)
+        return modified
 
 if __name__ == '__main__':
     main(DateParsingWrapper)
 ```
 
-#### ContextWrapper
+---
 
-Demonstrates automatic context setting.
-
+#### Context Wrapper
 ```python
-from tw_wrapper import TaskWrapper, inject_context, main
+from tw_wrapper import TaskWrapper, main
+import os
 
 class ContextWrapper(TaskWrapper):
-    def __init__(self):
-        super().__init__()
-        self.project_contexts = {
-            'work': 'work',
-            'home': 'personal',
-        }
-    
     def process_args(self, args):
-        for arg in args:
-            if arg.startswith('project:'):
-                project = arg.split(':', 1)[1]
-                if project in self.project_contexts:
-                    return inject_context(args, self.project_contexts[project])
+        context = os.environ.get('TASK_CONTEXT')
+        if context and args:
+            # Inject context as filter
+            args.insert(0, f'+{context}')
         return args
 
 if __name__ == '__main__':
@@ -786,82 +1082,90 @@ if __name__ == '__main__':
 
 ---
 
-## Usage Patterns
+## Best Practices
 
-### Installer Script Template
+### For Bash Installers
 
-```bash
-#!/bin/bash
-source "$(dirname "$0")/../lib/tw-common.sh"
-
-install() {
-    tw_check_python_version 3.6 || return 1
-    tw_clone_or_update "$REPO_URL" "$INSTALL_DIR/myapp" || return 1
-    tw_symlink_hook "$INSTALL_DIR/myapp/on-add.py" || return 1
-    tw_add_config "uda.myapp.type=string"
-    tw_success "Installed myapp"
-    return 0
-}
-
-uninstall() {
-    tw_remove_hook "on-add.py"
-    tw_remove_config "uda.myapp"
-    rm -rf "$INSTALL_DIR/myapp"
-    tw_success "Uninstalled myapp"
-    return 0
-}
-```
-
-### Wrapper Script Template
-
-```python
-#!/usr/bin/env python3
-from tw_wrapper import TaskWrapper, main
-
-class MyWrapper(TaskWrapper):
-    def process_args(self, args):
-        # Your processing logic
-        return args
-
-if __name__ == '__main__':
-    main(MyWrapper)
-```
-
----
-
-## Error Handling Best Practices
-
-1. **Always check return codes:**
-   ```bash
-   tw_check_python_version 3.6 || return 1
-   ```
-
-2. **Provide helpful error messages:**
-   ```bash
-   tw_check_command jq "Install with: sudo apt install jq" || return 1
-   ```
-
-3. **Clean up on failure:**
+1. **Always check dependencies first**
    ```bash
    install() {
-       tw_clone_or_update "$REPO" "$DIR" || {
-           tw_error "Clone failed"
-           cleanup_partial_install
-           return 1
-       }
+       tw_check_python_version 3.6 || return 1
+       tw_check_taskwarrior_version 2.6.2 || return 1
+       # ... rest of install
    }
    ```
 
-4. **Use debug output:**
+2. **Use SHORT_NAME consistently**
    ```bash
-   tw_debug "Processing hook: $hook_name"
+   APPNAME="tw-recurrence"
+   SHORT_NAME="recurrence"
+   
+   tw_clone_to_project hook "$SHORT_NAME" "$REPO_URL"
+   local project_dir="${HOOKS_DIR}/${SHORT_NAME}"
+   ```
+
+3. **Clean up completely in uninstall()**
+   ```bash
+   uninstall() {
+       tw_remove_hook "on-add-*.py"
+       tw_remove_config "uda.myapp"
+       rm -rf "${HOOKS_DIR}/${SHORT_NAME}"
+   }
+   ```
+
+4. **Provide helpful success messages**
+   ```bash
+   echo "✓ Installed ${APPNAME}"
+   echo "  Hooks: ${HOOKS_DIR}/"
+   echo "  Files: ${project_dir}"
+   echo "  Logs: ${LOGS_DIR}/${SHORT_NAME}/"
+   ```
+
+### For Python Wrappers
+
+1. **Support TW_NEXT_WRAPPER for chaining**
+   ```python
+   next_wrapper = os.environ.get('TW_NEXT_WRAPPER')
+   if next_wrapper:
+       os.execv(next_wrapper, [next_wrapper] + args)
+   ```
+
+2. **Keep wrappers fast**
+   - Users notice slow wrappers
+   - Cache when possible
+   - Avoid expensive operations
+
+3. **Handle errors gracefully**
+   ```python
+   try:
+       result = parse_date(value)
+   except ValueError:
+       # Pass through unparsed
+       result = value
    ```
 
 ---
 
-## Version Information
+## Version History
 
-- `tw-common.sh` version: 1.0.0
-- `tw-wrapper.py` version: 1.0.0
+**v1.3.0** (January 2026)
+- Added `SCRIPTS_DIR`, `CONFIG_DIR`, `LOGS_DIR` environment variables
+- Added `tw_get_install_dir()` and `tw_clone_to_project()` functions
+- Updated `tw_symlink_hook()` to take two parameters
+- Added `tw_symlink_wrapper()` and `tw_remove_wrapper()` functions
+- Updated all examples to use new directory structure
 
-For issues or questions, see DEVELOPERS.md or open an issue on GitHub.
+**v1.0.0** (December 2024)
+- Initial release
+- Core hook management functions
+- Configuration management
+- Testing utilities
+
+---
+
+## See Also
+
+- [DEVELOPERS.md](../DEVELOPERS.md) - Architecture and design patterns
+- [CONTRIBUTING.md](../CONTRIBUTING.md) - Contribution guidelines
+- [dev/models/](../dev/models/) - Template files and examples
+- [README.md](../README.md) - User documentation

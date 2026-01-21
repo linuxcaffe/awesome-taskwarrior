@@ -2,7 +2,7 @@
 """
 tw.py - Universal wrapper and package manager for Taskwarrior extensions
 
-Version: 1.2.1
+Version: 1.3.0
 Author: awesome-taskwarrior project
 License: MIT
 """
@@ -15,7 +15,7 @@ from datetime import datetime
 from typing import List, Dict, Optional
 import configparser
 
-VERSION = "1.2.1"
+VERSION = "1.3.0"
 DEBUG = os.environ.get('TW_DEBUG', '0') == '1'
 
 
@@ -68,6 +68,7 @@ class Config:
         
     def _find_config(self) -> Optional[Path]:
         search_paths = [
+            Path.home() / '.task' / 'config' / 'tw.config',
             Path.home() / '.task' / 'tw.config',
             Path(__file__).resolve().parent / 'tw.config',
             Path('/etc/tw.config'),
@@ -105,29 +106,53 @@ class PathManager:
     def __init__(self, config: Config):
         self.config = config
         
+        # Base installation root
         self.install_root = Path(
             config.get('paths', 'install_root', str(Path.home() / '.task'))
         ).expanduser()
         
+        # Subdirectories for different types
         self.hooks_dir = Path(
             config.get('paths', 'hooks_dir', str(self.install_root / 'hooks'))
+        ).expanduser()
+        
+        self.scripts_dir = Path(
+            config.get('paths', 'scripts_dir', str(self.install_root / 'scripts'))
+        ).expanduser()
+        
+        self.config_dir = Path(
+            config.get('paths', 'config_dir', str(self.install_root / 'config'))
+        ).expanduser()
+        
+        self.logs_dir = Path(
+            config.get('paths', 'logs_dir', str(self.install_root / 'logs'))
         ).expanduser()
         
         self.taskrc = Path(
             config.get('paths', 'taskrc', str(Path.home() / '.taskrc'))
         ).expanduser()
         
+        # Registry and installers are relative to tw.py location (resolve symlinks)
         tw_dir = Path(__file__).resolve().parent
         self.registry_dir = tw_dir / 'registry.d'
         self.installers_dir = tw_dir / 'installers'
         self.manifest_file = tw_dir / 'installed' / '.manifest'
         self.lib_dir = tw_dir / 'lib'
         
+        # Ensure critical directories exist
         self.install_root.mkdir(parents=True, exist_ok=True)
         self.hooks_dir.mkdir(parents=True, exist_ok=True)
+        self.scripts_dir.mkdir(parents=True, exist_ok=True)
+        self.config_dir.mkdir(parents=True, exist_ok=True)
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
         self.manifest_file.parent.mkdir(parents=True, exist_ok=True)
         
-        debug_print(f"Paths initialized: install_root={self.install_root}")
+        debug_print(f"Paths initialized:")
+        debug_print(f"  install_root={self.install_root}")
+        debug_print(f"  hooks_dir={self.hooks_dir}")
+        debug_print(f"  scripts_dir={self.scripts_dir}")
+        debug_print(f"  config_dir={self.config_dir}")
+        debug_print(f"  logs_dir={self.logs_dir}")
 
 
 class TaskBinary:
@@ -317,14 +342,30 @@ class Installer:
             print(f"  Repository: {app.get('repo', 'unknown')}")
             print(f"  Version: {app.get('version', 'unknown')}")
             print(f"  Type: {app.get('type', 'unknown')}")
+            
+            # Show where it would be installed
+            app_type = app.get('type', 'unknown')
+            short_name = app.get('short_name', name.replace('tw-', ''))
+            if app_type == 'hook':
+                install_path = self.paths.hooks_dir / short_name
+            elif app_type in ['wrapper', 'utility']:
+                install_path = self.paths.scripts_dir / short_name
+            else:
+                install_path = self.paths.install_root / short_name
+            
+            print(f"  Would clone to: {install_path}")
+            
             if 'provides' in app:
                 print(f"  Provides: {app['provides']}")
             if 'requires' in app:
                 print(f"  Requires: {app['requires']}")
             print(f"  Installer: {app['install_script']}")
-            print(f"  Would clone to: {self.paths.install_root / name}")
-            if app.get('type') == 'hook':
-                print(f"  Would create hooks in: {self.paths.hooks_dir}")
+            
+            if app_type == 'hook':
+                print(f"  Would create hook symlinks in: {self.paths.hooks_dir}")
+            elif app_type in ['wrapper', 'utility']:
+                print(f"  Would create script symlinks in: {self.paths.scripts_dir}")
+            
             print(f"  Would add to manifest")
             success(f"[DRY RUN] Installation preview complete")
             return True
@@ -425,6 +466,9 @@ class Installer:
         env = os.environ.copy()
         env['INSTALL_DIR'] = str(self.paths.install_root)
         env['HOOKS_DIR'] = str(self.paths.hooks_dir)
+        env['SCRIPTS_DIR'] = str(self.paths.scripts_dir)
+        env['CONFIG_DIR'] = str(self.paths.config_dir)
+        env['LOGS_DIR'] = str(self.paths.logs_dir)
         env['TASKRC'] = str(self.paths.taskrc)
         env['TW_DEBUG'] = '1' if DEBUG else '0'
         
@@ -484,8 +528,8 @@ class AppLister:
             
             print()
         
-        print("Use 'tw --info <n>' for details")
-        print("Use 'tw --install <n>' to install\n")
+        print("Use 'tw --info <name>' for details")
+        print("Use 'tw --install <name>' to install\n")
     
     def list_installed(self) -> None:
         installed = self.manifest.load()
@@ -572,6 +616,9 @@ class AppLister:
             print(colorize(f"Installed:   Yes (v{installed[name]['version']})", Colors.GREEN))
         else:
             print(f"Installed:   No")
+        
+        if 'short_name' in app:
+            print(f"Short name:  {app['short_name']}")
         
         print(f"Author:      {app.get('author', 'unknown')}")
         print(f"Repository:  {app.get('repo', 'unknown')}")
@@ -834,6 +881,12 @@ OPTIONS:
 COMPLETION:
     Add to ~/.bashrc:       eval "$(tw --get-completion)"
     Then use tab completion with tw commands and app names
+
+DIRECTORY STRUCTURE:
+    ~/.task/hooks/          Hook projects and symlinks
+    ~/.task/scripts/        Wrapper projects and symlinks
+    ~/.task/config/         Configuration files
+    ~/.task/logs/           Debug and test logs
 
 EXAMPLES:
     tw --list

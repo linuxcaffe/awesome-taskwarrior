@@ -10,7 +10,13 @@
 # 5. Test with: tw --info yourapp
 
 # REQUIRED: Unique identifier (no spaces, lowercase with hyphens)
+# EXAMPLE: tw-nicedates, tw-filter
 name=<YOURAPP-NAME>
+
+# REQUIRED: Short name for directory installation (no 'tw-' prefix)
+# EXAMPLE: nicedates, filter, cmx
+# NOTE: Used for ~/.task/scripts/<short_name>/
+short_name=<SHORT-NAME>
 
 # REQUIRED: One-line description for list view (max 80 chars)
 short_desc=<Brief description of what this wrapper does>
