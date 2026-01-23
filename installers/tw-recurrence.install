@@ -1,217 +1,273 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
-# tw-recurrence.install
+# tw-recurrence.install - Installer for tw-recurrence enhanced recurrence system
+# Version: 2.0.0
+# Repository: https://github.com/linuxcaffe/tw-recurrence_overhaul-hook
 #
-# Real-world example: Installer for advanced recurrence system
-# Demonstrates complex hook installation with multiple files and UDAs
+# This is a real-world example of a v2.0.0 self-contained installer.
+# It demonstrates:
+# - Multiple hook files with symlink (on-add → on-modify)
+# - Config file installation
+# - README renaming
+# - Complete standalone operation
 
-APPNAME="tw-recurrence"
-REPO_URL="https://github.com/linuxcaffe/tw-recurrence_overhaul-hook"
-HOOK_DIR_NAME="recurrence"
+set -euo pipefail
 
-# Source common library
-source "$(dirname "$0")/../lib/tw-common.sh"
+#=============================================================================
+# CONFIGURATION
+#=============================================================================
+
+APP_NAME="tw-recurrence"
+APP_VERSION="2.0.0"
+BASE_URL="https://raw.githubusercontent.com/linuxcaffe/tw-recurrence_overhaul-hook/main"
+
+#=============================================================================
+# OPTIONAL HELPER SOURCING
+#=============================================================================
+
+if [[ -f ~/.task/lib/tw-common.sh ]]; then
+    source ~/.task/lib/tw-common.sh
+else
+    # Fallback: Define minimal messaging functions
+    tw_msg() { echo "[INFO] $*"; }
+    tw_success() { echo "[SUCCESS] $*"; }
+    tw_warn() { echo "[WARNING] $*" >&2; }
+    tw_error() { echo "[ERROR] $*" >&2; }
+    tw_die() { tw_error "$@"; exit 1; }
+fi
+
+#=============================================================================
+# ENVIRONMENT DETECTION
+#=============================================================================
+
+: ${HOOKS_DIR:=~/.task/hooks}
+: ${CONFIG_DIR:=~/.task/config}
+: ${DOCS_DIR:=~/.task/docs}
+: ${TASKRC:=~/.taskrc}
+
+#=============================================================================
+# HELPER FUNCTIONS
+#=============================================================================
+
+check_requirements() {
+    tw_msg "Checking requirements..."
+    
+    if ! command -v curl &>/dev/null; then
+        tw_die "curl is required but not found"
+    fi
+    
+    if ! command -v task &>/dev/null; then
+        tw_die "Taskwarrior is required but not found"
+    fi
+    
+    if ! command -v python3 &>/dev/null; then
+        tw_die "Python 3 is required but not found"
+    fi
+    
+    # Use version checkers if available
+    if type tw_check_taskwarrior_version &>/dev/null; then
+        tw_check_taskwarrior_version "2.6.2" || return 1
+    fi
+    
+    if type tw_check_python_version &>/dev/null; then
+        tw_check_python_version "3.6" || return 1
+    fi
+    
+    tw_success "Requirements met"
+    return 0
+}
+
+download_file() {
+    local filename="$1"
+    local url="${BASE_URL}/${filename}"
+    local target_path="$2"
+    
+    # Use helper if available
+    if type tw_curl_and_place &>/dev/null; then
+        local target_dir=$(dirname "$target_path")
+        local target_name=$(basename "$target_path")
+        tw_curl_and_place "$url" "$target_dir" "$target_name" || return 1
+    else
+        local tmp_file
+        tmp_file=$(mktemp) || {
+            tw_error "Failed to create temporary file"
+            return 1
+        }
+        
+        if ! curl -fsSL "$url" -o "$tmp_file"; then
+            tw_error "Failed to download: $url"
+            rm -f "$tmp_file"
+            return 1
+        fi
+        
+        if ! mv "$tmp_file" "$target_path"; then
+            tw_error "Failed to move file to: $target_path"
+            rm -f "$tmp_file"
+            return 1
+        fi
+        
+        tw_success "Downloaded: $(basename "$target_path")"
+    fi
+    
+    return 0
+}
+
+#=============================================================================
+# INSTALL FUNCTION
+#=============================================================================
 
 install() {
-    echo "Installing ${APPNAME}..."
+    tw_msg "Installing $APP_NAME v$APP_VERSION..."
     
-    # Check Python version (required for date handling)
-    tw_check_python_version 3.6 || {
-        echo "Error: Python 3.6+ required for date parsing"
-        return 1
-    }
+    # Check requirements
+    check_requirements || return 1
     
-    # Check Taskwarrior version
-    tw_check_taskwarrior_version 2.6.2 || return 1
+    # Create directories
+    mkdir -p "$HOOKS_DIR" "$CONFIG_DIR" "$DOCS_DIR"
     
-    # Clone repository to hooks subdirectory
-    local target_dir="${HOOKS_DIR}/${HOOK_DIR_NAME}"
-    tw_clone_or_update "$REPO_URL" "$target_dir" || return 1
+    # Download hook files
+    tw_msg "Downloading hook files..."
+    download_file "on-add_recurrence.py" "$HOOKS_DIR/on-add_recurrence.py" || return 1
+    download_file "on-modify_recurrence.py" "$HOOKS_DIR/on-modify_recurrence.py" || return 1
+    download_file "on-exit_recurrence.py" "$HOOKS_DIR/on-exit_recurrence.py" || return 1
     
-    # Create symlinks for all three hooks
-    tw_symlink_hook "${target_dir}/on-add_recurrence.py" || return 1
-    tw_symlink_hook "${target_dir}/on-modify_recurrence.py" || return 1
-    tw_symlink_hook "${target_dir}/on-exit_recurrence.py" || return 1
+    # Note: on-add and on-modify are the same file in the repo,
+    # so we create a symlink after downloading on-modify
+    tw_msg "Creating symlink: on-add_recurrence.py -> on-modify_recurrence.py"
+    ln -sf "on-modify_recurrence.py" "$HOOKS_DIR/on-add_recurrence.py"
     
-    # Add UDAs for recurrence management
-    echo "Adding recurrence UDAs to taskrc..."
+    # Make hooks executable
+    chmod +x "$HOOKS_DIR/on-modify_recurrence.py"
+    chmod +x "$HOOKS_DIR/on-exit_recurrence.py"
     
-    # Template identification
-    tw_add_config "uda.recur_template.type=string"
-    tw_add_config "uda.recur_template.label=Recurrence Template"
+    # Download config file
+    tw_msg "Downloading configuration..."
+    download_file "recurrence.rc" "$CONFIG_DIR/recurrence.rc" || return 1
     
-    # Instance tracking
-    tw_add_config "uda.recur_parent.type=string"
-    tw_add_config "uda.recur_parent.label=Parent Template UUID"
+    # Download README (renamed to avoid conflicts)
+    tw_msg "Downloading documentation..."
+    download_file "README.md" "$DOCS_DIR/recurrence_README.md" || return 1
     
-    # Recurrence pattern
-    tw_add_config "uda.recur_pattern.type=string"
-    tw_add_config "uda.recur_pattern.label=Recurrence Pattern"
+    # Configure Taskwarrior
+    configure_taskwarrior || return 1
     
-    # Recurrence type (chained or periodic)
-    tw_add_config "uda.recur_type.type=string"
-    tw_add_config "uda.recur_type.label=Recurrence Type"
-    tw_add_config "uda.recur_type.values=chained,periodic"
-    
-    # Pile-up control
-    tw_add_config "uda.recur_limit.type=numeric"
-    tw_add_config "uda.recur_limit.label=Max Pending Instances"
-    
-    # Instance counter
-    tw_add_config "uda.recur_instance.type=numeric"
-    tw_add_config "uda.recur_instance.label=Instance Number"
-    
-    # Add custom report for templates
-    tw_add_config "report.templates.description=Recurrence Templates"
-    tw_add_config "report.templates.columns=id,description,recur_pattern,recur_type"
-    tw_add_config "report.templates.filter=status:pending recur_template.any:"
-    tw_add_config "report.templates.labels=ID,Description,Pattern,Type"
-    
-    echo "✓ Installed ${APPNAME}"
-    echo ""
-    echo "Usage:"
-    echo "  task add 'Daily standup' recur:daily recur_type:chained"
-    echo "  task add 'Weekly review' recur:weekly recur_type:periodic"
-    echo "  task templates    # View all recurrence templates"
-    echo ""
-    echo "See repository documentation for advanced patterns and features."
+    tw_success "Successfully installed $APP_NAME v$APP_VERSION"
+    tw_msg "Files installed to:"
+    tw_msg "  Hooks: $HOOKS_DIR"
+    tw_msg "  Config: $CONFIG_DIR/recurrence.rc"
+    tw_msg "  Docs: $DOCS_DIR/recurrence_README.md"
     
     return 0
 }
 
-uninstall() {
-    echo "Uninstalling ${APPNAME}..."
+configure_taskwarrior() {
+    tw_msg "Configuring Taskwarrior..."
     
-    # Remove hooks
-    tw_remove_hook "on-add-recurrence.py"
-    tw_remove_hook "on-modify-recurrence.py"
-    tw_remove_hook "on-exit-recurrence.py"
+    local config_line="include $CONFIG_DIR/recurrence.rc"
     
-    # Remove UDAs
-    tw_remove_config "uda.recur_template"
-    tw_remove_config "uda.recur_parent"
-    tw_remove_config "uda.recur_pattern"
-    tw_remove_config "uda.recur_type"
-    tw_remove_config "uda.recur_limit"
-    tw_remove_config "uda.recur_instance"
-    
-    # Remove custom report
-    tw_remove_config "report.templates"
-    
-    # Remove installation directory
-    local target_dir="${HOOKS_DIR}/${HOOK_DIR_NAME}"
-    if [ -d "$target_dir" ]; then
-        rm -rf "$target_dir"
+    if [[ ! -f "$TASKRC" ]]; then
+        tw_warn ".taskrc not found at $TASKRC"
+        tw_warn "Please add manually: $config_line"
+        return 0
     fi
     
-    echo "✓ Uninstalled ${APPNAME}"
-    echo ""
-    echo "Note: Existing recurring tasks retain their UDA values."
-    echo "To clean up, run: task recur_template.any: modify recur_template:"
-    
-    return 0
-}
-
-update() {
-    echo "Updating ${APPNAME}..."
-    
-    local target_dir="${HOOKS_DIR}/${HOOK_DIR_NAME}"
-    
-    if [ ! -d "$target_dir/.git" ]; then
-        echo "Error: Not a git repository, use reinstall"
-        return 1
-    fi
-    
-    # Store current commit for rollback
-    local old_commit
-    old_commit=$(cd "$target_dir" && git rev-parse HEAD)
-    
-    # Update repository
-    cd "$target_dir" || return 1
-    git pull || {
-        echo "Error: Git pull failed"
-        return 1
-    }
-    
-    local new_commit
-    new_commit=$(git rev-parse HEAD)
-    
-    if [ "$old_commit" = "$new_commit" ]; then
-        echo "Already up to date"
+    # Add config
+    if type tw_add_config &>/dev/null; then
+        tw_add_config "$config_line" || return 1
     else
-        echo "✓ Updated ${APPNAME} from ${old_commit:0:7} to ${new_commit:0:7}"
+        if grep -Fxq "$config_line" "$TASKRC"; then
+            tw_msg "Config already exists in .taskrc"
+        else
+            echo "$config_line" >> "$TASKRC" || {
+                tw_error "Failed to add config to .taskrc"
+                return 1
+            }
+            tw_success "Added config to .taskrc"
+        fi
     fi
     
     return 0
 }
 
-test() {
-    echo "Testing ${APPNAME}..."
+#=============================================================================
+# REMOVE FUNCTION
+#=============================================================================
+
+remove() {
+    tw_msg "Removing $APP_NAME..."
     
-    # Test 1: Verify hooks exist and are executable
-    tw_test_hook "on-add-recurrence.py" || return 1
-    tw_test_hook "on-modify-recurrence.py" || return 1
-    tw_test_hook "on-exit-recurrence.py" || return 1
+    # Remove hook files (including symlink)
+    rm -f "$HOOKS_DIR/on-add_recurrence.py"
+    rm -f "$HOOKS_DIR/on-modify_recurrence.py"
+    rm -f "$HOOKS_DIR/on-exit_recurrence.py"
+    tw_success "Removed hook files"
     
-    # Test 2: Verify UDAs are configured
-    tw_test_config "uda.recur_template.type" "string" || return 1
-    tw_test_config "uda.recur_pattern.type" "string" || return 1
+    # Remove config file
+    rm -f "$CONFIG_DIR/recurrence.rc"
+    tw_success "Removed config file"
     
-    # Test 3: Test basic chained recurrence
-    echo "Testing chained recurrence..."
-    local task_id
-    task_id=$(task add "test recurrence" recur:daily recur_type:chained | grep -oP "Created task \K\d+")
+    # Remove documentation
+    rm -f "$DOCS_DIR/recurrence_README.md"
+    tw_success "Removed documentation"
     
-    if [ -z "$task_id" ]; then
-        echo "Error: Failed to create test task"
-        return 1
-    fi
+    # Remove config from .taskrc
+    remove_config || return 1
     
-    # Verify template was created
-    local template_uuid
-    template_uuid=$(task $task_id _get recur_template)
+    tw_success "Successfully removed $APP_NAME"
     
-    if [ -z "$template_uuid" ]; then
-        echo "Error: Template UUID not set"
-        return 1
-    fi
-    
-    # Test 4: Test instance spawning (complete the task)
-    task rc.confirmation=no $task_id done >/dev/null 2>&1
-    
-    # Check if new instance was spawned
-    local new_instances
-    new_instances=$(task recur_parent:$template_uuid status:pending count)
-    
-    if [ "$new_instances" -lt 1 ]; then
-        echo "Error: No new instance spawned"
-        return 1
-    fi
-    
-    # Cleanup all test tasks
-    echo "Cleaning up test data..."
-    task rc.confirmation=no recur_parent:$template_uuid purge >/dev/null 2>&1
-    task rc.confirmation=no recur_template:$template_uuid purge >/dev/null 2>&1
-    
-    echo "✓ All tests passed"
     return 0
 }
 
-# Main entry point
-if [ "${BASH_SOURCE[0]}" = "$0" ]; then
-    : ${INSTALL_DIR:=~/.task}
-    : ${HOOKS_DIR:=~/.task/hooks}
-    : ${TASKRC:=~/.taskrc}
-    : ${TW_DEBUG:=0}
+remove_config() {
+    local config_line="include $CONFIG_DIR/recurrence.rc"
     
-    case "${1:-install}" in
-        install) install ;;
-        uninstall) uninstall ;;
-        update) update ;;
-        test) test ;;
-        *)
-            echo "Usage: $0 {install|uninstall|update|test}" >&2
-            exit 1
-            ;;
-    esac
-fi
+    if [[ ! -f "$TASKRC" ]]; then
+        return 0
+    fi
+    
+    if type tw_remove_config &>/dev/null; then
+        tw_remove_config "$config_line"
+    else
+        if grep -Fxq "$config_line" "$TASKRC"; then
+            local tmp_file
+            tmp_file=$(mktemp) || {
+                tw_error "Failed to create temporary file"
+                return 1
+            }
+            
+            if grep -Fxv "$config_line" "$TASKRC" > "$tmp_file" 2>/dev/null; then
+                mv "$tmp_file" "$TASKRC"
+                tw_success "Removed config from .taskrc"
+            else
+                tw_warn "Failed to remove config from .taskrc"
+                rm -f "$tmp_file"
+            fi
+        fi
+    fi
+    
+    return 0
+}
+
+#=============================================================================
+# MAIN DISPATCHER
+#=============================================================================
+
+case "${1:-}" in
+    install)
+        install
+        ;;
+    remove|uninstall)
+        remove
+        ;;
+    *)
+        echo "Usage: $0 {install|remove}"
+        echo ""
+        echo "Enhanced recurrence system for Taskwarrior"
+        echo "Supports both chained and periodic recurrence modes"
+        echo ""
+        echo "Commands:"
+        echo "  install   - Download and install tw-recurrence"
+        echo "  remove    - Remove tw-recurrence and clean up"
+        exit 1
+        ;;
+esac

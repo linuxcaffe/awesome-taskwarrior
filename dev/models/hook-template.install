@@ -1,257 +1,334 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
-# hook-template.install
+# hook-template.install - Template for Taskwarrior hook installers
+# Version: 2.0.0
 #
-# Template installer for hook-based Taskwarrior extensions
+# This template demonstrates the v2.0.0 architecture:
+# - Self-contained (works standalone)
+# - Optional tw-common.sh usage (graceful degradation)
+# - Environment detection with defaults
+# - Curl-based file downloads
+# - Direct file placement (no symlinks by default)
 #
-# INSTRUCTIONS:
-# 1. Copy this file to installers/<yourapp>.install
-# 2. Replace all <PLACEHOLDER> markers with actual values
-# 3. Implement the TODO sections
-# 4. Remove template comments
-# 5. Test with: tw --install yourapp
-# 6. Make executable: chmod +x installers/yourapp.install
+# USAGE:
+#   bash myapp.install install   - Install the application
+#   bash myapp.install remove    - Remove the application
+#
+# ENVIRONMENT VARIABLES:
+#   HOOKS_DIR    - Target directory for hooks (default: ~/.task/hooks)
+#   CONFIG_DIR   - Target directory for configs (default: ~/.task/config)
+#   DOCS_DIR     - Target directory for docs (default: ~/.task/docs)
+#   TASKRC       - Taskwarrior config file (default: ~/.taskrc)
+#   TW_DEBUG     - Enable debug output (set to any value)
 
-# TODO: Replace <YOURAPP> with your full app name (matches .meta file)
-# EXAMPLE: APPNAME="tw-recurrence"
-APPNAME="<YOURAPP-NAME>"
+set -euo pipefail
 
-# TODO: Replace <SHORT_NAME> with directory name (no 'tw-' prefix)
-# EXAMPLE: SHORT_NAME="recurrence"
-# NOTE: This creates ~/.task/hooks/<SHORT_NAME>/
-SHORT_NAME="<SHORT-NAME>"
+#=============================================================================
+# CONFIGURATION
+#=============================================================================
 
-# TODO: Replace <REPO_URL> with your git repository URL
-# EXAMPLE: REPO_URL="https://github.com/username/tw-recurrence_overhaul-hook"
-REPO_URL="<https://github.com/USERNAME/REPO>"
+APP_NAME="myapp"
+APP_VERSION="1.0.0"
+BASE_URL="https://raw.githubusercontent.com/username/myapp/main"
 
-# Source common library functions
-# NOTE: This provides tw_clone_to_project, tw_symlink_hook, etc.
-source "$(dirname "$0")/../lib/tw-common.sh"
+# Files to download (update this list for your app)
+declare -A FILES=(
+    ["on-add_${APP_NAME}.py"]="hook"
+    ["on-modify_${APP_NAME}.py"]="hook"
+    ["${APP_NAME}.rc"]="config"
+    ["README.md"]="doc"
+)
 
-#
-# REQUIRED: install() function
-#
-# This function handles installation of your hook
-# MUST return 0 on success, non-zero on failure
-#
-install() {
-    echo "Installing ${APPNAME}..."
-    
-    # Step 1: Check dependencies
-    # TODO: Add dependency checks as needed
-    # EXAMPLE: tw_check_python_version 3.6 || return 1
-    # EXAMPLE: tw_check_command "jq" || return 1
-    
-    tw_check_taskwarrior_version 2.6.2 || return 1
-    
-    # Step 2: Clone repository to proper location
-    # NOTE: This clones to ~/.task/hooks/<SHORT_NAME>/
-    # EXAMPLE: tw_clone_to_project hook recurrence "https://github.com/user/tw-recurrence_overhaul-hook"
-    
-    tw_clone_to_project hook "$SHORT_NAME" "$REPO_URL" || return 1
-    
-    local project_dir="${HOOKS_DIR}/${SHORT_NAME}"
-    
-    # Step 3: Create hook symlinks
-    # NOTE: Creates symlinks in ~/.task/hooks/ pointing to files in project subdirectory
-    # TODO: Add symlinks for each hook file your app provides
-    # EXAMPLE: tw_symlink_hook "$project_dir" "on-add-yourapp.py" || return 1
-    # EXAMPLE: tw_symlink_hook "$project_dir" "on-modify-yourapp.py" || return 1
-    # EXAMPLE: tw_symlink_hook "$project_dir" "on-exit-yourapp.py" || return 1
-    
-    tw_symlink_hook "$project_dir" "<HOOK-FILE>" || return 1
-    
-    # Step 4: Add taskrc configuration
-    # TODO: Add any UDA definitions or configuration needed
-    # EXAMPLE: tw_add_config "uda.yourapp_status.type=string"
-    # EXAMPLE: tw_add_config "uda.yourapp_status.label=Status"
-    # EXAMPLE: tw_add_config "uda.yourapp_status.values=pending,active,done"
-    
-    # NOTE: Configuration is added to user's .taskrc
-    # NOTE: Check if config already exists before adding
-    
-    # Step 5: Add custom reports (optional)
-    # EXAMPLE: tw_add_config "report.yourapp.description=Custom report"
-    # EXAMPLE: tw_add_config "report.yourapp.columns=id,description,status"
-    # EXAMPLE: tw_add_config "report.yourapp.filter=+yourapp_tag"
-    
-    # Step 6: Additional setup (optional)
-    # TODO: Add any additional installation steps
-    # EXAMPLE: Create log directories, copy config files, etc.
-    
-    echo "✓ Installed ${APPNAME}"
-    echo "  Hooks installed in: ${HOOKS_DIR}/"
-    echo "  Project files in: ${project_dir}"
-    echo "  Logs will go to: ${LOGS_DIR}/${SHORT_NAME}/"
-    return 0
-}
+#=============================================================================
+# OPTIONAL HELPER SOURCING
+#=============================================================================
 
-#
-# REQUIRED: uninstall() function
-#
-# This function handles removal of your hook
-# MUST return 0 on success, non-zero on failure
-# MUST clean up ALL files and configuration
-#
-uninstall() {
-    echo "Uninstalling ${APPNAME}..."
-    
-    # Step 1: Remove hook symlinks
-    # TODO: Remove all hook symlinks created during install
-    # EXAMPLE: tw_remove_hook "on-add-yourapp.py"
-    # EXAMPLE: tw_remove_hook "on-modify-yourapp.py"
-    # EXAMPLE: tw_remove_hook "on-exit-yourapp.py"
-    
-    tw_remove_hook "<HOOK-FILE>"
-    
-    # Step 2: Remove configuration
-    # TODO: Remove all taskrc configuration added during install
-    # NOTE: Use the base config name (e.g., "uda.yourapp_status", not "uda.yourapp_status.type")
-    # EXAMPLE: tw_remove_config "uda.yourapp_status"
-    # EXAMPLE: tw_remove_config "report.yourapp"
-    
-    # Step 3: Remove project directory
-    # NOTE: This removes the entire project including any test files
-    rm -rf "${HOOKS_DIR}/${SHORT_NAME}"
-    
-    # Step 4: Additional cleanup (optional)
-    # TODO: Remove any additional files or directories created
-    # EXAMPLE: rm -rf "${LOGS_DIR}/${SHORT_NAME}"
-    
-    echo "✓ Uninstalled ${APPNAME}"
-    return 0
-}
-
-#
-# OPTIONAL: update() function
-#
-# This function handles updating your hook
-# If not provided, tw.py will uninstall then reinstall
-# Return 0 on success, non-zero to trigger uninstall/reinstall
-#
-update() {
-    echo "Updating ${APPNAME}..."
-    
-    local project_dir="${HOOKS_DIR}/${SHORT_NAME}"
-    
-    # Try git pull
-    if [ -d "$project_dir/.git" ]; then
-        tw_info "Pulling latest changes..."
-        cd "$project_dir" && git pull || return 1
-        echo "✓ Updated ${APPNAME}"
-        return 0
-    else
-        # No git repo, trigger reinstall
-        return 1
-    fi
-}
-
-#
-# OPTIONAL: test() function
-#
-# This function tests the installation
-# Useful for verifying everything is properly installed
-# Return 0 if all tests pass, non-zero on failure
-#
-test() {
-    echo "Testing ${APPNAME}..."
-    
-    local project_dir="${HOOKS_DIR}/${SHORT_NAME}"
-    
-    # Test 1: Hook symlinks exist and are executable
-    # TODO: Test each hook file
-    # EXAMPLE: tw_test_hook "on-add-yourapp.py" || return 1
-    # EXAMPLE: tw_test_hook "on-modify-yourapp.py" || return 1
-    
-    tw_test_hook "<HOOK-FILE>" || return 1
-    
-    # Test 2: Configuration exists
-    # TODO: Test critical config values
-    # EXAMPLE: tw_test_config "uda.yourapp_status.type" "string" || return 1
-    
-    # Test 3: Project directory exists
-    if [ ! -d "$project_dir" ]; then
-        tw_error "Project directory not found: $project_dir"
-        return 1
-    fi
-    
-    # Test 4: Additional tests (optional)
-    # TODO: Add any app-specific tests
-    # EXAMPLE: Test that hook can parse tasks
-    # EXAMPLE: Test that hook responds correctly
-    
-    echo "✓ All tests passed"
-    return 0
-}
-
-# Main entry point
-# NOTE: This allows the script to be sourced or executed directly
-if [ "${BASH_SOURCE[0]}" = "$0" ]; then
-    # Set defaults if not provided by environment
-    : ${INSTALL_DIR:=~/.task}
-    : ${HOOKS_DIR:=~/.task/hooks}
-    : ${SCRIPTS_DIR:=~/.task/scripts}
-    : ${CONFIG_DIR:=~/.task/config}
-    : ${LOGS_DIR:=~/.task/logs}
-    : ${TASKRC:=~/.taskrc}
-    : ${TW_DEBUG:=0}
-    
-    # Route to appropriate function
-    case "${1:-install}" in
-        install) install ;;
-        uninstall) uninstall ;;
-        update) update ;;
-        test) test ;;
-        *)
-            echo "Usage: $0 {install|uninstall|update|test}" >&2
-            exit 1
-            ;;
-    esac
+if [[ -f ~/.task/lib/tw-common.sh ]]; then
+    source ~/.task/lib/tw-common.sh
+else
+    # Fallback: Define minimal messaging functions inline
+    tw_msg() { echo "[INFO] $*"; }
+    tw_success() { echo "[SUCCESS] $*"; }
+    tw_warn() { echo "[WARNING] $*" >&2; }
+    tw_error() { echo "[ERROR] $*" >&2; }
+    tw_die() { tw_error "$@"; exit 1; }
+    tw_debug() { [[ -n "${TW_DEBUG:-}" ]] && echo "[DEBUG] $*" >&2 || true; }
 fi
 
-# TEMPLATE NOTES:
-#
-# Directory Structure (v1.3.0+):
-#   ~/.task/
-#   ├── hooks/                  # Hook symlinks (on-add-*.py, etc.)
-#   │   └── <SHORT_NAME>/       # Your project files
-#   ├── scripts/                # Wrapper/utility symlinks
-#   ├── config/                 # Config files
-#   └── logs/                   # Debug and test logs
-#
-# Key Functions (from tw-common.sh):
-#   tw_clone_to_project         # Clone to type-appropriate directory
-#   tw_symlink_hook             # Create hook symlink
-#   tw_remove_hook              # Remove hook symlink
-#   tw_check_python_version     # Verify Python version
-#   tw_check_taskwarrior_version # Verify Taskwarrior version
-#   tw_check_command            # Verify command exists
-#   tw_add_config               # Add taskrc configuration
-#   tw_remove_config            # Remove taskrc configuration
-#   tw_test_hook                # Test hook installation
-#   tw_test_config              # Test config value
-#
-# Environment Variables:
-#   $INSTALL_DIR                # ~/.task (default)
-#   $HOOKS_DIR                  # ~/.task/hooks (default)
-#   $SCRIPTS_DIR                # ~/.task/scripts (default)
-#   $CONFIG_DIR                 # ~/.task/config (default)
-#   $LOGS_DIR                   # ~/.task/logs (default)
-#   $TASKRC                     # ~/.taskrc (default)
-#   $TW_DEBUG                   # 0 or 1
-#
-# Best Practices:
-#   - Always check dependencies before making changes
-#   - Use tw_* functions instead of direct commands
-#   - Provide helpful error messages
-#   - Clean up completely in uninstall()
-#   - Test with both install and uninstall
-#   - Keep install() and uninstall() symmetric
-#   - Use SHORT_NAME consistently throughout
-#   - Document any non-obvious behavior
-#
-# See Also:
-#   - dev/API.md for complete function reference
-#   - dev/models/tw-recurrence.install for working example
-#   - DEVELOPERS.md for architecture details
+#=============================================================================
+# ENVIRONMENT DETECTION
+#=============================================================================
+
+: ${HOOKS_DIR:=~/.task/hooks}
+: ${SCRIPTS_DIR:=~/.task/scripts}
+: ${CONFIG_DIR:=~/.task/config}
+: ${DOCS_DIR:=~/.task/docs}
+: ${TASKRC:=~/.taskrc}
+
+#=============================================================================
+# HELPER FUNCTIONS
+#=============================================================================
+
+check_requirements() {
+    tw_msg "Checking requirements..."
+    
+    # Check for curl
+    if ! command -v curl &>/dev/null; then
+        tw_die "curl is required but not found. Please install curl."
+    fi
+    
+    # Check for Taskwarrior
+    if ! command -v task &>/dev/null; then
+        tw_die "Taskwarrior is required but not found. Please install Taskwarrior."
+    fi
+    
+    # Optional: Check versions if tw-common.sh is available
+    if type tw_check_taskwarrior_version &>/dev/null; then
+        tw_check_taskwarrior_version "2.6.0" || return 1
+    fi
+    
+    if type tw_check_python_version &>/dev/null; then
+        tw_check_python_version "3.6" || return 1
+    fi
+    
+    tw_success "Requirements check passed"
+    return 0
+}
+
+download_file() {
+    local filename="$1"
+    local url="${BASE_URL}/${filename}"
+    local target_dir="$2"
+    local target_name="${3:-$filename}"
+    local target_path="${target_dir}/${target_name}"
+    
+    tw_debug "Downloading $url to $target_path"
+    
+    # Use tw_curl_and_place if available, else basic curl
+    if type tw_curl_and_place &>/dev/null; then
+        tw_curl_and_place "$url" "$target_dir" "$target_name" || return 1
+    else
+        # Ensure directory exists
+        mkdir -p "$target_dir" || {
+            tw_error "Failed to create directory: $target_dir"
+            return 1
+        }
+        
+        # Download to temp file first
+        local tmp_file
+        tmp_file=$(mktemp) || {
+            tw_error "Failed to create temporary file"
+            return 1
+        }
+        
+        if ! curl -fsSL "$url" -o "$tmp_file"; then
+            tw_error "Failed to download: $url"
+            rm -f "$tmp_file"
+            return 1
+        fi
+        
+        # Move to final location
+        if ! mv "$tmp_file" "$target_path"; then
+            tw_error "Failed to move file to: $target_path"
+            rm -f "$tmp_file"
+            return 1
+        fi
+        
+        tw_success "Downloaded: $target_name"
+    fi
+    
+    return 0
+}
+
+#=============================================================================
+# INSTALL FUNCTION
+#=============================================================================
+
+install() {
+    tw_msg "Installing $APP_NAME v$APP_VERSION..."
+    
+    # Check requirements
+    check_requirements || return 1
+    
+    # Create directories
+    mkdir -p "$HOOKS_DIR" "$CONFIG_DIR" "$DOCS_DIR"
+    
+    # Download files based on type
+    for filename in "${!FILES[@]}"; do
+        local file_type="${FILES[$filename]}"
+        
+        case "$file_type" in
+            hook)
+                download_file "$filename" "$HOOKS_DIR" || return 1
+                # Make hooks executable
+                chmod +x "$HOOKS_DIR/$filename"
+                ;;
+            config)
+                download_file "$filename" "$CONFIG_DIR" || return 1
+                ;;
+            doc)
+                # Rename README.md to appname_README.md to avoid conflicts
+                if [[ "$filename" == "README.md" ]]; then
+                    download_file "$filename" "$DOCS_DIR" "${APP_NAME}_README.md" || return 1
+                else
+                    download_file "$filename" "$DOCS_DIR" || return 1
+                fi
+                ;;
+            *)
+                tw_warn "Unknown file type: $file_type for $filename"
+                ;;
+        esac
+    done
+    
+    # Configure Taskwarrior
+    configure_taskwarrior || return 1
+    
+    tw_success "Successfully installed $APP_NAME v$APP_VERSION"
+    tw_msg "Files installed to:"
+    tw_msg "  Hooks: $HOOKS_DIR"
+    tw_msg "  Config: $CONFIG_DIR"
+    tw_msg "  Docs: $DOCS_DIR"
+    
+    return 0
+}
+
+configure_taskwarrior() {
+    tw_msg "Configuring Taskwarrior..."
+    
+    local config_line="include $CONFIG_DIR/${APP_NAME}.rc"
+    
+    # Check if .taskrc exists
+    if [[ ! -f "$TASKRC" ]]; then
+        tw_warn ".taskrc not found at $TASKRC"
+        tw_warn "Please add manually: $config_line"
+        return 0
+    fi
+    
+    # Add config using helper if available, else manual
+    if type tw_add_config &>/dev/null; then
+        tw_add_config "$config_line" || return 1
+    else
+        # Check if already exists (idempotent)
+        if grep -Fxq "$config_line" "$TASKRC"; then
+            tw_debug "Config already exists in .taskrc"
+        else
+            echo "$config_line" >> "$TASKRC" || {
+                tw_error "Failed to add config to .taskrc"
+                return 1
+            }
+            tw_success "Added config to .taskrc"
+        fi
+    fi
+    
+    return 0
+}
+
+#=============================================================================
+# REMOVE FUNCTION
+#=============================================================================
+
+remove() {
+    tw_msg "Removing $APP_NAME..."
+    
+    # Remove hook files
+    for filename in "${!FILES[@]}"; do
+        local file_type="${FILES[$filename]}"
+        
+        case "$file_type" in
+            hook)
+                local file_path="$HOOKS_DIR/$filename"
+                if [[ -f "$file_path" ]]; then
+                    rm -f "$file_path"
+                    tw_success "Removed: $file_path"
+                fi
+                ;;
+            config)
+                local file_path="$CONFIG_DIR/$filename"
+                if [[ -f "$file_path" ]]; then
+                    rm -f "$file_path"
+                    tw_success "Removed: $file_path"
+                fi
+                ;;
+            doc)
+                # Handle renamed README
+                if [[ "$filename" == "README.md" ]]; then
+                    local file_path="$DOCS_DIR/${APP_NAME}_README.md"
+                else
+                    local file_path="$DOCS_DIR/$filename"
+                fi
+                if [[ -f "$file_path" ]]; then
+                    rm -f "$file_path"
+                    tw_success "Removed: $file_path"
+                fi
+                ;;
+        esac
+    done
+    
+    # Remove config from .taskrc
+    remove_config || return 1
+    
+    tw_success "Successfully removed $APP_NAME"
+    
+    return 0
+}
+
+remove_config() {
+    local config_line="include $CONFIG_DIR/${APP_NAME}.rc"
+    
+    # Check if .taskrc exists
+    if [[ ! -f "$TASKRC" ]]; then
+        tw_debug ".taskrc not found, nothing to remove"
+        return 0
+    fi
+    
+    # Remove using helper if available, else manual
+    if type tw_remove_config &>/dev/null; then
+        tw_remove_config "$config_line"
+    else
+        # Check if config exists
+        if ! grep -Fxq "$config_line" "$TASKRC"; then
+            tw_debug "Config not found in .taskrc"
+            return 0
+        fi
+        
+        # Remove config line
+        local tmp_file
+        tmp_file=$(mktemp) || {
+            tw_error "Failed to create temporary file"
+            return 1
+        }
+        
+        if grep -Fxv "$config_line" "$TASKRC" > "$tmp_file" 2>/dev/null; then
+            mv "$tmp_file" "$TASKRC"
+            tw_success "Removed config from .taskrc"
+        else
+            tw_warn "Failed to remove config from .taskrc"
+            rm -f "$tmp_file"
+        fi
+    fi
+    
+    return 0
+}
+
+#=============================================================================
+# MAIN DISPATCHER
+#=============================================================================
+
+case "${1:-}" in
+    install)
+        install
+        ;;
+    remove|uninstall)
+        remove
+        ;;
+    *)
+        echo "Usage: $0 {install|remove}"
+        echo ""
+        echo "Install or remove $APP_NAME hook for Taskwarrior"
+        echo ""
+        echo "Commands:"
+        echo "  install   - Download and install $APP_NAME"
+        echo "  remove    - Remove $APP_NAME and clean up"
+        exit 1
+        ;;
+esac

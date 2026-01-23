@@ -1,264 +1,345 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
-# wrapper-template.install
+# wrapper-template.install - Template for Taskwarrior wrapper/script installers
+# Version: 2.0.0
 #
-# Template installer for wrapper applications
+# This template is for wrapper scripts (executables that go in ~/.task/scripts/)
+# For hook applications, see hook-template.install
 #
-# INSTRUCTIONS:
-# 1. Copy this file to installers/<yourapp>.install
-# 2. Replace all <PLACEHOLDER> markers
-# 3. Implement wrapper pass-through logic
-# 4. Test with wrapper stack
-# 5. Make executable: chmod +x installers/yourapp.install
-
-# TODO: Replace with your full app name (matches .meta file)
-# EXAMPLE: APPNAME="tw-nicedates"
-APPNAME="<YOURAPP-NAME>"
-
-# TODO: Replace with directory name (no 'tw-' prefix)
-# EXAMPLE: SHORT_NAME="nicedates"
-# NOTE: This creates ~/.task/scripts/<SHORT_NAME>/
-SHORT_NAME="<SHORT-NAME>"
-
-# TODO: Replace with your repository URL
-# EXAMPLE: REPO_URL="https://github.com/username/nicedates"
-REPO_URL="<https://github.com/USERNAME/REPO>"
-
-# TODO: Replace with your wrapper executable name
-# EXAMPLE: WRAPPER_EXEC="nicedates.py" or "nicedates"
-# NOTE: This is the main script that will be called
-WRAPPER_EXEC="<WRAPPER-SCRIPT-NAME>"
-
-# TODO: Replace with the symlink name (usually without .py extension)
-# EXAMPLE: LINK_NAME="nicedates"
-# NOTE: This is what users will type: tw -> nicedates -> task
-LINK_NAME="<LINK-NAME>"
-
-# Source common library functions
-source "$(dirname "$0")/../lib/tw-common.sh"
-
+# USAGE:
+#   bash mywrapper.install install   - Install the wrapper
+#   bash mywrapper.install remove    - Remove the wrapper
 #
-# REQUIRED: install() function
-#
-install() {
-    echo "Installing ${APPNAME}..."
-    
-    # Step 1: Check dependencies
-    # TODO: Add dependency checks for your wrapper
-    # EXAMPLE: tw_check_python_version 3.6 || return 1
-    # EXAMPLE: tw_check_command "dateutil" || return 1
-    
-    tw_check_taskwarrior_version 2.6.2 || return 1
-    
-    # Step 2: Clone repository to proper location
-    # NOTE: This clones to ~/.task/scripts/<SHORT_NAME>/
-    # EXAMPLE: tw_clone_to_project wrapper nicedates "https://github.com/user/nicedates"
-    
-    tw_clone_to_project wrapper "$SHORT_NAME" "$REPO_URL" || return 1
-    
-    local project_dir="${SCRIPTS_DIR}/${SHORT_NAME}"
-    
-    # Step 3: Create wrapper symlink
-    # NOTE: Creates symlink in ~/.task/scripts/ pointing to executable in project
-    # EXAMPLE: tw_symlink_wrapper "$project_dir" "nicedates.py" "nicedates"
-    
-    tw_symlink_wrapper "$project_dir" "$WRAPPER_EXEC" "$LINK_NAME" || return 1
-    
-    # Step 4: Add wrapper to PATH (if needed)
-    # NOTE: User should add ~/.task/scripts to their PATH
-    # EXAMPLE: export PATH="$HOME/.task/scripts:$PATH"
-    
-    if [[ ":$PATH:" != *":${SCRIPTS_DIR}:"* ]]; then
-        tw_info "Add to your ~/.bashrc or ~/.zshrc:"
-        tw_info "  export PATH=\"\$HOME/.task/scripts:\$PATH\""
-    fi
-    
-    # Step 5: Add configuration (optional)
-    # TODO: Add any wrapper-specific configuration
-    # EXAMPLE: tw_add_config "wrapper.nicedates.format=%Y-%m-%d"
-    
-    # Step 6: Configure wrapper chaining (optional)
-    # NOTE: If this wrapper should be part of a chain:
-    # EXAMPLE: tw_add_config "tw.wrapper.chain=nicedates"
-    
-    echo "✓ Installed ${APPNAME}"
-    echo "  Wrapper installed in: ${SCRIPTS_DIR}/"
-    echo "  Project files in: ${project_dir}"
-    echo "  Usage: ${LINK_NAME} <args>"
-    return 0
-}
+# ENVIRONMENT VARIABLES:
+#   SCRIPTS_DIR  - Target directory for scripts (default: ~/.task/scripts)
+#   CONFIG_DIR   - Target directory for configs (default: ~/.task/config)
+#   DOCS_DIR     - Target directory for docs (default: ~/.task/docs)
+#   TASKRC       - Taskwarrior config file (default: ~/.taskrc)
+#   TW_DEBUG     - Enable debug output (set to any value)
 
-#
-# REQUIRED: uninstall() function
-#
-uninstall() {
-    echo "Uninstalling ${APPNAME}..."
-    
-    # Step 1: Remove wrapper symlink
-    tw_remove_wrapper "$LINK_NAME"
-    
-    # Step 2: Remove configuration
-    # TODO: Remove any wrapper-specific configuration
-    # EXAMPLE: tw_remove_config "wrapper.nicedates"
-    # EXAMPLE: tw_remove_config "tw.wrapper.chain"
-    
-    # Step 3: Remove project directory
-    rm -rf "${SCRIPTS_DIR}/${SHORT_NAME}"
-    
-    echo "✓ Uninstalled ${APPNAME}"
-    return 0
-}
+set -euo pipefail
 
-#
-# OPTIONAL: update() function
-#
-update() {
-    echo "Updating ${APPNAME}..."
-    
-    local project_dir="${SCRIPTS_DIR}/${SHORT_NAME}"
-    
-    # Try git pull
-    if [ -d "$project_dir/.git" ]; then
-        tw_info "Pulling latest changes..."
-        cd "$project_dir" && git pull || return 1
-        echo "✓ Updated ${APPNAME}"
-        return 0
-    else
-        # No git repo, trigger reinstall
-        return 1
-    fi
-}
+#=============================================================================
+# CONFIGURATION
+#=============================================================================
 
-#
-# OPTIONAL: test() function
-#
-test() {
-    echo "Testing ${APPNAME}..."
-    
-    local project_dir="${SCRIPTS_DIR}/${SHORT_NAME}"
-    
-    # Test 1: Wrapper symlink exists and is executable
-    local wrapper_path="${SCRIPTS_DIR}/${LINK_NAME}"
-    if [ ! -L "$wrapper_path" ]; then
-        tw_error "Wrapper symlink not found: $wrapper_path"
-        return 1
-    fi
-    
-    if [ ! -x "$wrapper_path" ]; then
-        tw_error "Wrapper is not executable: $wrapper_path"
-        return 1
-    fi
-    
-    # Test 2: Project directory exists
-    if [ ! -d "$project_dir" ]; then
-        tw_error "Project directory not found: $project_dir"
-        return 1
-    fi
-    
-    # Test 3: Wrapper can execute
-    # TODO: Add wrapper-specific test
-    # EXAMPLE: $wrapper_path --version >/dev/null 2>&1 || return 1
-    
-    # Test 4: Configuration exists (if added)
-    # TODO: Test wrapper configuration
-    # EXAMPLE: tw_test_config "wrapper.nicedates.format" "%Y-%m-%d" || return 1
-    
-    echo "✓ All tests passed"
-    return 0
-}
+APP_NAME="mywrapper"
+APP_VERSION="1.0.0"
+BASE_URL="https://raw.githubusercontent.com/username/mywrapper/main"
 
-# Main entry point
-if [ "${BASH_SOURCE[0]}" = "$0" ]; then
-    # Set defaults if not provided by environment
-    : ${INSTALL_DIR:=~/.task}
-    : ${HOOKS_DIR:=~/.task/hooks}
-    : ${SCRIPTS_DIR:=~/.task/scripts}
-    : ${CONFIG_DIR:=~/.task/config}
-    : ${LOGS_DIR:=~/.task/logs}
-    : ${TASKRC:=~/.taskrc}
-    : ${TW_DEBUG:=0}
-    
-    # Route to appropriate function
-    case "${1:-install}" in
-        install) install ;;
-        uninstall) uninstall ;;
-        update) update ;;
-        test) test ;;
-        *)
-            echo "Usage: $0 {install|uninstall|update|test}" >&2
-            exit 1
-            ;;
-    esac
+# Files to download (update this list for your app)
+declare -A FILES=(
+    ["${APP_NAME}"]="script"                # Main wrapper script
+    ["${APP_NAME}-helper"]="script"         # Optional: helper script
+    ["${APP_NAME}.rc"]="config"             # Optional: configuration
+    ["README.md"]="doc"                     # Documentation
+)
+
+#=============================================================================
+# OPTIONAL HELPER SOURCING
+#=============================================================================
+
+if [[ -f ~/.task/lib/tw-common.sh ]]; then
+    source ~/.task/lib/tw-common.sh
+else
+    # Fallback: Define minimal messaging functions inline
+    tw_msg() { echo "[INFO] $*"; }
+    tw_success() { echo "[SUCCESS] $*"; }
+    tw_warn() { echo "[WARNING] $*" >&2; }
+    tw_error() { echo "[ERROR] $*" >&2; }
+    tw_die() { tw_error "$@"; exit 1; }
+    tw_debug() { [[ -n "${TW_DEBUG:-}" ]] && echo "[DEBUG] $*" >&2 || true; }
 fi
 
-# TEMPLATE NOTES:
-#
-# Wrapper Types:
-#   1. Pass-through: Transparent wrapper that modifies arguments/output
-#   2. Command: Adds new commands while still supporting task commands
-#   3. Hybrid: Combination of both
-#
-# Directory Structure (v1.3.0+):
-#   ~/.task/
-#   ├── scripts/                # Wrapper symlinks (nicedates, etc.)
-#   │   └── <SHORT_NAME>/       # Your project files
-#   ├── hooks/                  # Hook symlinks
-#   ├── config/                 # Config files
-#   └── logs/                   # Debug and test logs
-#
-# Wrapper Implementation:
-#   Wrappers should:
-#   - Support TW_NEXT_WRAPPER env var for chaining
-#   - Pass through unhandled commands to task
-#   - Handle --version and --help gracefully
-#   - Be fast (users notice slow wrappers)
-#   - Provide clear error messages
-#
-# Key Functions (from tw-common.sh):
-#   tw_clone_to_project         # Clone to scripts/<SHORT_NAME>/
-#   tw_symlink_wrapper          # Create wrapper symlink
-#   tw_remove_wrapper           # Remove wrapper symlink
-#   tw_check_python_version     # Verify Python version
-#   tw_check_taskwarrior_version # Verify Taskwarrior version
-#   tw_check_command            # Verify command exists
-#   tw_add_config               # Add taskrc configuration
-#   tw_remove_config            # Remove taskrc configuration
-#
-# Environment Variables:
-#   $INSTALL_DIR                # ~/.task (default)
-#   $SCRIPTS_DIR                # ~/.task/scripts (default)
-#   $HOOKS_DIR                  # ~/.task/hooks (default)
-#   $CONFIG_DIR                 # ~/.task/config (default)
-#   $LOGS_DIR                   # ~/.task/logs (default)
-#   $TASKRC                     # ~/.taskrc (default)
-#   $TW_DEBUG                   # 0 or 1
-#
-# Wrapper Chaining:
-#   If TW_NEXT_WRAPPER is set, wrapper should call it instead of task:
-#   
-#   if [ -n "$TW_NEXT_WRAPPER" ]; then
-#       exec "$TW_NEXT_WRAPPER" "$@"
-#   else
-#       exec task "$@"
-#   fi
-#
-# PATH Configuration:
-#   Wrappers must be in PATH to work. Users should add:
-#   
-#   export PATH="$HOME/.task/scripts:$PATH"
-#   
-#   to their shell RC file.
-#
-# Best Practices:
-#   - Keep wrappers stateless when possible
-#   - Use tw_* functions instead of direct commands
-#   - Test with both standalone and chained usage
-#   - Document wrapper behavior clearly
-#   - Handle edge cases gracefully
-#   - Provide examples in README
-#
-# See Also:
-#   - dev/API.md for complete function reference
-#   - dev/models/nicedates.install for working example
-#   - DEVELOPERS.md for wrapper architecture
-#   - lib/tw-wrapper.py for Python wrapper base class
+#=============================================================================
+# ENVIRONMENT DETECTION
+#=============================================================================
+
+: ${SCRIPTS_DIR:=~/.task/scripts}
+: ${CONFIG_DIR:=~/.task/config}
+: ${DOCS_DIR:=~/.task/docs}
+: ${TASKRC:=~/.taskrc}
+
+#=============================================================================
+# HELPER FUNCTIONS
+#=============================================================================
+
+check_requirements() {
+    tw_msg "Checking requirements..."
+    
+    # Check for curl
+    if ! command -v curl &>/dev/null; then
+        tw_die "curl is required but not found. Please install curl."
+    fi
+    
+    # Check for Taskwarrior
+    if ! command -v task &>/dev/null; then
+        tw_die "Taskwarrior is required but not found. Please install Taskwarrior."
+    fi
+    
+    # Optional: Check versions if tw-common.sh is available
+    if type tw_check_taskwarrior_version &>/dev/null; then
+        tw_check_taskwarrior_version "2.6.0" || return 1
+    fi
+    
+    # Check if scripts directory is in PATH
+    if [[ ":$PATH:" != *":$SCRIPTS_DIR:"* ]]; then
+        tw_warn "$SCRIPTS_DIR is not in PATH"
+        tw_warn "Add to your shell profile: export PATH=\"\$PATH:$SCRIPTS_DIR\""
+    fi
+    
+    tw_success "Requirements check passed"
+    return 0
+}
+
+download_file() {
+    local filename="$1"
+    local url="${BASE_URL}/${filename}"
+    local target_dir="$2"
+    local target_name="${3:-$filename}"
+    local target_path="${target_dir}/${target_name}"
+    
+    tw_debug "Downloading $url to $target_path"
+    
+    # Use tw_curl_and_place if available, else basic curl
+    if type tw_curl_and_place &>/dev/null; then
+        tw_curl_and_place "$url" "$target_dir" "$target_name" || return 1
+    else
+        # Ensure directory exists
+        mkdir -p "$target_dir" || {
+            tw_error "Failed to create directory: $target_dir"
+            return 1
+        }
+        
+        # Download to temp file first
+        local tmp_file
+        tmp_file=$(mktemp) || {
+            tw_error "Failed to create temporary file"
+            return 1
+        }
+        
+        if ! curl -fsSL "$url" -o "$tmp_file"; then
+            tw_error "Failed to download: $url"
+            rm -f "$tmp_file"
+            return 1
+        fi
+        
+        # Move to final location
+        if ! mv "$tmp_file" "$target_path"; then
+            tw_error "Failed to move file to: $target_path"
+            rm -f "$tmp_file"
+            return 1
+        fi
+        
+        tw_success "Downloaded: $target_name"
+    fi
+    
+    return 0
+}
+
+#=============================================================================
+# INSTALL FUNCTION
+#=============================================================================
+
+install() {
+    tw_msg "Installing $APP_NAME v$APP_VERSION..."
+    
+    # Check requirements
+    check_requirements || return 1
+    
+    # Create directories
+    mkdir -p "$SCRIPTS_DIR" "$CONFIG_DIR" "$DOCS_DIR"
+    
+    # Download files based on type
+    for filename in "${!FILES[@]}"; do
+        local file_type="${FILES[$filename]}"
+        
+        case "$file_type" in
+            script)
+                download_file "$filename" "$SCRIPTS_DIR" || return 1
+                # Make scripts executable
+                chmod +x "$SCRIPTS_DIR/$filename"
+                ;;
+            config)
+                download_file "$filename" "$CONFIG_DIR" || return 1
+                ;;
+            doc)
+                # Rename README.md to appname_README.md to avoid conflicts
+                if [[ "$filename" == "README.md" ]]; then
+                    download_file "$filename" "$DOCS_DIR" "${APP_NAME}_README.md" || return 1
+                else
+                    download_file "$filename" "$DOCS_DIR" || return 1
+                fi
+                ;;
+            *)
+                tw_warn "Unknown file type: $file_type for $filename"
+                ;;
+        esac
+    done
+    
+    # Configure Taskwarrior (if config file exists)
+    if [[ -n "${FILES[${APP_NAME}.rc]:-}" ]]; then
+        configure_taskwarrior || return 1
+    fi
+    
+    tw_success "Successfully installed $APP_NAME v$APP_VERSION"
+    tw_msg "Files installed to:"
+    tw_msg "  Scripts: $SCRIPTS_DIR"
+    if [[ -n "${FILES[${APP_NAME}.rc]:-}" ]]; then
+        tw_msg "  Config: $CONFIG_DIR"
+    fi
+    tw_msg "  Docs: $DOCS_DIR"
+    
+    # Remind about PATH if needed
+    if [[ ":$PATH:" != *":$SCRIPTS_DIR:"* ]]; then
+        tw_warn ""
+        tw_warn "To use $APP_NAME, add $SCRIPTS_DIR to your PATH:"
+        tw_warn "  export PATH=\"\$PATH:$SCRIPTS_DIR\""
+        tw_warn ""
+    fi
+    
+    return 0
+}
+
+configure_taskwarrior() {
+    tw_msg "Configuring Taskwarrior..."
+    
+    local config_line="include $CONFIG_DIR/${APP_NAME}.rc"
+    
+    # Check if .taskrc exists
+    if [[ ! -f "$TASKRC" ]]; then
+        tw_warn ".taskrc not found at $TASKRC"
+        tw_warn "Please add manually: $config_line"
+        return 0
+    fi
+    
+    # Add config using helper if available, else manual
+    if type tw_add_config &>/dev/null; then
+        tw_add_config "$config_line" || return 1
+    else
+        # Check if already exists (idempotent)
+        if grep -Fxq "$config_line" "$TASKRC"; then
+            tw_debug "Config already exists in .taskrc"
+        else
+            echo "$config_line" >> "$TASKRC" || {
+                tw_error "Failed to add config to .taskrc"
+                return 1
+            }
+            tw_success "Added config to .taskrc"
+        fi
+    fi
+    
+    return 0
+}
+
+#=============================================================================
+# REMOVE FUNCTION
+#=============================================================================
+
+remove() {
+    tw_msg "Removing $APP_NAME..."
+    
+    # Remove files based on type
+    for filename in "${!FILES[@]}"; do
+        local file_type="${FILES[$filename]}"
+        
+        case "$file_type" in
+            script)
+                local file_path="$SCRIPTS_DIR/$filename"
+                if [[ -f "$file_path" ]]; then
+                    rm -f "$file_path"
+                    tw_success "Removed: $file_path"
+                fi
+                ;;
+            config)
+                local file_path="$CONFIG_DIR/$filename"
+                if [[ -f "$file_path" ]]; then
+                    rm -f "$file_path"
+                    tw_success "Removed: $file_path"
+                fi
+                ;;
+            doc)
+                # Handle renamed README
+                if [[ "$filename" == "README.md" ]]; then
+                    local file_path="$DOCS_DIR/${APP_NAME}_README.md"
+                else
+                    local file_path="$DOCS_DIR/$filename"
+                fi
+                if [[ -f "$file_path" ]]; then
+                    rm -f "$file_path"
+                    tw_success "Removed: $file_path"
+                fi
+                ;;
+        esac
+    done
+    
+    # Remove config from .taskrc (if config exists)
+    if [[ -n "${FILES[${APP_NAME}.rc]:-}" ]]; then
+        remove_config || return 1
+    fi
+    
+    tw_success "Successfully removed $APP_NAME"
+    
+    return 0
+}
+
+remove_config() {
+    local config_line="include $CONFIG_DIR/${APP_NAME}.rc"
+    
+    # Check if .taskrc exists
+    if [[ ! -f "$TASKRC" ]]; then
+        tw_debug ".taskrc not found, nothing to remove"
+        return 0
+    fi
+    
+    # Remove using helper if available, else manual
+    if type tw_remove_config &>/dev/null; then
+        tw_remove_config "$config_line"
+    else
+        # Check if config exists
+        if ! grep -Fxq "$config_line" "$TASKRC"; then
+            tw_debug "Config not found in .taskrc"
+            return 0
+        fi
+        
+        # Remove config line
+        local tmp_file
+        tmp_file=$(mktemp) || {
+            tw_error "Failed to create temporary file"
+            return 1
+        }
+        
+        if grep -Fxv "$config_line" "$TASKRC" > "$tmp_file" 2>/dev/null; then
+            mv "$tmp_file" "$TASKRC"
+            tw_success "Removed config from .taskrc"
+        else
+            tw_warn "Failed to remove config from .taskrc"
+            rm -f "$tmp_file"
+        fi
+    fi
+    
+    return 0
+}
+
+#=============================================================================
+# MAIN DISPATCHER
+#=============================================================================
+
+case "${1:-}" in
+    install)
+        install
+        ;;
+    remove|uninstall)
+        remove
+        ;;
+    *)
+        echo "Usage: $0 {install|remove}"
+        echo ""
+        echo "Install or remove $APP_NAME wrapper for Taskwarrior"
+        echo ""
+        echo "Commands:"
+        echo "  install   - Download and install $APP_NAME"
+        echo "  remove    - Remove $APP_NAME and clean up"
+        exit 1
+        ;;
+esac

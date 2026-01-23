@@ -1,23 +1,20 @@
+# tw-recurrence.meta - Enhanced recurrence system
+# Repository: https://github.com/linuxcaffe/tw-recurrence_overhaul-hook
+
 name=tw-recurrence
-short_desc=Advanced recurrence system beyond Taskwarrior's built-in capabilities
-version=1.0.0
-repo=https://github.com/linuxcaffe/tw-recurrence_overhaul-hook
-type=hook
-install_script=tw-recurrence.install
-author=linuxcaffe
-wrapper=no
-
-long_desc=Comprehensive recurrence enhancement for Taskwarrior supporting both
-  'chained' recurrence (completion-based spawning) and 'periodic' recurrence
-  (time-based spawning). Features include instance pile-up control, relative
-  date calculations, template-instance relationship management, and sophisticated
-  recurrence pattern handling that extends beyond Taskwarrior's native
-  capabilities.
-
+version=2.0.0
+description=Enhanced recurrence system with chained and periodic modes
 requires=python3>=3.6,taskwarrior>=2.6.2
 
-provides=on-add-recurrence.py,on-modify-recurrence.py,on-exit-recurrence.py
+# Files to install
+# Note: on-add_recurrence.py and on-modify_recurrence.py are the same file in the repo
+# The installer creates a symlink for on-add -> on-modify
+files=on-add_recurrence.py:hook,on-modify_recurrence.py:hook,on-exit_recurrence.py:hook,recurrence.rc:config,README.md:doc
 
-checksum_type=sha256
+# Base URL for raw file downloads
+base_url=https://raw.githubusercontent.com/linuxcaffe/tw-recurrence_overhaul-hook/main/
 
-tags=hook,recurrence,scheduling,automation,advanced
+# Checksums (to be filled in with actual SHA256 hashes)
+# Generate with: sha256sum on-add_recurrence.py on-modify_recurrence.py on-exit_recurrence.py recurrence.rc README.md
+# Format: sha256:hash1,sha256:hash2,sha256:hash3,sha256:hash4,sha256:hash5
+checksums=

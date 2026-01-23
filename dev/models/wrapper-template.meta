@@ -1,110 +1,35 @@
-# wrapper-template.meta
+# wrapper-template.meta - Template for wrapper/script .meta files
+# Version: 2.0.0
 #
-# Template for creating wrapper applications for Taskwarrior
-#
-# INSTRUCTIONS:
-# 1. Copy this file to registry.d/<yourapp>.meta
-# 2. Replace all <PLACEHOLDER> markers with actual values
-# 3. Remove [OPTIONAL] sections if not needed
-# 4. Remove these instruction comments
-# 5. Test with: tw --info yourapp
+# This file describes a wrapper/script application for awesome-taskwarrior.
+# Use this template for executables that go in ~/.task/scripts/
 
-# REQUIRED: Unique identifier (no spaces, lowercase with hyphens)
-# EXAMPLE: tw-nicedates, tw-filter
-name=<YOURAPP-NAME>
+# Required: Application identifier (used in commands like `tw.py install mywrapper`)
+# Rules: lowercase letters, numbers, hyphens, underscores only
+name=mywrapper
 
-# REQUIRED: Short name for directory installation (no 'tw-' prefix)
-# EXAMPLE: nicedates, filter, cmx
-# NOTE: Used for ~/.task/scripts/<short_name>/
-short_name=<SHORT-NAME>
+# Required: Semantic version number
+version=1.0.0
 
-# REQUIRED: One-line description for list view (max 80 chars)
-short_desc=<Brief description of what this wrapper does>
+# Required: One-line description (shown in listings, keep under 80 chars)
+description=Brief description of what your wrapper script does
 
-# REQUIRED: Current version (use your own versioning scheme)
-version=<VERSION>
+# Optional: Comma-separated list of requirements
+# Note: Wrapper scripts often have language-specific requirements
+requires=bash>=4.0,taskwarrior>=2.6.0
 
-# REQUIRED: Git repository URL
-repo=https://github.com/<USERNAME>/<REPO>
+# Required: Comma-separated list of filename:type pairs
+# Types: script, config, doc (hooks not applicable for wrappers)
+# Order matters - must match order of checksums field
+# README.md will be renamed to appname_README.md when installed
+files=mywrapper:script,mywrapper.rc:config,README.md:doc
 
-# REQUIRED: App type (wrapper for wrapper applications)
-type=wrapper
+# Required: Base URL for curl downloads
+# Must serve raw file content (not HTML)
+base_url=https://raw.githubusercontent.com/username/mywrapper/main/
 
-# REQUIRED: Name of installer script in installers/ directory
-install_script=<YOURAPP-NAME>.install
-
-# REQUIRED: This is a wrapper (yes)
-# NOTE: Wrappers can be stacked and integrated into tw.py's wrapper chain
-wrapper=yes
-
-# [OPTIONAL] Multi-line detailed description
-long_desc=<Detailed description of wrapper functionality.
-  Explain what modifications the wrapper makes to task commands.
-  Document any special syntax or features.>
-
-# [OPTIONAL] Author/maintainer information
-author=<YOUR-USERNAME>
-
-# [OPTIONAL] Required dependencies (comma-separated)
-# EXAMPLE: python3>=3.6,taskwarrior>=2.6.2,dateutil
-requires=taskwarrior>=2.6.2
-
-# [OPTIONAL] Apps that conflict with this one (comma-separated)
-conflicts=
-
-# [OPTIONAL] Files/commands this app provides (comma-separated)
-# NOTE: For wrappers, list the wrapper executable
-# EXAMPLE: provides=nicedates.py,nicedates
-provides=<WRAPPER-EXECUTABLE>
-
-# [OPTIONAL] Checksum for verification
-checksum_type=sha256
-checksum=<CHECKSUM-VALUE>
-
-# [OPTIONAL] Tags for categorization (comma-separated)
-# EXAMPLE: tags=wrapper,dates,parsing,natural-language
-tags=wrapper
-
-# TEMPLATE NOTES:
-#
-# Wrapper Design:
-#   - Wrappers intercept task commands before they reach taskwarrior
-#   - They modify arguments, add defaults, or enhance syntax
-#   - Must pass through to task (or next wrapper in chain)
-#   - Must preserve exit codes
-#   - Should not modify task data directly (use hooks for that)
-#
-# Wrapper Chain:
-#   - Multiple wrappers can be stacked
-#   - Order matters: first wrapper processes first
-#   - Example chain: nicedates → cmx → task
-#   - Each wrapper reads TW_NEXT_WRAPPER environment variable
-#
-# Implementation Requirements:
-#   - Accept all task commands and arguments
-#   - Handle --help, --version transparently
-#   - Preserve environment variables
-#   - Exit with same code as task
-#   - Handle signals properly (SIGINT, SIGTERM)
-#
-# Common Wrapper Types:
-#   - Date parsing: Enhance date syntax (e.g., "tomorrow", "next week")
-#   - Context multiplexing: Route commands to different contexts
-#   - Syntax sugar: Add shorthand commands or aliases
-#   - Argument preprocessing: Expand abbreviations, add defaults
-#   - Output formatting: Post-process task output
-#
-# Integration with tw.py:
-#   - Installed to $INSTALL_DIR/bin or ~/bin
-#   - Added to wrapper stack in tw.config
-#   - Can be invoked directly: yourapp <command>
-#   - Can be invoked via tw: tw --exec yourapp <command>
-#   - Can be default: tw <command> (if in wrapper stack)
-#
-# Best Practices:
-#   - Keep wrapper fast (minimize overhead)
-#   - Don't break existing task syntax
-#   - Document new syntax in long_desc
-#   - Handle edge cases gracefully
-#   - Test with wrapper stack enabled
-#   - Provide --no-wrapper passthrough option
+# Optional: SHA256 checksums for file integrity verification
+# Format: sha256:hash1,sha256:hash2,sha256:hash3,...
+# Order must match files= field
+# checksums=sha256:abc123...,sha256:def456...,sha256:789xyz...
+checksums=

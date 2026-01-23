@@ -1,110 +1,38 @@
-# hook-template.meta
+# hook-template.meta - Template for .meta files
+# Version: 2.0.0
 #
-# Template for creating hook-based Taskwarrior extensions
-#
-# INSTRUCTIONS:
-# 1. Copy this file to registry.d/<yourapp>.meta
-# 2. Replace all <PLACEHOLDER> markers with actual values
-# 3. Remove [OPTIONAL] sections if not needed
-# 4. Remove these instruction comments
-# 5. Test with: tw --info yourapp
+# This file describes an application for the awesome-taskwarrior registry.
+# Update all fields for your specific application.
 
-# REQUIRED: Unique identifier (no spaces, lowercase with hyphens)
-# EXAMPLE: tw-recurrence, tw-priority
-name=<YOURAPP-NAME>
+# Required: Application identifier (used in commands like `tw.py install myapp`)
+# Rules: lowercase letters, numbers, hyphens, underscores only
+name=myapp
 
-# REQUIRED: Short name for directory installation (no 'tw-' prefix)
-# EXAMPLE: recurrence, priority, agenda
-# NOTE: Used for ~/.task/hooks/<short_name>/
-short_name=<SHORT-NAME>
+# Required: Semantic version number
+version=1.0.0
 
-# REQUIRED: One-line description for list view (max 80 chars)
-short_desc=<Brief description of what this hook does>
+# Required: One-line description (shown in listings, keep under 80 chars)
+description=Brief description of what your hook application does
 
-# REQUIRED: Current version (use your own versioning scheme)
-# EXAMPLE: 1.0.0, 2023.01, or v1.2.3
-version=<VERSION>
+# Optional: Comma-separated list of requirements
+# Formats: command, command>=version, command==version
+requires=python3>=3.6,taskwarrior>=2.6.0
 
-# REQUIRED: Git repository URL
-# NOTE: Must be publicly accessible for tw --install to work
-repo=https://github.com/<USERNAME>/<REPO>
+# Required: Comma-separated list of filename:type pairs
+# Types: hook, script, config, doc
+# Order matters - must match order of checksums field
+# README.md will be renamed to appname_README.md when installed
+files=on-add_myapp.py:hook,on-modify_myapp.py:hook,myapp.rc:config,README.md:doc
 
-# REQUIRED: App type (hook, wrapper, utility, or web)
-type=hook
+# Required: Base URL for curl downloads
+# Must serve raw file content (not HTML)
+# Usually points to GitHub raw, GitLab raw, etc.
+base_url=https://raw.githubusercontent.com/username/myapp/main/
 
-# REQUIRED: Name of installer script in installers/ directory
-# NOTE: Must match exactly, including .install extension
-install_script=<YOURAPP-NAME>.install
-
-# [OPTIONAL] Multi-line detailed description
-# NOTE: Continuation lines must be indented with spaces
-# EXAMPLE:
-# long_desc=This hook provides advanced functionality for Taskwarrior.
-#   It integrates with the on-add, on-modify, and on-exit events to
-#   automatically manage task attributes based on custom rules.
-long_desc=<Detailed description of functionality.
-  Second line if needed.
-  Third line if needed.>
-
-# [OPTIONAL] Author/maintainer information
-author=<YOUR-USERNAME>
-
-# [OPTIONAL] Required dependencies (comma-separated)
-# NOTE: Version constraints use >= or == syntax
-# EXAMPLE: python3>=3.6,taskwarrior>=2.6.2,jq
-requires=taskwarrior>=2.6.2
-
-# [OPTIONAL] Apps that conflict with this one (comma-separated)
-# EXAMPLE: conflicts=other-recurrence-hook,builtin-recurrence
-conflicts=
-
-# [OPTIONAL] Files/commands this app provides (comma-separated)
-# NOTE: Helps detect conflicts and verify installation
-# EXAMPLE: provides=on-add-yourapp.py,on-modify-yourapp.py,on-exit-yourapp.py
-provides=<HOOK-FILES>
-
-# [OPTIONAL] Whether this app wraps task commands (yes/no)
-# NOTE: Set to 'yes' only if this hook modifies task command behavior
-wrapper=no
-
-# [OPTIONAL] Checksum type (sha256, sha1, or md5)
-# NOTE: Used for verification, sha256 recommended
-checksum_type=sha256
-
-# [OPTIONAL] Checksum value
-# NOTE: Generate with: sha256sum <file> or git rev-parse HEAD
-# EXAMPLE: checksum=abc123def456...
-checksum=<CHECKSUM-VALUE>
-
-# [OPTIONAL] Tags for categorization and search (comma-separated)
-# NOTE: Use lowercase, common keywords
-# EXAMPLE: tags=hook,automation,priority,scheduling
-tags=hook
-
-# TEMPLATE NOTES:
-#
-# Hook Types:
-#   - on-add: Triggered when a task is created
-#   - on-modify: Triggered when a task is modified
-#   - on-exit: Triggered when taskwarrior exits
-#   - on-launch: Triggered when taskwarrior starts
-#
-# Hook Language:
-#   - Can be any executable (Python, Bash, etc.)
-#   - Must be executable (chmod +x)
-#   - Must read JSON from stdin
-#   - Must write JSON to stdout (or nothing for on-exit)
-#   - Must exit with 0 for success
-#
-# Common Dependencies:
-#   - python3: For Python-based hooks
-#   - jq: For JSON processing in bash hooks
-#   - taskwarrior>=2.6.2: Always required
-#
-# Best Practices:
-#   - Keep hooks fast (users notice slow hooks)
-#   - Handle errors gracefully
-#   - Provide clear error messages
-#   - Test with various task states
-#   - Document UDAs in long_desc
-#   - Include test suite in install script
+# Optional: SHA256 checksums for file integrity verification
+# Format: sha256:hash1,sha256:hash2,sha256:hash3,...
+# Order must match files= field
+# Generate with: sha256sum file1 file2 file3 ...
+# Leave empty or comment out if not using checksums
+# checksums=sha256:abc123...,sha256:def456...,sha256:789xyz...,sha256:012uvw...
+checksums=

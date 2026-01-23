@@ -1,571 +1,660 @@
-# Contributing to awesome-taskwarrior
+# Contributing to awesome-taskwarrior v2.0.0
 
-Thank you for your interest in contributing! This guide helps you work effectively with the awesome-taskwarrior ecosystem, whether you're adding new extensions or improving existing ones.
+Thank you for your interest in contributing to awesome-taskwarrior! This guide will help you create and submit applications that work with the v2.0.0 curl-based architecture.
 
 ## Table of Contents
 
-- [Getting Started](#getting-started)
-- [Project Structure](#project-structure)
-- [Adding a New Extension](#adding-a-new-extension)
-- [Working with Claude (AI Assistant)](#working-with-claude-ai-assistant)
-- [Testing Your Extension](#testing-your-extension)
-- [Submission Guidelines](#submission-guidelines)
+- [Quick Start](#quick-start)
+- [Repository Structure](#repository-structure)
+- [Creating .meta Files](#creating-meta-files)
+- [Creating .install Scripts](#creating-install-scripts)
+- [Testing Your Contribution](#testing-your-contribution)
+- [Submission Process](#submission-process)
+- [Code Standards](#code-standards)
 
-## Getting Started
+## Quick Start
 
 ### Prerequisites
 
-- Taskwarrior 2.6.2 (NOT 3.x)
-- Python 3.6+ (for Python-based extensions)
+- Bash 4.0+
+- curl
+- Taskwarrior 2.6.0+ (for testing)
 - Git
-- Bash
 
-### Essential Reading
+### Development Workflow
 
-Before contributing, familiarize yourself with:
+1. **Create your Taskwarrior extension** in its own repository
+2. **Create self-contained .install script** that works standalone
+3. **Create .meta file** describing your application
+4. **Test standalone** (without tw.py)
+5. **Test with tw.py** (submit to awesome-taskwarrior)
+6. **Submit pull request** with .meta and .install files
 
-1. **[DEVELOPERS.md](DEVELOPERS.md)** - Complete architecture guide
-2. **[dev/API.md](dev/API.md)** - Function reference for libraries
-3. **[dev/models/](dev/models/)** - Templates and examples
-4. **[README.md](README.md)** - User-facing documentation
+## Repository Structure
 
-## Project Structure
+### Your Extension Repository
+
+Organize your repository for curl-friendly installation:
 
 ```
-awesome-taskwarrior/
-├── registry.d/          # Extension metadata (.meta files)
-├── installers/          # Installation scripts (.install files)
-├── lib/                 # Shared libraries
-│   ├── tw-common.sh    # Bash functions for installers
-│   └── tw-wrapper.py   # Python base class for wrappers
-├── dev/
-│   ├── models/         # Templates and examples
-│   ├── API.md          # Function reference
-│   └── DEVELOPERS.md   # Architecture guide
-└── tw.py               # Main wrapper/package manager
+your-extension-repo/
+├── on-add_yourapp.py       # Hooks (if applicable)
+├── on-modify_yourapp.py
+├── yourapp                 # Scripts (if applicable)
+├── yourapp.rc              # Config (if applicable)
+├── README.md               # Documentation
+├── yourapp.install         # Self-contained installer
+├── yourapp.meta            # Metadata for registry
+├── tests/                  # Your test suite
+├── CHANGELOG.md
+└── LICENSE
 ```
 
-## Adding a New Extension
+**Key Principles:**
 
-### Step 1: Choose Your Template
+- **Files to be installed go in repository root**
+- **Name files with your app identifier** (e.g., `on-add_yourapp.py`)
+- **Development files stay in repo** (tests, docs, etc. not installed)
+- **README.md will be renamed** to `yourapp_README.md` when installed
 
-Based on your extension type:
+### File Naming Conventions
 
-- **Hook** → Use `dev/models/hook-template.meta` and `.install`
-- **Wrapper** → Use `dev/models/wrapper-template.meta` and `.install`
+| Type | Naming Pattern | Example |
+|------|----------------|---------|
+| Hook | `on-{event}_{appname}.py` | `on-add_recurrence.py` |
+| Script | `{appname}` or `{appname}-{tool}` | `nicedates`, `taskopen-list` |
+| Config | `{appname}.rc` | `recurrence.rc` |
+| Doc | `README.md` (renamed on install) | → `recurrence_README.md` |
 
-### Step 2: Create Metadata File
+## Creating .meta Files
 
-Create `registry.d/yourapp.meta`:
+The `.meta` file describes your application for the awesome-taskwarrior registry.
+
+### Format
 
 ```ini
+# Required fields
 name=yourapp
-short_name=yourapp
-short_desc=One-line description (max 80 chars)
 version=1.0.0
-repo=https://github.com/username/yourapp
-type=hook
-install_script=yourapp.install
-author=your-username
-wrapper=no
+description=One-line description of what your app does
 
-long_desc=Detailed description of functionality.
-  Continuation lines must be indented with spaces.
+# Optional but recommended
+requires=python3,taskwarrior>=2.6.0
 
-requires=python3>=3.6,taskwarrior>=2.6.2
+# Files to install (filename:type,filename:type,...)
+files=on-add_yourapp.py:hook,yourapp.rc:config,README.md:doc
 
-provides=on-add-yourapp.py,on-modify-yourapp.py
+# Base URL for raw file downloads
+base_url=https://raw.githubusercontent.com/username/yourapp/main/
 
-tags=hook,automation,productivity
+# Optional: File integrity checksums
+checksums=sha256:abc123...,sha256:def456...,sha256:789xyz...
 ```
 
-**Required fields:**
-- name, short_name, short_desc, version, repo, type, install_script
+### Field Reference
+
+#### name (required)
+
+Application identifier used in commands:
+
+```bash
+tw.py install yourapp  # Uses this name
+```
+
+**Rules:**
+- Lowercase letters, numbers, hyphens, underscores only
+- Should match repository name convention
+- Typically prefixed with `tw-` (e.g., `tw-recurrence`)
+
+#### version (required)
+
+Semantic version number:
+
+```ini
+version=1.0.0
+version=2.1.3-beta
+```
+
+#### description (required)
+
+One-line description shown in listings:
+
+```ini
+description=Enhanced recurrence system with chained and periodic modes
+```
+
+**Best practices:**
+- Keep under 80 characters
+- Describe what, not how
+- Avoid marketing language
+
+#### requires (optional)
+
+Comma-separated list of dependencies:
+
+```ini
+requires=python3,taskwarrior>=2.6.0,jq
+requires=bash>=4.0
+```
+
+**Supported formats:**
+- `command` - Just command name
+- `command>=version` - Minimum version
+- `command==version` - Exact version
+
+#### files (required)
+
+Comma-separated list of `filename:type` pairs:
+
+```ini
+files=on-add_app.py:hook,on-modify_app.py:hook,app.rc:config,README.md:doc
+```
+
+**File types:**
+
+| Type | Target Directory | Purpose |
+|------|------------------|---------|
+| `hook` | `~/.task/hooks/` | Taskwarrior hook scripts |
+| `script` | `~/.task/scripts/` | Executable wrapper scripts |
+| `config` | `~/.task/config/` | Configuration files |
+| `doc` | `~/.task/docs/` | Documentation |
 
 **Important:**
-- Use lowercase with hyphens for names (e.g., `tw-recurrence`)
-- `short_name` should be the directory name without `tw-` prefix (e.g., `recurrence`)
-- Tags should match existing taxonomy (see `tw --list tags`)
-- Multi-line values must have indented continuations
+- Order matters (matches checksums order)
+- Use actual filenames from repository
+- README.md will be auto-renamed to `appname_README.md`
 
-### Step 3: Create Installer Script
+#### base_url (required)
 
-Create `installers/yourapp.install`:
+Base URL for downloading files via curl:
+
+```ini
+# GitHub (most common)
+base_url=https://raw.githubusercontent.com/username/repo/main/
+
+# GitHub with subdirectory
+base_url=https://raw.githubusercontent.com/username/repo/main/src/
+
+# GitLab
+base_url=https://gitlab.com/username/repo/-/raw/main/
+
+# Bitbucket
+base_url=https://bitbucket.org/username/repo/raw/main/
+```
+
+**Requirements:**
+- Must be publicly accessible
+- Must serve raw file content (not HTML)
+- Should point to stable branch (main/master) or tagged release
+
+#### checksums (optional but recommended)
+
+SHA256 checksums for file integrity verification:
+
+```ini
+checksums=sha256:abc123...,sha256:def456...,sha256:789xyz...
+```
+
+**Generating checksums:**
+
+```bash
+# Generate for each file in order
+sha256sum on-add_app.py on-modify_app.py app.rc README.md
+
+# Format for .meta file (remove filenames, keep hashes)
+# Add sha256: prefix to each, join with commas
+```
+
+**Helper script:**
 
 ```bash
 #!/bin/bash
+# generate-checksums.sh
 
-APPNAME="yourapp"
-SHORT_NAME="yourapp"
-REPO_URL="https://github.com/username/yourapp"
+files=(
+    "on-add_yourapp.py"
+    "on-modify_yourapp.py"
+    "yourapp.rc"
+    "README.md"
+)
 
-# Source common library
-source "$(dirname "$0")/../lib/tw-common.sh"
+checksums=""
+for file in "${files[@]}"; do
+    sum=$(sha256sum "$file" | cut -d' ' -f1)
+    if [[ -n "$checksums" ]]; then
+        checksums+=","
+    fi
+    checksums+="sha256:$sum"
+done
 
+echo "checksums=$checksums"
+```
+
+### Complete Example
+
+```ini
+# tw-recurrence.meta
+name=tw-recurrence
+version=2.0.0
+description=Enhanced recurrence system with chained and periodic modes
+requires=python3>=3.6,taskwarrior>=2.6.2
+files=on-add_recurrence.py:hook,on-modify_recurrence.py:hook,on-exit_recurrence.py:hook,recurrence.rc:config,README.md:doc
+base_url=https://raw.githubusercontent.com/linuxcaffe/tw-recurrence_overhaul-hook/main/
+checksums=
+```
+
+## Creating .install Scripts
+
+The `.install` script is a self-contained bash script that handles installation and removal.
+
+### Template
+
+See `dev/models/hook-template.install` and `dev/models/wrapper-template.install` for full templates.
+
+### Core Structure
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+# === CONFIGURATION ===
+APP_NAME="yourapp"
+APP_VERSION="1.0.0"
+BASE_URL="https://raw.githubusercontent.com/user/yourapp/main"
+
+# === OPTIONAL HELPER SOURCING ===
+if [[ -f ~/.task/lib/tw-common.sh ]]; then
+    source ~/.task/lib/tw-common.sh
+else
+    tw_msg() { echo "[INFO] $*"; }
+    tw_error() { echo "[ERROR] $*" >&2; }
+fi
+
+# === ENVIRONMENT DETECTION ===
+: ${HOOKS_DIR:=~/.task/hooks}
+: ${CONFIG_DIR:=~/.task/config}
+: ${DOCS_DIR:=~/.task/docs}
+: ${TASKRC:=~/.taskrc}
+
+# === INSTALL FUNCTION ===
 install() {
-    echo "Installing ${APPNAME}..."
+    # Create directories
+    mkdir -p "$HOOKS_DIR" "$CONFIG_DIR" "$DOCS_DIR"
     
-    # Check dependencies
-    tw_check_python_version 3.6 || return 1
-    tw_check_taskwarrior_version 2.6.2 || return 1
+    # Download files
+    curl -fsSL "$BASE_URL/file.py" -o "$HOOKS_DIR/file_$APP_NAME.py"
     
-    # Clone repository to proper location
-    tw_clone_to_project hook "$SHORT_NAME" "$REPO_URL" || return 1
+    # Make executable
+    chmod +x "$HOOKS_DIR"/*.py
     
-    local project_dir="${HOOKS_DIR}/${SHORT_NAME}"
+    # Configure
+    echo "include $CONFIG_DIR/$APP_NAME.rc" >> "$TASKRC"
     
-    # Install hooks (v1.3.0 signature)
-    tw_symlink_hook "$project_dir" "on-add-yourapp.py" || return 1
-    
-    # Add configuration
-    tw_add_config "uda.yourapp.type=string"
-    
-    echo "✓ Installed ${APPNAME}"
-    echo "  Project files in: ${project_dir}"
     return 0
 }
 
-uninstall() {
-    echo "Uninstalling ${APPNAME}..."
+# === REMOVE FUNCTION ===
+remove() {
+    # Remove files
+    rm -f "$HOOKS_DIR/file_$APP_NAME.py"
+    rm -f "$CONFIG_DIR/$APP_NAME.rc"
     
-    tw_remove_hook "on-add-yourapp.py"
-    tw_remove_config "uda.yourapp"
-    rm -rf "${HOOKS_DIR}/${SHORT_NAME}"
+    # Remove config
+    grep -Fxv "include $CONFIG_DIR/$APP_NAME.rc" "$TASKRC" > "$TASKRC.tmp"
+    mv "$TASKRC.tmp" "$TASKRC"
     
-    echo "✓ Uninstalled ${APPNAME}"
     return 0
 }
 
-# Optional: test function
-test() {
-    echo "Testing ${APPNAME}..."
-    tw_test_hook "on-add-yourapp.py" || return 1
-    echo "✓ All tests passed"
-    return 0
-}
+# === MAIN DISPATCHER ===
+case "${1:-}" in
+    install) install ;;
+    remove|uninstall) remove ;;
+    *) echo "Usage: $0 {install|remove}"; exit 1 ;;
+esac
+```
 
-# Main entry point
-if [ "${BASH_SOURCE[0]}" = "$0" ]; then
-    : ${INSTALL_DIR:=~/.task}
-    : ${HOOKS_DIR:=~/.task/hooks}
-    : ${SCRIPTS_DIR:=~/.task/scripts}
-    : ${CONFIG_DIR:=~/.task/config}
-    : ${LOGS_DIR:=~/.task/logs}
-    : ${TASKRC:=~/.taskrc}
-    : ${TW_DEBUG:=0}
-    
-    case "${1:-install}" in
-        install) install ;;
-        uninstall) uninstall ;;
-        test) test ;;
-        *)
-            echo "Usage: $0 {install|uninstall|test}" >&2
-            exit 1
-            ;;
-    esac
+### Required Features
+
+#### 1. Environment Detection
+
+Always provide defaults:
+
+```bash
+: ${HOOKS_DIR:=~/.task/hooks}
+: ${SCRIPTS_DIR:=~/.task/scripts}
+: ${CONFIG_DIR:=~/.task/config}
+: ${DOCS_DIR:=~/.task/docs}
+: ${TASKRC:=~/.taskrc}
+```
+
+#### 2. Standalone Operation
+
+Must work without tw.py or tw-common.sh:
+
+```bash
+# Check if helper available, else use fallback
+if type tw_curl_and_place &>/dev/null; then
+    tw_curl_and_place "$URL" "$DIR" "$FILE"
+else
+    curl -fsSL "$URL" -o "$DIR/$FILE"
 fi
 ```
 
-### Understanding the Directory Structure
+#### 3. Error Handling
 
-When your extension is installed, it follows this structure:
-
-**For Hooks:**
-```
-~/.task/hooks/
-├── on-add-yourapp.py -> yourapp/on-add-yourapp.py  # Symlink
-└── yourapp/                                         # Project directory
-    ├── on-add-yourapp.py                            # Actual file
-    ├── on-modify-yourapp.py
-    └── test/
-```
-
-**For Wrappers:**
-```
-~/.task/scripts/
-├── yourapp -> yourapp/yourapp.py                   # Symlink
-└── yourapp/                                        # Project directory
-    ├── yourapp.py                                  # Actual file
-    └── README.md
-```
-
-**Key Points:**
-- Apps are cloned to subdirectories (`hooks/yourapp/`, `scripts/yourapp/`)
-- Active hooks/wrappers are symlinked to the parent directory
-- This keeps projects organized and allows multiple files per app
-- Logs go to `~/.task/logs/yourapp/`
-
-**Required functions:**
-- `install()` - Must return 0 on success
-- `uninstall()` - Must clean up completely
-
-**Best practices:**
-- Use `tw-common.sh` library functions (see [dev/API.md](dev/API.md))
-- Check dependencies before making changes
-- Provide clear error messages
-- Include `test()` function when possible
-- Make script standalone executable for testing
-
-### Step 4: Test Locally
+Check return codes and fail gracefully:
 
 ```bash
-# Test without installing
-tw --dry-run --install yourapp
+curl -fsSL "$URL" -o "$FILE" || {
+    echo "ERROR: Failed to download $URL" >&2
+    return 1
+}
+```
 
-# Test in isolation
-TW_TEST_ENV=1 bash installers/yourapp.install install
+#### 4. Idempotence
+
+Safe to run multiple times:
+
+```bash
+# Check before adding to .taskrc
+if ! grep -Fxq "$config_line" "$TASKRC"; then
+    echo "$config_line" >> "$TASKRC"
+fi
+```
+
+#### 5. Complete Cleanup
+
+Remove everything in remove():
+
+```bash
+remove() {
+    # Remove all installed files
+    rm -f "$HOOKS_DIR/on-add_$APP_NAME.py"
+    rm -f "$HOOKS_DIR/on-modify_$APP_NAME.py"
+    rm -f "$CONFIG_DIR/$APP_NAME.rc"
+    rm -f "$DOCS_DIR/${APP_NAME}_README.md"
+    
+    # Remove config entries
+    grep -Fxv "include $CONFIG_DIR/$APP_NAME.rc" "$TASKRC" > "$TASKRC.tmp"
+    mv "$TASKRC.tmp" "$TASKRC"
+}
+```
+
+### Special Cases
+
+#### Creating Symlinks
+
+If hooks share the same file:
+
+```bash
+# Download main file
+curl -fsSL "$BASE_URL/hook.py" -o "$HOOKS_DIR/on-modify_$APP_NAME.py"
+
+# Create symlink for on-add
+ln -sf "on-modify_$APP_NAME.py" "$HOOKS_DIR/on-add_$APP_NAME.py"
+
+# Cleanup in remove()
+rm -f "$HOOKS_DIR/on-add_$APP_NAME.py"  # Remove symlink
+rm -f "$HOOKS_DIR/on-modify_$APP_NAME.py"  # Remove file
+```
+
+#### README Renaming
+
+Avoid conflicts by renaming:
+
+```bash
+# Download with renamed filename
+curl -fsSL "$BASE_URL/README.md" -o "$DOCS_DIR/${APP_NAME}_README.md"
+```
+
+#### Multiple Config Entries
+
+Add multiple includes:
+
+```bash
+echo "include $CONFIG_DIR/$APP_NAME.rc" >> "$TASKRC"
+echo "include $CONFIG_DIR/$APP_NAME-extra.rc" >> "$TASKRC"
+```
+
+## Testing Your Contribution
+
+### 1. Standalone Testing
+
+Test without tw.py first:
+
+```bash
+# Setup test environment
+export HOOKS_DIR=/tmp/test-tw/hooks
+export CONFIG_DIR=/tmp/test-tw/config
+export DOCS_DIR=/tmp/test-tw/docs
+export TASKRC=/tmp/test-tw/.taskrc
+
+# Create structure
+mkdir -p /tmp/test-tw/{hooks,config,docs}
+touch /tmp/test-tw/.taskrc
+
+# Test install
+bash yourapp.install install
+
+# Verify
+echo "=== Installed Files ==="
+ls -la $HOOKS_DIR
+ls -la $CONFIG_DIR
+ls -la $DOCS_DIR
+
+echo "=== .taskrc Contents ==="
+cat $TASKRC
+
+# Test remove
+bash yourapp.install remove
+
+# Verify cleanup
+ls -la $HOOKS_DIR $CONFIG_DIR $DOCS_DIR
+
+# Cleanup
+rm -rf /tmp/test-tw
+```
+
+### 2. Integration Testing with tw.py
+
+After standalone tests pass:
+
+```bash
+# Clone awesome-taskwarrior
+git clone https://github.com/linuxcaffe/awesome-taskwarrior.git
+cd awesome-taskwarrior
+
+# Add your files
+cp /path/to/yourapp.meta registry.d/
+cp /path/to/yourapp.install installers/
 
 # Test with tw.py
-tw --debug --install yourapp
-tw --check yourapp  # If test() function exists
-tw --remove yourapp
+./tw.py list
+./tw.py info yourapp
+./tw.py install yourapp
+
+# Verify
+./tw.py list --installed
+ls -la ~/.task/hooks/ ~/.task/config/ ~/.task/docs/
+
+# Test verification
+./tw.py verify yourapp
+
+# Test removal
+./tw.py remove yourapp
 ```
 
-## Working with Claude (AI Assistant)
+### 3. Test Checklist
 
-If you're using Claude (Anthropic's AI assistant) to help develop your extension, this project has been designed to work well with AI assistance.
+Before submitting, verify:
 
-### The Claude Project Knowledge Base
+- [ ] Installer works standalone (no tw.py)
+- [ ] Installer works without tw-common.sh
+- [ ] All files download successfully
+- [ ] Files placed in correct directories
+- [ ] Hooks are executable (chmod +x)
+- [ ] README renamed to `appname_README.md`
+- [ ] .taskrc includes added correctly
+- [ ] No duplicate .taskrc entries (idempotent)
+- [ ] Remove function cleans up completely
+- [ ] Remove function removes .taskrc includes
+- [ ] Works with tw.py install/remove
+- [ ] Manifest tracking accurate
+- [ ] Checksums verify (if provided)
 
-This repository includes a project knowledge base that Claude can reference. When working with Claude, mention:
+## Submission Process
 
-```
-This project has comprehensive documentation in the knowledge base including:
-- DEVELOPERS.md (architecture and conventions)
-- dev/API.md (function reference)
-- dev/models/ (templates and examples)
+### 1. Prepare Your Repository
 
-Please reference these for awesome-taskwarrior conventions.
-```
+Ensure your extension repository has:
 
-### Effective Prompting
+- [ ] Files in repository root (not subdirectories)
+- [ ] Clear README.md with usage instructions
+- [ ] LICENSE file
+- [ ] CHANGELOG.md
+- [ ] Working .install script in repo
+- [ ] .meta file in repo
 
-#### Creating a New Extension
+### 2. Test Thoroughly
 
-```
-I'm adding [APP_NAME] to awesome-taskwarrior.
+Complete all tests from [Testing](#testing-your-contribution) section.
 
-Project Context:
-- Target: Taskwarrior 2.6.2 (NOT 3.x)
-- Type: [hook/wrapper/utility]
-- Current repo: [YOUR_REPO_URL]
+### 3. Submit Pull Request
 
-Please create:
-1. registry.d/[app-name].meta
-2. installers/[app-name].install
+Submit to awesome-taskwarrior with:
 
-Following the templates in dev/models/ and using tw-common.sh functions 
-from dev/API.md.
+**Files to include:**
+- `registry.d/yourapp.meta`
+- `installers/yourapp.install`
 
-Confirm you've reviewed the templates before generating.
-```
+**PR Description should include:**
 
-#### Updating an Existing Installer
-
-```
-The [app-name] installer needs to [describe change].
-
-Current installer is attached. Please update it following:
-- The template in dev/models/hook-template.install
-- Using tw-common.sh library functions (see dev/API.md)
-- Maintaining the existing install/uninstall/test structure
-
-Show only the changes needed, don't rewrite the whole file.
-```
-
-#### Debugging Installation Issues
-
-```
-tw --install [app-name] is failing with: [error message]
-
-Debug output from: tw --debug --install [app-name]
-[paste output]
-
-The installer should use tw-common.sh functions. What's wrong and how do I fix it?
-```
-
-### Claude Best Practices
-
-**DO:**
-- ✅ Reference specific documentation files (DEVELOPERS.md, API.md)
-- ✅ Mention which template applies (hook-template, wrapper-template)
-- ✅ Request incremental changes for existing code
-- ✅ Ask Claude to confirm understanding before generating
-- ✅ Include relevant context (repo URL, app type, requirements)
-
-**DON'T:**
-- ❌ Assume Claude knows awesome-taskwarrior conventions without prompting
-- ❌ Ask for Taskwarrior 3.x compatibility
-- ❌ Request complete rewrites when small changes suffice
-- ❌ Skip mentioning the project knowledge base
-
-### Prompt Template Library
-
-#### For Creating .meta Files
-
-```
-Create registry.d/[app-name].meta for my [hook/wrapper].
-
-Repository: [URL]
-Description: [brief description]
-Dependencies: [list]
-Type: [hook/wrapper/utility]
-
-Follow the format in dev/models/[hook/wrapper]-template.meta.
-All required fields must be present.
-Use appropriate tags from: tw --list tags
-```
-
-#### For Creating Installers
-
-```
-Create installers/[app-name].install for my [type] extension.
-
-Repository: [URL]
-Provides: [list of files]
-Dependencies: [list]
-
-Requirements:
-- Follow dev/models/[hook/wrapper]-template.install
-- Use tw-common.sh functions (see dev/API.md)
-- Include install(), uninstall(), and test() functions
-- Handle [specific requirements]
-
-The [hooks/wrapper] are located at: [path in repo]
-```
-
-#### For Adding Features
-
-```
-Add [feature] to [app-name].
-
-Current code: [attach file]
-
-Please:
-- Maintain existing structure
-- Use appropriate tw-common.sh functions
-- Add error handling
-- Update test() function if needed
-- Follow awesome-taskwarrior conventions
-
-Explain your approach before showing code changes.
-```
-
-### Working Session Tips
-
-1. **Start with context**: Always mention you're working on awesome-taskwarrior
-2. **Reference docs first**: Point Claude to DEVELOPERS.md and API.md
-3. **Use templates**: Specify which template applies
-4. **Test incrementally**: Ask for testable changes
-5. **Request explanations**: Understand the approach before implementation
-
-## Testing Your Extension
-
-### Manual Testing
-
-```bash
-# Preview installation
-tw --dry-run --install yourapp
-
-# Install in test mode
-TW_TEST_ENV=1 tw --install yourapp
-
-# Run tests (if test() function exists)
-tw --check yourapp
-
-# Verify installation
-tw --list-installed
-ls -la ~/.task/hooks/      # For hooks
-ls -la ~/.task/scripts/    # For wrappers
-
-# Test functionality
-task add "test task"  # Should trigger your hook
-
-# Clean up
-tw --remove yourapp
-```
-
-### Automated Testing
-
-If your installer includes a `test()` function:
-
-```bash
-# Run installer's test suite
-bash installers/yourapp.install test
-
-# Or via tw.py
-tw --check yourapp
-```
-
-### Test Checklist
-
-- [ ] Installation succeeds without errors
-- [ ] All hooks/files are created in correct locations
-- [ ] Configuration is added to .taskrc correctly
-- [ ] Dependencies are checked properly
-- [ ] Uninstallation removes all traces
-- [ ] Test function (if present) passes
-- [ ] Works with Taskwarrior 2.6.2
-- [ ] Dry-run shows accurate preview
-
-## Submission Guidelines
-
-### Before Submitting
-
-1. **Test thoroughly**
-   ```bash
-   tw --dry-run --install yourapp
-   tw --install yourapp
-   tw --check yourapp
-   tw --remove yourapp
-   ```
-
-2. **Verify files**
-   - [ ] `registry.d/yourapp.meta` - All required fields present
-   - [ ] `installers/yourapp.install` - Executable and tested
-   - [ ] Both follow templates in `dev/models/`
-
-3. **Check conventions**
-   - [ ] Name uses lowercase with hyphens
-   - [ ] Installer uses `tw-common.sh` functions
-   - [ ] Error messages are helpful
-   - [ ] Uninstall is clean and complete
-   - [ ] Tags match existing taxonomy
-
-4. **Documentation**
-   - [ ] Repository has README with usage examples
-   - [ ] Dependencies are documented
-   - [ ] Installation requirements are clear
-
-### Pull Request
-
-Create a pull request with:
-
-**Title:** `Add [app-name] - [one-line description]`
-
-**Description:**
 ```markdown
-## Extension Details
-- Name: yourapp
-- Type: hook/wrapper/utility
-- Repository: [URL]
+## Application: yourapp
 
-## What it does
-[Brief description]
+**Description:** Brief description of what your app does
 
-## Testing
-- [ ] Tested installation with `tw --install yourapp`
-- [ ] Tested uninstallation with `tw --remove yourapp`
-- [ ] Tested with Taskwarrior 2.6.2
-- [ ] Test function passes (if applicable)
+**Repository:** https://github.com/username/yourapp
 
-## Files Added/Modified
-- registry.d/yourapp.meta
-- installers/yourapp.install
+**Testing:**
+- [x] Standalone installer tested
+- [x] tw.py integration tested
+- [x] Install/remove tested
+- [x] Checksums verified (if applicable)
 
-## Dependencies
-[List any external dependencies]
+**Changes:**
+- Add yourapp.meta to registry
+- Add yourapp.install installer
+
+**Dependencies:**
+- python3 >= 3.6
+- taskwarrior >= 2.6.0
 ```
 
-### Review Process
+### 4. Review Process
 
 Maintainers will check:
-1. Follows awesome-taskwarrior conventions
-2. Uses library functions appropriately
-3. Installs and uninstalls cleanly
-4. Works with Taskwarrior 2.6.2
-5. Documentation is clear
 
-## Code Style
+1. **Installer independence** - Works standalone
+2. **Code quality** - Follows bash best practices
+3. **Documentation** - Clear .meta descriptions
+4. **Testing** - Verification that it works
+5. **Compatibility** - Works with v2.0.0 architecture
 
-### Bash Scripts
+## Code Standards
 
-- Use `tw-common.sh` library functions
-- Check return codes: `command || return 1`
-- Quote variables: `"$VARIABLE"`
-- Use `local` for function variables
-- Provide debug output: `tw_debug "message"`
+### Bash Style
 
-### Python Code
+Follow these conventions:
 
-For wrappers, extend the base class:
+```bash
+# Use set -euo pipefail
+set -euo pipefail
 
-```python
-from tw_wrapper import TaskWrapper, main
+# Functions in lowercase with underscores
+install_hooks() {
+    # ...
+}
 
-class YourWrapper(TaskWrapper):
-    def process_args(self, args):
-        # Your logic here
-        return modified_args
+# Constants in UPPERCASE
+APP_NAME="myapp"
+BASE_URL="https://..."
 
-if __name__ == '__main__':
-    main(YourWrapper)
+# Local variables
+local file_path="/path/to/file"
+
+# Check return codes
+curl -fsSL "$URL" -o "$FILE" || return 1
+
+# Quote variables
+rm -f "$HOOKS_DIR/$APP_NAME.py"
+
+# Use [[ ]] for conditionals
+if [[ -f "$file" ]]; then
+    # ...
+fi
 ```
 
-### Metadata Files
+### Error Messages
 
-- Use consistent formatting
-- Indent continuation lines with spaces
-- Keep short descriptions under 80 characters
-- Use existing tags when possible
+Be specific and helpful:
+
+```bash
+# Good
+tw_error "Failed to download on-add_myapp.py from $BASE_URL"
+
+# Bad
+tw_error "Download failed"
+```
+
+### Comments
+
+Document non-obvious behavior:
+
+```bash
+# Create symlink because on-add and on-modify share same code
+ln -sf "on-modify_$APP_NAME.py" "$HOOKS_DIR/on-add_$APP_NAME.py"
+```
+
+### Function Organization
+
+Organize functions logically:
+
+```bash
+# 1. Configuration
+APP_NAME="..."
+
+# 2. Helper sourcing
+if [[ -f ... ]]; then
+
+# 3. Environment detection
+: ${HOOKS_DIR:=...}
+
+# 4. Helper functions
+check_requirements() { }
+download_files() { }
+
+# 5. Main functions
+install() { }
+remove() { }
+
+# 6. Dispatcher
+case "${1:-}" in
+```
 
 ## Getting Help
 
-- **Documentation:** See [DEVELOPERS.md](DEVELOPERS.md) and [dev/API.md](dev/API.md)
-- **Examples:** Check [dev/models/](dev/models/) for working examples
-- **Templates:** Use templates as starting points, not from scratch
-- **Issues:** Open an issue for questions or clarifications
-- **Discussions:** Use GitHub Discussions for design questions
+- **Documentation:** Read [DEVELOPERS.md](DEVELOPERS.md) and [API.md](dev/API.md)
+- **Examples:** See `installers/tw-recurrence.install` for a real-world example
+- **Templates:** Use `dev/models/hook-template.install` as starting point
+- **Issues:** Open an issue on GitHub for questions
+- **Discussion:** Join Taskwarrior community channels
 
-## Version Control
+## Additional Resources
 
-### Commit Messages
+- [Taskwarrior Docs](https://taskwarrior.org/docs/)
+- [Hook API Documentation](https://taskwarrior.org/docs/hooks.html)
+- [Bash Best Practices](https://mywiki.wooledge.org/BashGuide)
 
-Use clear, descriptive commit messages:
-
-```
-Add tw-yourapp to registry
-
-- Create registry.d/tw-yourapp.meta
-- Create installers/tw-yourapp.install
-- Tested with Taskwarrior 2.6.2
-```
-
-### Branch Naming
-
-- Feature: `feature/add-yourapp`
-- Fix: `fix/yourapp-installation`
-- Docs: `docs/improve-contributing`
-
-## Compatibility
-
-### Taskwarrior Version
-
-- **Target:** 2.6.2 and 2.x branch
-- **NOT compatible:** Taskwarrior 3.x
-- **PRs for 3.x:** Considered but not guaranteed
-
-### Python Version
-
-- **Minimum:** Python 3.6
-- **Recommended:** Python 3.8+
-
-## Questions?
-
-If you're unsure about anything:
-
-1. Check [DEVELOPERS.md](DEVELOPERS.md) for architecture details
-2. Look at [dev/models/](dev/models/) for examples
-3. Review [dev/API.md](dev/API.md) for function reference
-4. Open an issue for clarification
-5. Start a discussion for design questions
-
-## License
-
-By contributing, you agree that your contributions will be licensed under the same license as the project (MIT License).
-
----
-
-**Thank you for contributing to awesome-taskwarrior!** 🎉
-
-Your extensions help make Taskwarrior even more powerful for the community.
+Thank you for contributing to awesome-taskwarrior!

@@ -1,0 +1,265 @@
+=============================================================================
+CHANGES.txt - awesome-taskwarrior v2.0.0
+=============================================================================
+
+VERSION: 2.0.0
+DATE: 2026-01-22
+TYPE: MAJOR ARCHITECTURAL OVERHAUL
+
+-----------------------------------------------------------------------------
+BREAKING CHANGES
+-----------------------------------------------------------------------------
+
+1. Installation Method Changed
+   FROM: Git clone to subdirectories + symlinks
+   TO: Curl-based direct file placement
+   IMPACT: All existing installers must be rewritten
+   
+2. Directory Structure Simplified
+   FROM: ~/.task/hooks/recurrence/ (git repo with symlinks)
+   TO: ~/.task/hooks/on-add_recurrence.py (direct files)
+   IMPACT: Clean ~/.task/ structure, no nested git repos
+   
+3. Installer Independence Required
+   FROM: Installers required tw-common.sh functions
+   TO: Installers self-contained, optionally use tw-common.sh
+   IMPACT: Each .install script must work standalone
+   
+4. Manifest Format Changed
+   FROM: Per-app tracking (app|version|date)
+   TO: Per-file tracking (app|version|file|checksum|date)
+   IMPACT: Better uninstall granularity, file integrity checks
+
+5. New Directory Added
+   ADDED: ~/.task/docs/ for application documentation
+   PURPOSE: Organized storage for README files
+
+6. Functions Removed from tw-common.sh
+   REMOVED: tw_clone_to_project()
+   REMOVED: tw_symlink_hook()
+   REMOVED: tw_symlink_wrapper()
+   REMOVED: tw_get_install_dir()
+   REASON: No longer needed in curl-based architecture
+
+-----------------------------------------------------------------------------
+NEW FILES
+-----------------------------------------------------------------------------
+
+lib/tw-common.sh v2.0.0 (280 lines)
+  - Pure utility library (no manifest operations)
+  - Curl-based file placement functions
+  - Version checking, messaging, config management
+  - Self-contained installer helpers
+
+tw.py v2.0.0 (917 lines)
+  - Curl-based coordination (not control)
+  - PathManager with 6 directories including docs_dir
+  - MetaFile parser for .meta files
+  - Per-file manifest tracking
+  - Commands: install, remove, update, info, list, verify
+
+dev/API.md v2.0.0
+  - Documents tw-common.sh v2.0.0 functions
+  - Curl-based patterns and examples
+  - Installer independence principle
+  - No git/clone/symlink documentation
+
+DEVELOPERS.md v2.0.0
+  - Curl-based architecture philosophy
+  - .meta format specification
+  - .install pattern with self-contained examples
+  - Installer independence section
+
+CONTRIBUTING.md v2.0.0
+  - Repository structure for curl-friendly installation
+  - Creating self-contained .meta and .install files
+  - Testing workflow (standalone first, then with tw.py)
+  - SHA256 checksum generation
+
+dev/models/hook-template.install (140 lines)
+  - Self-contained pattern
+  - Optional tw-common.sh sourcing
+  - Environment detection with defaults
+  - Download → place → configure workflow
+
+dev/models/hook-template.meta
+  - files= field with type mappings
+  - base_url= for raw GitHub
+  - checksums= optional field
+
+dev/models/wrapper-template.install (147 lines)
+  - Same self-contained pattern as hook template
+  - Wrapper-specific installation notes
+
+dev/models/wrapper-template.meta
+  - Same format as hook template
+  - Wrapper-specific fields
+
+installers/tw-recurrence.install (150 lines)
+  - Real-world example implementation
+  - Downloads 5 files from tw-recurrence project
+  - Direct placement with symlink for on-add → on-modify
+  - Completely self-contained
+
+registry.d/tw-recurrence.meta
+  - Example .meta file with all fields
+  - files= with 5 entries and types
+  - base_url= pointing to GitHub raw
+  - checksums= (placeholder, needs real SHA256s)
+
+MIGRATION.md
+  - v1.3.0 to v2.0.0 migration guide
+  - Architectural changes explained
+  - Step-by-step migration for users and developers
+  - Breaking changes documentation
+
+-----------------------------------------------------------------------------
+ARCHITECTURAL PRINCIPLES
+-----------------------------------------------------------------------------
+
+1. Installer Independence
+   - Each .install script MUST work standalone
+   - Can be run directly: bash installers/app.install install
+   - tw.py adds convenience, NOT dependency
+   - Optional tw-common.sh sourcing for better UX
+
+2. Direct File Placement
+   - No git clones under ~/.task/
+   - No symlink forests (except within same directory when needed)
+   - Files go directly where Taskwarrior expects them
+   - Clean, flat directory structure
+
+3. Type-Based Routing
+   - .meta files specify file:type mappings
+   - Types: hook, script, config, doc
+   - Router places files in appropriate directories
+   - Consistent naming conventions
+
+4. Curl-Based Downloads
+   - Fetch specific files from raw GitHub URLs
+   - No unnecessary files (CHANGELOG, .git, etc.)
+   - Smaller downloads, faster installation
+   - No git dependency required
+
+5. Manifest Tracking
+   - Per-file tracking in ~/.task/.tw_manifest
+   - Format: app|version|file|checksum|date
+   - Enables granular uninstall
+   - Optional file integrity verification
+
+-----------------------------------------------------------------------------
+DIRECTORY STRUCTURE
+-----------------------------------------------------------------------------
+
+v1.3.0 Structure:
+~/.task/
+├── hooks/
+│   ├── on-add_recurrence.py -> recurrence/on-add.py  (symlink)
+│   └── recurrence/                                    (git repo)
+│       ├── on-add.py
+│       ├── CHANGELOG.md
+│       ├── DEVELOPERS.md
+│       └── .git/
+├── scripts/
+│   ├── nicedates -> nicedates/nicedates              (symlink)
+│   └── nicedates/                                    (git repo)
+│       ├── nicedates
+│       └── .git/
+└── config/
+    └── recurrence/                                   (git repo)
+        └── recurrence.rc
+
+v2.0.0 Structure:
+~/.task/
+├── hooks/
+│   ├── on-add_recurrence.py                         (direct file)
+│   ├── on-modify_recurrence.py                      (direct file)
+│   └── on-exit_recurrence.py                        (direct file)
+├── scripts/
+│   └── nicedates                                    (direct file)
+├── config/
+│   ├── recurrence.rc                                (direct file)
+│   └── nicedates.rc                                 (direct file)
+└── docs/
+    ├── recurrence_README.md                         (direct file)
+    └── nicedates_README.md                          (direct file)
+
+-----------------------------------------------------------------------------
+MIGRATION PATH
+-----------------------------------------------------------------------------
+
+For Users:
+1. Backup ~/.task/ and ~/.taskrc
+2. Uninstall all v1.3.0 apps: tw --remove <app>
+3. Update awesome-taskwarrior to v2.0.0
+4. Reinstall apps: tw --install <app>
+
+For Developers:
+1. Update .meta files with files= and base_url= fields
+2. Rewrite .install scripts using curl-based pattern
+3. Organize repo for curl-friendly structure (files in root)
+4. Test standalone: bash app.install install
+5. Test with tw.py: tw --install app
+
+-----------------------------------------------------------------------------
+COMPATIBILITY
+-----------------------------------------------------------------------------
+
+Taskwarrior: v2.6.2 (unchanged)
+Bash: 4.0+ (unchanged)
+Python: 3.6+ (unchanged)
+Operating System: Linux/Unix (unchanged)
+
+NEW Dependencies:
+- curl (for file downloads)
+
+REMOVED Dependencies:
+- git (no longer required for installation)
+
+-----------------------------------------------------------------------------
+FUTURE CONSIDERATIONS
+-----------------------------------------------------------------------------
+
+Planned Tools:
+- make-awesome-installer.py: Generator script for creating .install files
+  Uses templates, examples, and API.md to create self-contained installers
+  
+Potential Enhancements:
+- Checksum verification in tw.py verify command
+- Parallel downloads for multi-file apps
+- Rollback capability for failed installations
+- Update notifications based on remote .meta versions
+
+-----------------------------------------------------------------------------
+TESTING NOTES
+-----------------------------------------------------------------------------
+
+Core Architecture Tests Needed:
+1. tw-common.sh utility functions work correctly
+2. Installers work standalone (without tw.py)
+3. Installers work with tw.py coordination
+4. Installers gracefully handle missing tw-common.sh
+5. Files placed in correct directories
+6. Manifest tracking accurate
+7. Uninstall removes all files
+8. Config includes added/removed correctly
+
+Example App Tests Needed:
+1. tw-recurrence.install works standalone
+2. All 5 files downloaded correctly
+3. Symlink created (on-add → on-modify)
+4. README renamed to recurrence_README.md
+5. Config include added to .taskrc
+
+-----------------------------------------------------------------------------
+CREDITS
+-----------------------------------------------------------------------------
+
+Architecture Design: @linuxcaffe (David)
+Implementation: Claude (Anthropic)
+Based on: Taskwarrior v2.6.2
+Date: January 2026
+
+=============================================================================
+END OF CHANGES.txt
+=============================================================================
