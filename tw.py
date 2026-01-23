@@ -86,6 +86,9 @@ class PathManager:
         # Only announce dev mode (production is normal/expected)
         if self.is_dev_mode:
             print("[tw] DEV mode: using local registry")
+        
+        # Check if ~/.task/scripts is in PATH
+        self._check_path()
     
     def init_directories(self):
         """Create all required directories"""
@@ -94,6 +97,21 @@ class PathManager:
             self.docs_dir, self.logs_dir
         ]:
             dir_path.mkdir(parents=True, exist_ok=True)
+    
+    def _check_path(self):
+        """Check if ~/.task/scripts is in PATH and warn if not"""
+        scripts_dir = str(self.scripts_dir)
+        path_dirs = os.environ.get('PATH', '').split(':')
+        
+        if scripts_dir not in path_dirs:
+            # Only warn if not running from the scripts dir itself
+            # (i.e., if tw is elsewhere and scripts dir not in PATH)
+            tw_path = Path(__file__).resolve()
+            if tw_path.parent != self.scripts_dir:
+                print(f"[tw] ⚠ Warning: {scripts_dir} is not in your PATH")
+                print(f'[tw] Add it with: echo \'export PATH="$HOME/.task/scripts:$PATH"\' >> ~/.bashrc')
+                print(f"[tw] Then run: source ~/.bashrc")
+                print()
 
 class MetaFile:
     """Parses and manages .meta files for applications"""
