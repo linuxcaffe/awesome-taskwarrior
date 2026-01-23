@@ -45,15 +45,20 @@ awesome-taskwarrior v2.0.0 introduces a **curl-based architecture** that replace
 │   ├── on-modify_recurrence.py
 │   └── on-exit_recurrence.py
 ├── scripts/                        # Wrapper scripts (direct placement)
+│   ├── tw.py
 │   └── nicedates
 ├── config/                         # Configuration files
+│   ├── nicedates.rc
+│   ├── priority.rc
 │   ├── recurrence.rc
-│   └── custom.rc
+│   └── tw.config
 ├── docs/                           # README files
+│   ├── priority_README.md
 │   ├── recurrence_README.md
+│   ├── tw_README.md
 │   └── nicedates_README.md
 ├── logs/                           # Debug and test logs
-│   └── recurrence/
+│   └── recurrence/                 
 ├── .tw_manifest                    # Installation manifest
 ├── pending.data
 ├── completed.data
