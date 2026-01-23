@@ -120,6 +120,19 @@ install() {
         tw_manifest_add "$APPNAME" "$VERSION" "$CONFIG_DIR/recurrence.rc"
         tw_manifest_add "$APPNAME" "$VERSION" "$SCRIPTS_DIR/rr"
         tw_manifest_add "$APPNAME" "$VERSION" "$DOCS_DIR/recurrence_README.md"
+    else
+        # Fallback: Write manifest directly
+        MANIFEST_FILE="${HOME}/.task/.tw_manifest"
+        TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        
+        mkdir -p "$(dirname "$MANIFEST_FILE")"
+        
+        echo "$APPNAME|$VERSION|$HOOKS_DIR/on-add_recurrence.py||$TIMESTAMP" >> "$MANIFEST_FILE"
+        echo "$APPNAME|$VERSION|$HOOKS_DIR/on-exit_recurrence.py||$TIMESTAMP" >> "$MANIFEST_FILE"
+        echo "$APPNAME|$VERSION|$HOOKS_DIR/on-modify_recurrence.py||$TIMESTAMP" >> "$MANIFEST_FILE"
+        echo "$APPNAME|$VERSION|$CONFIG_DIR/recurrence.rc||$TIMESTAMP" >> "$MANIFEST_FILE"
+        echo "$APPNAME|$VERSION|$SCRIPTS_DIR/rr||$TIMESTAMP" >> "$MANIFEST_FILE"
+        echo "$APPNAME|$VERSION|$DOCS_DIR/recurrence_README.md||$TIMESTAMP" >> "$MANIFEST_FILE"
     fi
     
     tw_success "Installed Enhanced Recurrence System v$VERSION"

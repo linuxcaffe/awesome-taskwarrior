@@ -33,8 +33,8 @@ import tempfile
 
 VERSION = "2.0.0"
 
-# Check if we should use colors (stdout is a tty)
-USE_COLORS = sys.stdout.isatty()
+# Enable colors (terminal supports ANSI codes)
+USE_COLORS = True
 
 def colorize(text, color_code):
     """Add ANSI color codes if terminal supports it"""
@@ -511,6 +511,7 @@ class AppManager:
         
         print(f"\n{'='*70}")
         print(f"APPLICATIONS ({installed_count} installed / {total_count} available)")
+        print(f"tw.py version {VERSION}")
         print(f"{'='*70}\n")
         
         for app_name in sorted(available_apps):
