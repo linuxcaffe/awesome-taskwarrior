@@ -64,26 +64,30 @@ detect_files() {
     
     # Detect hooks (on-add, on-exit, on-modify)
     for hook in on-add on-exit on-modify; do
-        if ls ${hook}*.{py,sh} 2>/dev/null | grep -q .; then
-            for file in ${hook}*.{py,sh} 2>/dev/null; do
+        for ext in py sh; do
+            for file in ${hook}*.${ext}; do
                 [ -f "$file" ] && HOOKS+=("$file:hook")
             done
-        fi
+        done
     done
     
     # Detect scripts (executable files not hooks)
-    for file in *.sh *.py; do
-        if [ -f "$file" ] && [ -x "$file" ]; then
-            # Skip if it's a hook
-            if [[ ! "$file" =~ ^on-(add|exit|modify) ]]; then
-                SCRIPTS+=("$file:script")
+    for ext in sh py; do
+        for file in *.${ext}; do
+            if [ -f "$file" ] && [ -x "$file" ]; then
+                # Skip if it's a hook
+                if [[ ! "$file" =~ ^on-(add|exit|modify) ]]; then
+                    SCRIPTS+=("$file:script")
+                fi
             fi
-        fi
+        done
     done
     
     # Detect configs
-    for file in *.rc *.conf; do
-        [ -f "$file" ] && CONFIGS+=("$file:config")
+    for ext in rc conf; do
+        for file in *.${ext}; do
+            [ -f "$file" ] && CONFIGS+=("$file:config")
+        done
     done
     
     # Detect docs

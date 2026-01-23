@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ============================================================================
+# need-priority - Installer Script
+# Compatible with awesome-taskwarrior v2.0.0
+# ============================================================================
+
+APPNAME="need-priority"
+VERSION="0.3.3"
+BASE_URL="https://raw.githubusercontent.com/linuxcaffe/tw-need_priority-hook/main/"
+
+# Environment detection with defaults (works standalone or with tw.py)
+: "${HOOKS_DIR:=$HOME/.task/hooks}"
+: "${SCRIPTS_DIR:=$HOME/.task/scripts}"
+: "${CONFIG_DIR:=$HOME/.task/config}"
+: "${DOCS_DIR:=$HOME/.task/docs}"
+: "${TASKRC:=$HOME/.taskrc}"
+
+# Optional tw-common.sh sourcing (provides helpers but not required)
+if [[ -f "${TW_COMMON:-}" ]]; then
+    source "$TW_COMMON"
+else
+    # Fallback functions for standalone use
+    tw_msg() { echo "[tw] $*"; }
+    tw_success() { echo "[tw] ✓ $*"; }
+    tw_error() { echo "[tw] ✗ $*" >&2; }
+    tw_warn() { echo "[tw] ⚠ $*" >&2; }
+fi
+
+# ============================================================================
+# Installation Function
+# ============================================================================
+
+install() {
+    tw_msg "Installing need-priority v$VERSION..."
+    
+    # Create directories
+    mkdir -p "$HOOKS_DIR" "$SCRIPTS_DIR" "$CONFIG_DIR" "$DOCS_DIR"
+    
+    tw_msg "Downloading files..."
+    curl -fsSL "$BASE_URL/on-add_priority.py" -o "$HOOKS_DIR/on-add_priority.py" || {
+        tw_error "Failed to download on-add_priority.py"
+        return 1
+    }
+    chmod +x "$HOOKS_DIR/on-add_priority.py"
+    curl -fsSL "$BASE_URL/on-exit_priority.py" -o "$HOOKS_DIR/on-exit_priority.py" || {
+        tw_error "Failed to download on-exit_priority.py"
+        return 1
+    }
+    chmod +x "$HOOKS_DIR/on-exit_priority.py"
+    curl -fsSL "$BASE_URL/on-modify_priority.py" -o "$HOOKS_DIR/on-modify_priority.py" || {
+        tw_error "Failed to download on-modify_priority.py"
+        return 1
+    }
+    chmod +x "$HOOKS_DIR/on-modify_priority.py"
+    curl -fsSL "$BASE_URL/migrate_priority.py" -o "$SCRIPTS_DIR/migrate_priority.py" || {
+        tw_error "Failed to download migrate_priority.py"
+        return 1
+    }
+    chmod +x "$SCRIPTS_DIR/migrate_priority.py"
+    curl -fsSL "$BASE_URL/nn.py" -o "$SCRIPTS_DIR/nn.py" || {
+        tw_error "Failed to download nn.py"
+        return 1
+    }
+    chmod +x "$SCRIPTS_DIR/nn.py"
+    curl -fsSL "$BASE_URL/need.rc" -o "$CONFIG_DIR/need.rc" || {
+        tw_error "Failed to download need.rc"
+        return 1
+    }
+    
+    # Add config to .taskrc
+    tw_msg "Adding configuration to .taskrc..."
+    local config_line="include $CONFIG_DIR/need.rc"
+    
+    if ! grep -qF "$config_line" "$TASKRC" 2>/dev/null; then
+        echo "$config_line" >> "$TASKRC"
+        tw_msg "Added config include to .taskrc"
+    else
+        tw_msg "Config already in .taskrc"
+    fi
+    
+    tw_msg "Downloading documentation..."
+    curl -fsSL "$BASE_URL/README.md" -o "$DOCS_DIR/need-priority_README.md" 2>/dev/null || true
+    
+    # Track in manifest
+    MANIFEST_FILE="${HOME}/.task/config/.tw_manifest"
+    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    mkdir -p "$(dirname "$MANIFEST_FILE")"
+    
+    echo "$APPNAME|$VERSION|$HOOKS_DIR/on-add_priority.py||$TIMESTAMP" >> "$MANIFEST_FILE"
+    echo "$APPNAME|$VERSION|$HOOKS_DIR/on-exit_priority.py||$TIMESTAMP" >> "$MANIFEST_FILE"
+    echo "$APPNAME|$VERSION|$HOOKS_DIR/on-modify_priority.py||$TIMESTAMP" >> "$MANIFEST_FILE"
+    echo "$APPNAME|$VERSION|$SCRIPTS_DIR/migrate_priority.py||$TIMESTAMP" >> "$MANIFEST_FILE"
+    echo "$APPNAME|$VERSION|$SCRIPTS_DIR/nn.py||$TIMESTAMP" >> "$MANIFEST_FILE"
+    echo "$APPNAME|$VERSION|$CONFIG_DIR/need.rc||$TIMESTAMP" >> "$MANIFEST_FILE"
+    echo "$APPNAME|$VERSION|$DOCS_DIR/need-priority_README.md||$TIMESTAMP" >> "$MANIFEST_FILE"
+    
+    tw_success "Installed need-priority v$VERSION"
+    echo ""
+    tw_msg "Documentation: $DOCS_DIR/need-priority_README.md"
+    echo ""
+    
+    return 0
+}
+
+# ============================================================================
+# Removal Function
+# ============================================================================
+
+remove() {
+    tw_msg "Removing need-priority..."
+    
+    tw_msg "Removing files..."
+    rm -f "$HOOKS_DIR/on-add_priority.py"
+    rm -f "$HOOKS_DIR/on-exit_priority.py"
+    rm -f "$HOOKS_DIR/on-modify_priority.py"
+    rm -f "$SCRIPTS_DIR/migrate_priority.py"
+    rm -f "$SCRIPTS_DIR/nn.py"
+    rm -f "$CONFIG_DIR/need.rc"
+    rm -f "$DOCS_DIR/need-priority_README.md"
+    
+    # Remove config line from .taskrc
+    tw_msg "Removing configuration from .taskrc..."
+    if [[ -f "$TASKRC" ]]; then
+        local config_line="include $CONFIG_DIR/need.rc"
+        grep -vF "$config_line" "$TASKRC" > "$TASKRC.tmp" 2>/dev/null || true
+        mv "$TASKRC.tmp" "$TASKRC"
+    fi
+    
+    # Remove from manifest
+    MANIFEST_FILE="${HOME}/.task/config/.tw_manifest"
+    if [[ -f "$MANIFEST_FILE" ]]; then
+        grep -v "^$APPNAME|" "$MANIFEST_FILE" > "$MANIFEST_FILE.tmp" 2>/dev/null || true
+        mv "$MANIFEST_FILE.tmp" "$MANIFEST_FILE"
+    fi
+    
+    tw_success "Removed need-priority"
+    echo ""
+    
+    return 0
+}
+
+# ============================================================================
+# Main Entry Point
+# ============================================================================
+
+case "${1:-}" in
+    install)
+        install
+        ;;
+    remove)
+        remove
+        ;;
+    *)
+        cat << 'EOFHELP'
+need-priority - Installer
+Usage: ./need-priority.install {install|remove}
+
+This installer is self-contained and can run standalone.
+It also integrates with awesome-taskwarrior (tw.py) if available.
+
+For more information:
+  https://github.com/linuxcaffe/tw-need_priority-hook
+EOFHELP
+        exit 1
+        ;;
+esac

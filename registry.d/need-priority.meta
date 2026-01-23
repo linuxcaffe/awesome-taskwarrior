@@ -1,0 +1,19 @@
+# need-priority.meta
+# Replace pri:H,M,L with 6 levels of Mazlows Human Needs, and filter accordingly
+# Version: 0.3.3
+
+name=need-priority
+version=0.3.3
+type=hook
+description=Replace pri:H,M,L with 6 levels of Mazlows Human Needs, and filter accordingly
+repo=https://github.com/linuxcaffe/tw-need_priority-hook
+base_url=https://raw.githubusercontent.com/linuxcaffe/tw-need_priority-hook/main/
+files=on-add_priority.py:hook,on-exit_priority.py:hook,on-modify_priority.py:hook,migrate_priority.py:script,nn.py:script,need.rc:config,README.md:doc
+
+# Checksums (SHA256)
+checksums=356f89a851034ccec50dd914da5d50e2db9aa0c1a0427b9b3e3f86d65f4d7693,ce951217a958fae7c8205d4fade1efb81519b455a52a418e8d98360146b5ca92,f15b2691ff3497ed6e1b1628c52bd50e06651ee10299e991d654ae87d7aa8228,e22c2b3996b3a46160298c80fab6a28f9a43349ea1fe643fe02c254f03e528c6,d90d136621fe890ce847d145ca0dc196c69e2136ab200f72e6b274224008df1f,d818259493efbcbef73cd8083103d6a8af9aa84082d8e6cd7b0a895121dece48,ce795a6416283a820f8312283915d4c0ea6212c45a6f33880f9fad5b41fdb9b6
+
+# Additional metadata
+author=linuxcaffe
+license=MIT
+requires_taskwarrior=2.6.0
