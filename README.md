@@ -1,251 +1,247 @@
 # awesome-taskwarrior
 
-## Overview
+A package manager and registry for Taskwarrior extensions (hooks, scripts, and configurations).
 
-**awesome-taskwarrior** brings together the best Taskwarrior-related projects with `tw.py`, a universal wrapper that serves as both a transparent pass-through to Taskwarrior and a comprehensive package manager for extensions.
+## Features
 
-### Features
+✅ **Registry-based** - Like npm, PyPI, or cargo  
+✅ **Self-installing** - One command bootstrap  
+✅ **Self-updating** - `tw --update tw` keeps it current  
+✅ **Self-contained** - Everything in `~/.task/`  
+✅ **GitHub integration** - Fetches from GitHub on-demand  
+✅ **Clean installs** - Manifest tracking for easy removal  
+✅ **Developer friendly** - Local dev mode for testing  
 
-- 🎯 **One-Command Installation** - Install hooks, wrappers, and utilities with `tw --install <app>`
-- 🔄 **Smart Wrapper System** - Stack multiple wrappers for enhanced Taskwarrior functionality
-- 📦 **Dependency Management** - Automatic dependency checking and helpful error messages
-- 🔍 **Version Tracking** - Keep extensions up-to-date with `tw --update`
-- 🧪 **Built-in Testing** - Verify installations with `tw --check`
-- 📚 **Comprehensive Documentation** - Templates and guides for developers
-
-## Quick Start
-
-### Install tw.py
+## Quick Install
 
 ```bash
-# Clone repository
-git clone https://github.com/linuxcaffe/awesome-taskwarrior.git
-cd awesome-taskwarrior
-
-# Add tw.py to your PATH
-ln -s $(pwd)/tw.py ~/bin/tw
-chmod +x tw.py
-
-# Verify installation
-tw --version
+curl -fsSL https://raw.githubusercontent.com/linuxcaffe/awesome-taskwarrior/main/install.sh | bash
 ```
 
-### Install Taskwarrior (if needed)
+This will:
+1. Install tw.py to `~/.task/scripts/tw`
+2. Add `~/.task/scripts` to your PATH
+3. Set up documentation in `~/.task/docs/`
 
-```bash
-tw --install-taskwarrior
-```
+## Usage
 
-### Browse Available Extensions
-
+### Browse Extensions
 ```bash
 tw --list
 ```
 
 ### Install an Extension
-
 ```bash
-# Install advanced recurrence system
 tw --install tw-recurrence
+```
 
-# Install priority management
-tw --install tw-priority
+### Update an Extension
+```bash
+tw --update tw-recurrence
+```
 
-# Install date parsing wrapper
-tw --install nicedates
+### Remove an Extension
+```bash
+tw --remove tw-recurrence
+```
+
+### Show Extension Info
+```bash
+tw --info tw-recurrence
+```
+
+### Update tw.py Itself
+```bash
+tw --update tw
+```
+
+### Verify Checksums
+```bash
+tw --verify tw-recurrence
+```
+
+### Check Version
+```bash
+tw --version
+```
+
+## How It Works
+
+awesome-taskwarrior is a **registry** that points to extension repositories:
+
+```
+┌─────────────────────────────────────────┐
+│  awesome-taskwarrior (Registry)         │
+│  ├── tw.py (package manager)            │
+│  ├── registry.d/*.meta (metadata)       │
+│  └── installers/*.install (installers)  │
+└─────────────────────────────────────────┘
+             ↓ points to
+┌─────────────────────────────────────────┐
+│  Extension Repos (tw-recurrence, etc)   │
+│  ├── hooks, scripts, configs            │
+│  └── documentation                      │
+└─────────────────────────────────────────┘
+```
+
+When you install an extension:
+1. tw.py fetches the installer from awesome-taskwarrior
+2. Installer downloads files from the extension's repo
+3. Files installed to `~/.task/`
+4. Manifest tracks installation in `~/.task/config/.tw_manifest`
+
+## Directory Structure
+
+After installation:
+```
+~/.task/
+├── config/
+│   ├── .tw_manifest           # Installation tracking
+│   └── recurrence.rc          # Extension configs
+├── scripts/
+│   ├── tw                     # The package manager
+│   └── rr                     # Extension scripts
+├── hooks/
+│   ├── on-add_recurrence.py   # Extension hooks
+│   └── on-exit_recurrence.py
+└── docs/
+    ├── tw_README.md           # tw.py docs
+    └── recurrence_README.md   # Extension docs
 ```
 
 ## Available Extensions
 
-### Hooks
-
-**Hooks** extend Taskwarrior by intercepting task events (add, modify, exit).
-
-- **tw-recurrence** - Advanced recurrence beyond Taskwarrior's built-in system
-  - Chained recurrence (completion-based spawning)
-  - Periodic recurrence (time-based spawning)
-  - New reports - recurring, templates and instances
-   
-- **tw-priority** - Automatic priority management based on Maslow's hierarchy of needs
-  - Dynamic context switching to focus on real-life priorities (1,2,3,4,5,6)
-  - Automatic priority assignment, based on user's need.rc file settings
-  - Interactive review mode, quickly review task priority settings, one at a time
-  - Priority pyramid visualization
-
-### Wrappers
-
-**Wrappers** enhance task commands with additional syntax and features.
-
-- **nicedates** - Human-readable date parsing
-  - Natural language: "tomorrow", "next week", "in 3 days"
-  - Improved date formatting in output
-
-### Utilities
-
-More extensions coming soon!
-
-## Usage
-
-### Normal Taskwarrior Commands
-
-`tw.py` acts as a transparent pass-through:
-
-```bash
-tw next
-tw add "Buy milk" due:tomorrow
-tw list project:work
-```
-
-### Package Management
-
-```bash
-# List available extensions
-tw --list
-tw --list-installed
-
-# Get detailed information
-tw --info tw-recurrence
-
-# Install/update/remove
-tw --install tw-recurrence
-tw --update tw-recurrence
-tw --remove tw-recurrence
-
-# Check for updates
-tw --check
-tw --update-all
-```
-
-### Wrapper Bridge
-
-For wrappers that need special argument handling:
-
-```bash
-# Direct wrapper execution
-nicedates add "Meeting" due:tomorrow
-
-# Via tw.py
-tw --exec nicedates add "Meeting" due:tomorrow
-
-# Set default wrapper
-tw --wrap nicedates
-```
-
-## Configuration
-
-Create `~/.task/tw.config` to customize behavior:
-
-```ini
-[wrappers]
-# Stack wrappers (applied in order)
-stack=nicedates
-
-[settings]
-verbose=yes
-auto_update=no
-```
-
-See `tw.config.example` for all available options.
+Run `tw --list` to see all available extensions, or browse:
+- [tw-recurrence](https://github.com/linuxcaffe/tw-recurrence_overhaul-hook) - Advanced recurrence with chained and periodic patterns
 
 ## For Developers
 
+### Testing Extensions Locally
+
+Clone awesome-taskwarrior and your extension:
+```bash
+git clone https://github.com/linuxcaffe/awesome-taskwarrior.git
+cd awesome-taskwarrior
+./tw.py --list  # Uses local registry (dev mode)
+```
+
 ### Adding Your Extension
 
-1. Create `.meta` file in `registry.d/` (see `dev/models/` for templates)
-2. Create `.install` script in `installers/`
-3. Test thoroughly
-4. Submit pull request
+1. Create your extension repo with files
+2. Push to GitHub
+3. Create `.meta` file in `awesome-taskwarrior/registry.d/`:
+   ```ini
+   name=my-extension
+   version=1.0.0
+   type=hook
+   description=Brief description
+   repo=https://github.com/you/my-extension
+   base_url=https://raw.githubusercontent.com/you/my-extension/main/
+   files=hook.py:hook,config.rc:config
+   ```
+4. Create installer in `awesome-taskwarrior/installers/my-extension.install`
+5. Submit PR to awesome-taskwarrior
 
-See [DEVELOPERS.md](DEVELOPERS.md) for comprehensive documentation.
+### Installer Template
 
-### Templates and Examples
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-The `dev/models/` directory contains:
-- **Templates** - Starting points for new extensions
-  - `hook-template.meta` / `.install`
-  - `wrapper-template.meta` / `.install`
-  
-- **Examples** - Real-world implementations
-  - `tw-recurrence` (complex hook)
-  - `tw-priority` (hook with utilities)
-  - `nicedates` (wrapper)
+APPNAME="my-extension"
+VERSION="1.0.0"
+BASE_URL="https://raw.githubusercontent.com/you/my-extension/main"
 
-### API Reference
+: "${HOOKS_DIR:=$HOME/.task/hooks}"
+: "${CONFIG_DIR:=$HOME/.task/config}"
 
-See [dev/API.md](dev/API.md) for complete function reference for:
-- `lib/tw-common.sh` - Bash library for installers
-- `lib/tw-wrapper.py` - Python library for wrappers
+install() {
+    curl -fsSL "$BASE_URL/hook.py" -o "$HOOKS_DIR/hook.py"
+    chmod +x "$HOOKS_DIR/hook.py"
+    
+    # Write manifest
+    MANIFEST_FILE="${HOME}/.task/config/.tw_manifest"
+    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    mkdir -p "$(dirname "$MANIFEST_FILE")"
+    echo "$APPNAME|$VERSION|$HOOKS_DIR/hook.py||$TIMESTAMP" >> "$MANIFEST_FILE"
+}
 
-## Design Philosophy
+remove() {
+    rm -f "$HOOKS_DIR/hook.py"
+}
 
-- **Unix Philosophy** - One tool does one thing well
-- **Composability** - Extensions work together seamlessly
-- **Independence** - Sub-projects maintain their own versioning
-- **Transparency** - Minimal overhead, maximum clarity
-- **Safety** - Always confirm before destructive operations
-
-## Target Platform
-
-- **Taskwarrior 2.6.2** and 2.x branch
-- NOT designed for, or tested with Taskwarrior 3.x
-- Well-made PRs for 3.x compatibility considered
-
-## Project Structure
-
-```
-awesome-taskwarrior/
-├── tw.py                      # Main wrapper/manager
-├── tw.config.example          # Configuration template
-├── registry.d/                # Extension metadata
-├── installers/                # Installation scripts
-├── lib/                       # Shared libraries
-├── bin/                       # Optional pre-compiled binaries
-├── installed/                 # Installation tracking
-└── dev/                       # Development resources
-    ├── models/               # Templates and examples
-    ├── API.md                # Function reference
-    └── DEVELOPERS.md         # Architecture guide
+case "${1:-}" in
+    install) install ;;
+    remove) remove ;;
+esac
 ```
 
-## Versioning
+## Architecture
 
-- **tw.py** - Semantic versioning (MAJOR.MINOR.PATCH)
-- **Extensions** - Independent versioning schemes
-- **Registry** - Git commits are canonical
+### Registry Only
+awesome-taskwarrior is lightweight - just metadata and installers. Extension files stay in their own repos. This means:
+- No file duplication
+- No sync issues  
+- Extensions update independently
+- Direct from source
 
-## Contributing
+### Self-Contained
+Everything lives in `~/.task/`:
+- Extensions install to standard locations
+- Manifest tracks installations
+- Clean uninstalls
+- Easy backups
 
-Contributions welcome! Please:
+### Self-Updating
+tw.py can update itself:
+```bash
+tw --update tw
+```
+Downloads latest from GitHub and replaces itself.
 
-1. Follow existing patterns and conventions
-2. Test with Taskwarrior 2.6.2
-3. Include comprehensive documentation
-4. Provide working examples
-5. Ensure clean uninstallation
+## Modes
 
-See [DEVELOPERS.md](DEVELOPERS.md) for detailed guidelines.
+### Production Mode (Normal)
+When tw.py is installed via bootstrap, it fetches registry from GitHub.
+
+### Dev Mode
+When tw.py detects local `registry.d/` and `installers/` directories, it uses local files for testing.
+
+## Troubleshooting
+
+### tw: command not found
+Ensure `~/.task/scripts` is in your PATH:
+```bash
+echo 'export PATH="$HOME/.task/scripts:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+### Extension won't install
+1. Check it's listed: `tw --list`
+2. Check GitHub repo is accessible
+3. Try with `--dry-run`: `tw --dry-run --install app-name`
+
+### Update tw.py
+```bash
+tw --update tw
+```
+
+### Fresh start
+```bash
+rm -rf ~/.task/scripts/tw ~/.task/config/.tw_manifest
+curl -fsSL https://raw.githubusercontent.com/.../install.sh | bash
+```
+
+## Links
+
+- **Repository**: https://github.com/linuxcaffe/awesome-taskwarrior
+- **Issues**: https://github.com/linuxcaffe/awesome-taskwarrior/issues
+- **Taskwarrior**: https://taskwarrior.org
 
 ## License
 
-MIT License - see LICENSE file for details.
+MIT - See LICENSE file
 
-Individual extensions may have different licenses - check their repositories.
+## Contributing
 
-## Support
-
-- **Issues** - Open an issue on GitHub
-- **Questions** - Start a discussion
-- **Documentation** - See DEVELOPERS.md and dev/API.md
-
-## Acknowledgments
-
-Built for the Taskwarrior community, standing on the shoulders of:
-- Taskwarrior team for the excellent task management system
-- All extension authors for their innovative work
-- Contributors and testers who make this possible
-
----
-
-**awesome-taskwarrior** - Making Taskwarrior even more awesome, one extension at a time.
-
-awesome-taskwarrior is a curated collection of Taskwarrior extensions with a unified installation and management system. At its heart is tw.py, a universal wrapper that acts as both a transparent pass-through to Taskwarrior and a comprehensive package manager for Taskwarrior-related projects.
+See CONTRIBUTING.md for guidelines on adding extensions to the registry.

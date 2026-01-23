@@ -122,7 +122,7 @@ install() {
         tw_manifest_add "$APPNAME" "$VERSION" "$DOCS_DIR/recurrence_README.md"
     else
         # Fallback: Write manifest directly
-        MANIFEST_FILE="${HOME}/.task/.tw_manifest"
+        MANIFEST_FILE="${HOME}/.task/config/.tw_manifest"
         TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
         
         mkdir -p "$(dirname "$MANIFEST_FILE")"

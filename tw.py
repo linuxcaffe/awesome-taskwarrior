@@ -72,7 +72,7 @@ class PathManager:
         self.docs_dir = self.task_dir / "docs"
         self.logs_dir = self.task_dir / "logs"
         self.taskrc = self.home / ".taskrc"
-        self.manifest_file = self.task_dir / ".tw_manifest"
+        self.manifest_file = self.config_dir / ".tw_manifest"  # Moved to config dir
         
         # Check if we're in a local repo (dev mode)
         self.tw_root = Path(__file__).parent.absolute()
@@ -83,10 +83,9 @@ class PathManager:
         # Determine mode: local (dev) or remote (production)
         self.is_dev_mode = self.local_registry.exists() and self.local_installers.exists()
         
+        # Only announce dev mode (production is normal/expected)
         if self.is_dev_mode:
-            print("[tw] Running in DEV mode (using local files)")
-        else:
-            print("[tw] Running in PRODUCTION mode (fetching from GitHub)")
+            print("[tw] DEV mode: using local registry")
     
     def init_directories(self):
         """Create all required directories"""
@@ -359,8 +358,65 @@ class AppManager:
         self.registry = registry
         self.manifest = Manifest(paths.manifest_file)
     
+    def _install_tw_itself(self, dry_run=False):
+        """Install/update tw.py itself to ~/.task/scripts/"""
+        tw_script_path = self.paths.scripts_dir / "tw"
+        tw_doc_path = self.paths.docs_dir / "tw_README.md"
+        
+        if dry_run:
+            print(f"[tw] [DRY RUN] Would install tw.py to {tw_script_path}")
+            return True
+        
+        print(f"[tw] Installing tw.py to ~/.task/scripts/...")
+        
+        try:
+            # Download tw.py from GitHub
+            url = f"{GITHUB_RAW_BASE}/tw.py"
+            response = urlopen(url)
+            tw_content = response.read().decode('utf-8')
+            
+            # Write to ~/.task/scripts/tw
+            self.paths.scripts_dir.mkdir(parents=True, exist_ok=True)
+            with open(tw_script_path, 'w') as f:
+                f.write(tw_content)
+            
+            os.chmod(tw_script_path, 0o755)
+            
+            # Download README
+            try:
+                readme_url = f"{GITHUB_RAW_BASE}/README.md"
+                readme_response = urlopen(readme_url)
+                readme_content = readme_response.read().decode('utf-8')
+                
+                with open(tw_doc_path, 'w') as f:
+                    f.write(readme_content)
+                
+                print(f"[tw] ✓ Documentation: {tw_doc_path}")
+            except:
+                pass  # README is optional
+            
+            # Add to manifest
+            self.manifest.add("tw", VERSION, str(tw_script_path))
+            if tw_doc_path.exists():
+                self.manifest.add("tw", VERSION, str(tw_doc_path))
+            
+            print(f"[tw] ✓ Installed tw.py to {tw_script_path}")
+            print(f"\n[tw] Make sure ~/.task/scripts is in your PATH:")
+            print(f'[tw]   echo \'export PATH="$HOME/.task/scripts:$PATH"\' >> ~/.bashrc')
+            print(f"[tw]   source ~/.bashrc")
+            
+            return True
+            
+        except Exception as e:
+            print(f"[tw] ✗ Failed to install tw.py: {e}")
+            return False
+    
     def install(self, app_name, dry_run=False):
         """Install an application using its installer script"""
+        # Special case: installing tw.py itself
+        if app_name == "tw":
+            return self._install_tw_itself(dry_run)
+        
         # Check if already installed
         if self.manifest.is_installed(app_name):
             installed_version = self.manifest.get_version(app_name)
@@ -428,6 +484,16 @@ class AppManager:
     
     def remove(self, app_name):
         """Remove an application"""
+        # Special case: removing tw.py itself
+        if app_name == "tw":
+            print(f"[tw] ⚠ Warning: This will remove tw.py itself!")
+            print(f"[tw] You'll need to reinstall using the bootstrap script")
+            print(f"[tw] Continue? (yes/no): ", end='')
+            response = input().strip().lower()
+            if response != "yes":
+                print(f"[tw] Cancelled")
+                return False
+        
         if not self.manifest.is_installed(app_name):
             print(f"[tw] ✗ Not installed: {app_name}")
             return False
@@ -487,6 +553,11 @@ class AppManager:
     
     def update(self, app_name):
         """Update an application (reinstall)"""
+        # Special case: updating tw.py itself
+        if app_name == "tw":
+            print(f"[tw] Updating tw.py...")
+            return self._install_tw_itself(dry_run=False)
+        
         print(f"[tw] Updating {app_name}...")
         if self.manifest.is_installed(app_name):
             if not self.remove(app_name):
@@ -511,7 +582,7 @@ class AppManager:
         
         print(f"\n{'='*70}")
         print(f"APPLICATIONS ({installed_count} installed / {total_count} available)")
-        print(f"tw.py version {VERSION}")
+        print(f"tw.py version {VERSION} | Colors: {'enabled' if USE_COLORS else 'disabled'}")
         print(f"{'='*70}\n")
         
         for app_name in sorted(available_apps):
@@ -722,6 +793,17 @@ def main():
     # Handle tw.py commands
     if args.version:
         print(f"tw.py version {VERSION}")
+        # Try to get taskwarrior version
+        try:
+            result = subprocess.run(['task', '--version'], 
+                                  capture_output=True, 
+                                  text=True, 
+                                  check=False)
+            if result.returncode == 0:
+                tw_version = result.stdout.strip()
+                print(f"taskwarrior {tw_version}")
+        except:
+            pass
         return 0
     
     if args.help:
