@@ -301,18 +301,6 @@ tw.py --verify myapp
 tw.py --remove myapp
 ```
 
-## Migration from v1.3.0
-
-See [MIGRATION.md](MIGRATION.md) for complete details.
-
-**Summary of Changes:**
-- Remove `short_name` from .meta files
-- Remove `SHORT_NAME` variable from .install scripts
-- Replace `tw_clone_to_project()` with curl downloads
-- Replace `tw_symlink_hook()` with direct placement
-- Update directory paths (no subdirectories)
-- Update manifest format
-
 ## Best Practices
 
 1. **Keep It Simple**: One hook/script per file, clear names
