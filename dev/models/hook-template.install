@@ -1,334 +1,267 @@
 #!/usr/bin/env bash
 #
-# hook-template.install - Template for Taskwarrior hook installers
+# hook-template.install - Self-contained installer template for Taskwarrior hooks
 # Version: 2.0.0
 #
 # This template demonstrates the v2.0.0 architecture:
-# - Self-contained (works standalone)
+# - Self-contained (works standalone without tw.py)
 # - Optional tw-common.sh usage (graceful degradation)
 # - Environment detection with defaults
 # - Curl-based file downloads
-# - Direct file placement (no symlinks by default)
+# - Direct file placement
+# - Manifest tracking
 #
 # USAGE:
-#   bash myapp.install install   - Install the application
-#   bash myapp.install remove    - Remove the application
+#   bash yourapp.install install   - Install the application
+#   bash yourapp.install remove    - Remove the application
 #
-# ENVIRONMENT VARIABLES:
-#   HOOKS_DIR    - Target directory for hooks (default: ~/.task/hooks)
-#   CONFIG_DIR   - Target directory for configs (default: ~/.task/config)
-#   DOCS_DIR     - Target directory for docs (default: ~/.task/docs)
-#   TASKRC       - Taskwarrior config file (default: ~/.taskrc)
-#   TW_DEBUG     - Enable debug output (set to any value)
+# ENVIRONMENT VARIABLES (set by tw.py or override manually):
+#   HOOKS_DIR     - Hook installation directory (default: ~/.task/hooks)
+#   SCRIPTS_DIR   - Script installation directory (default: ~/.task/scripts)
+#   CONFIG_DIR    - Config file directory (default: ~/.task/config)
+#   DOCS_DIR      - Documentation directory (default: ~/.task/docs)
+#   TASKRC        - Taskwarrior config file (default: ~/.taskrc)
+#   TW_COMMON     - Path to tw-common.sh library
+#   TW_DEBUG      - Enable debug output (0 or 1)
+#
 
 set -euo pipefail
 
-#=============================================================================
-# CONFIGURATION
-#=============================================================================
+#------------------------------------------------------------------------------
+# APPLICATION METADATA
+#------------------------------------------------------------------------------
 
-APP_NAME="myapp"
-APP_VERSION="1.0.0"
-BASE_URL="https://raw.githubusercontent.com/username/myapp/main"
+APPNAME="myapp"
+VERSION="1.0.0"
+BASE_URL="https://raw.githubusercontent.com/username/project/main"
 
-# Files to download (update this list for your app)
-declare -A FILES=(
-    ["on-add_${APP_NAME}.py"]="hook"
-    ["on-modify_${APP_NAME}.py"]="hook"
-    ["${APP_NAME}.rc"]="config"
-    ["README.md"]="doc"
-)
+#------------------------------------------------------------------------------
+# ENVIRONMENT DETECTION
+#------------------------------------------------------------------------------
 
-#=============================================================================
-# OPTIONAL HELPER SOURCING
-#=============================================================================
+# These defaults allow the installer to work standalone
+: "${HOOKS_DIR:=$HOME/.task/hooks}"
+: "${SCRIPTS_DIR:=$HOME/.task/scripts}"
+: "${CONFIG_DIR:=$HOME/.task/config}"
+: "${DOCS_DIR:=$HOME/.task/docs}"
+: "${LOGS_DIR:=$HOME/.task/logs}"
+: "${TASKRC:=$HOME/.taskrc}"
+: "${TW_DEBUG:=0}"
 
-if [[ -f ~/.task/lib/tw-common.sh ]]; then
-    source ~/.task/lib/tw-common.sh
+#------------------------------------------------------------------------------
+# LIBRARY SOURCING (OPTIONAL)
+#------------------------------------------------------------------------------
+
+# Try to source tw-common.sh for helper functions
+# If not available, we'll use fallback implementations
+if [[ -f "${TW_COMMON:-}" ]]; then
+    source "$TW_COMMON"
+    HAVE_TW_COMMON=1
 else
-    # Fallback: Define minimal messaging functions inline
-    tw_msg() { echo "[INFO] $*"; }
-    tw_success() { echo "[SUCCESS] $*"; }
-    tw_warn() { echo "[WARNING] $*" >&2; }
-    tw_error() { echo "[ERROR] $*" >&2; }
-    tw_die() { tw_error "$@"; exit 1; }
-    tw_debug() { [[ -n "${TW_DEBUG:-}" ]] && echo "[DEBUG] $*" >&2 || true; }
+    HAVE_TW_COMMON=0
+    
+    # Fallback messaging functions for standalone use
+    tw_msg() {
+        echo "[tw] $*"
+    }
+    
+    tw_success() {
+        echo "[tw] ✓ $*"
+    }
+    
+    tw_error() {
+        echo "[tw] ✗ $*" >&2
+    }
+    
+    tw_warn() {
+        echo "[tw] ⚠ $*" >&2
+    }
+    
+    tw_debug() {
+        if [[ "${TW_DEBUG:-0}" == "1" ]]; then
+            echo "[tw-debug] $*" >&2
+        fi
+    }
 fi
 
-#=============================================================================
-# ENVIRONMENT DETECTION
-#=============================================================================
-
-: ${HOOKS_DIR:=~/.task/hooks}
-: ${SCRIPTS_DIR:=~/.task/scripts}
-: ${CONFIG_DIR:=~/.task/config}
-: ${DOCS_DIR:=~/.task/docs}
-: ${TASKRC:=~/.taskrc}
-
-#=============================================================================
-# HELPER FUNCTIONS
-#=============================================================================
-
-check_requirements() {
-    tw_msg "Checking requirements..."
-    
-    # Check for curl
-    if ! command -v curl &>/dev/null; then
-        tw_die "curl is required but not found. Please install curl."
-    fi
-    
-    # Check for Taskwarrior
-    if ! command -v task &>/dev/null; then
-        tw_die "Taskwarrior is required but not found. Please install Taskwarrior."
-    fi
-    
-    # Optional: Check versions if tw-common.sh is available
-    if type tw_check_taskwarrior_version &>/dev/null; then
-        tw_check_taskwarrior_version "2.6.0" || return 1
-    fi
-    
-    if type tw_check_python_version &>/dev/null; then
-        tw_check_python_version "3.6" || return 1
-    fi
-    
-    tw_success "Requirements check passed"
-    return 0
-}
-
-download_file() {
-    local filename="$1"
-    local url="${BASE_URL}/${filename}"
-    local target_dir="$2"
-    local target_name="${3:-$filename}"
-    local target_path="${target_dir}/${target_name}"
-    
-    tw_debug "Downloading $url to $target_path"
-    
-    # Use tw_curl_and_place if available, else basic curl
-    if type tw_curl_and_place &>/dev/null; then
-        tw_curl_and_place "$url" "$target_dir" "$target_name" || return 1
-    else
-        # Ensure directory exists
-        mkdir -p "$target_dir" || {
-            tw_error "Failed to create directory: $target_dir"
-            return 1
-        }
-        
-        # Download to temp file first
-        local tmp_file
-        tmp_file=$(mktemp) || {
-            tw_error "Failed to create temporary file"
-            return 1
-        }
-        
-        if ! curl -fsSL "$url" -o "$tmp_file"; then
-            tw_error "Failed to download: $url"
-            rm -f "$tmp_file"
-            return 1
-        fi
-        
-        # Move to final location
-        if ! mv "$tmp_file" "$target_path"; then
-            tw_error "Failed to move file to: $target_path"
-            rm -f "$tmp_file"
-            return 1
-        fi
-        
-        tw_success "Downloaded: $target_name"
-    fi
-    
-    return 0
-}
-
-#=============================================================================
-# INSTALL FUNCTION
-#=============================================================================
+#------------------------------------------------------------------------------
+# INSTALLATION FUNCTION
+#------------------------------------------------------------------------------
 
 install() {
-    tw_msg "Installing $APP_NAME v$APP_VERSION..."
-    
-    # Check requirements
-    check_requirements || return 1
+    tw_msg "Installing $APPNAME v$VERSION..."
     
     # Create directories
     mkdir -p "$HOOKS_DIR" "$CONFIG_DIR" "$DOCS_DIR"
     
-    # Download files based on type
-    for filename in "${!FILES[@]}"; do
-        local file_type="${FILES[$filename]}"
-        
-        case "$file_type" in
-            hook)
-                download_file "$filename" "$HOOKS_DIR" || return 1
-                # Make hooks executable
-                chmod +x "$HOOKS_DIR/$filename"
-                ;;
-            config)
-                download_file "$filename" "$CONFIG_DIR" || return 1
-                ;;
-            doc)
-                # Rename README.md to appname_README.md to avoid conflicts
-                if [[ "$filename" == "README.md" ]]; then
-                    download_file "$filename" "$DOCS_DIR" "${APP_NAME}_README.md" || return 1
-                else
-                    download_file "$filename" "$DOCS_DIR" || return 1
-                fi
-                ;;
-            *)
-                tw_warn "Unknown file type: $file_type for $filename"
-                ;;
-        esac
-    done
+    # Download hook files
+    tw_msg "Downloading hook files..."
     
-    # Configure Taskwarrior
-    configure_taskwarrior || return 1
-    
-    tw_success "Successfully installed $APP_NAME v$APP_VERSION"
-    tw_msg "Files installed to:"
-    tw_msg "  Hooks: $HOOKS_DIR"
-    tw_msg "  Config: $CONFIG_DIR"
-    tw_msg "  Docs: $DOCS_DIR"
-    
-    return 0
-}
-
-configure_taskwarrior() {
-    tw_msg "Configuring Taskwarrior..."
-    
-    local config_line="include $CONFIG_DIR/${APP_NAME}.rc"
-    
-    # Check if .taskrc exists
-    if [[ ! -f "$TASKRC" ]]; then
-        tw_warn ".taskrc not found at $TASKRC"
-        tw_warn "Please add manually: $config_line"
-        return 0
-    fi
-    
-    # Add config using helper if available, else manual
-    if type tw_add_config &>/dev/null; then
-        tw_add_config "$config_line" || return 1
-    else
-        # Check if already exists (idempotent)
-        if grep -Fxq "$config_line" "$TASKRC"; then
-            tw_debug "Config already exists in .taskrc"
-        else
-            echo "$config_line" >> "$TASKRC" || {
-                tw_error "Failed to add config to .taskrc"
-                return 1
-            }
-            tw_success "Added config to .taskrc"
-        fi
-    fi
-    
-    return 0
-}
-
-#=============================================================================
-# REMOVE FUNCTION
-#=============================================================================
-
-remove() {
-    tw_msg "Removing $APP_NAME..."
-    
-    # Remove hook files
-    for filename in "${!FILES[@]}"; do
-        local file_type="${FILES[$filename]}"
-        
-        case "$file_type" in
-            hook)
-                local file_path="$HOOKS_DIR/$filename"
-                if [[ -f "$file_path" ]]; then
-                    rm -f "$file_path"
-                    tw_success "Removed: $file_path"
-                fi
-                ;;
-            config)
-                local file_path="$CONFIG_DIR/$filename"
-                if [[ -f "$file_path" ]]; then
-                    rm -f "$file_path"
-                    tw_success "Removed: $file_path"
-                fi
-                ;;
-            doc)
-                # Handle renamed README
-                if [[ "$filename" == "README.md" ]]; then
-                    local file_path="$DOCS_DIR/${APP_NAME}_README.md"
-                else
-                    local file_path="$DOCS_DIR/$filename"
-                fi
-                if [[ -f "$file_path" ]]; then
-                    rm -f "$file_path"
-                    tw_success "Removed: $file_path"
-                fi
-                ;;
-        esac
-    done
-    
-    # Remove config from .taskrc
-    remove_config || return 1
-    
-    tw_success "Successfully removed $APP_NAME"
-    
-    return 0
-}
-
-remove_config() {
-    local config_line="include $CONFIG_DIR/${APP_NAME}.rc"
-    
-    # Check if .taskrc exists
-    if [[ ! -f "$TASKRC" ]]; then
-        tw_debug ".taskrc not found, nothing to remove"
-        return 0
-    fi
-    
-    # Remove using helper if available, else manual
-    if type tw_remove_config &>/dev/null; then
-        tw_remove_config "$config_line"
-    else
-        # Check if config exists
-        if ! grep -Fxq "$config_line" "$TASKRC"; then
-            tw_debug "Config not found in .taskrc"
-            return 0
-        fi
-        
-        # Remove config line
-        local tmp_file
-        tmp_file=$(mktemp) || {
-            tw_error "Failed to create temporary file"
+    if [[ $HAVE_TW_COMMON -eq 1 ]] && type tw_curl_and_place &>/dev/null; then
+        # Use tw-common.sh helpers if available
+        tw_curl_and_place "$BASE_URL/on-add_${APPNAME}.py" "$HOOKS_DIR" || {
+            tw_error "Failed to download on-add hook"
             return 1
         }
         
-        if grep -Fxv "$config_line" "$TASKRC" > "$tmp_file" 2>/dev/null; then
-            mv "$tmp_file" "$TASKRC"
-            tw_success "Removed config from .taskrc"
-        else
-            tw_warn "Failed to remove config from .taskrc"
-            rm -f "$tmp_file"
+        tw_curl_and_place "$BASE_URL/on-modify_${APPNAME}.py" "$HOOKS_DIR" || {
+            tw_error "Failed to download on-modify hook"
+            return 1
+        }
+    else
+        # Fallback for standalone use
+        if ! curl -fsSL "$BASE_URL/on-add_${APPNAME}.py" -o "$HOOKS_DIR/on-add_${APPNAME}.py"; then
+            tw_error "Failed to download on-add hook"
+            return 1
+        fi
+        
+        if ! curl -fsSL "$BASE_URL/on-modify_${APPNAME}.py" -o "$HOOKS_DIR/on-modify_${APPNAME}.py"; then
+            tw_error "Failed to download on-modify hook"
+            return 1
         fi
     fi
+    
+    # Make hooks executable
+    chmod +x "$HOOKS_DIR/on-add_${APPNAME}.py"
+    chmod +x "$HOOKS_DIR/on-modify_${APPNAME}.py"
+    tw_debug "Made hooks executable"
+    
+    # Download config file
+    tw_msg "Downloading configuration..."
+    
+    if [[ $HAVE_TW_COMMON -eq 1 ]] && type tw_curl_and_place &>/dev/null; then
+        tw_curl_and_place "$BASE_URL/${APPNAME}.rc" "$CONFIG_DIR" || {
+            tw_warn "Failed to download config file (continuing)"
+        }
+    else
+        if ! curl -fsSL "$BASE_URL/${APPNAME}.rc" -o "$CONFIG_DIR/${APPNAME}.rc"; then
+            tw_warn "Failed to download config file (continuing)"
+        fi
+    fi
+    
+    # Add config include to .taskrc
+    if [[ $HAVE_TW_COMMON -eq 1 ]] && type tw_add_config &>/dev/null; then
+        tw_add_config "include $CONFIG_DIR/${APPNAME}.rc"
+    else
+        # Fallback: manual config addition
+        if [[ -f "$TASKRC" ]] && ! grep -q "include $CONFIG_DIR/${APPNAME}.rc" "$TASKRC"; then
+            echo "include $CONFIG_DIR/${APPNAME}.rc" >> "$TASKRC"
+            tw_debug "Added config include to .taskrc"
+        elif [[ ! -f "$TASKRC" ]]; then
+            echo "include $CONFIG_DIR/${APPNAME}.rc" > "$TASKRC"
+            tw_debug "Created .taskrc with config include"
+        fi
+    fi
+    
+    # Download README
+    tw_msg "Downloading documentation..."
+    
+    if [[ $HAVE_TW_COMMON -eq 1 ]] && type tw_curl_and_place &>/dev/null; then
+        tw_curl_and_place "$BASE_URL/README.md" "$DOCS_DIR" "${APPNAME}_README.md" || {
+            tw_warn "Failed to download README (continuing)"
+        }
+    else
+        if ! curl -fsSL "$BASE_URL/README.md" -o "$DOCS_DIR/${APPNAME}_README.md"; then
+            tw_warn "Failed to download README (continuing)"
+        fi
+    fi
+    
+    # Track installation in manifest (if tw-common.sh available)
+    if [[ $HAVE_TW_COMMON -eq 1 ]] && type tw_manifest_add &>/dev/null; then
+        tw_manifest_add "$APPNAME" "$VERSION" "$HOOKS_DIR/on-add_${APPNAME}.py"
+        tw_manifest_add "$APPNAME" "$VERSION" "$HOOKS_DIR/on-modify_${APPNAME}.py"
+        tw_manifest_add "$APPNAME" "$VERSION" "$CONFIG_DIR/${APPNAME}.rc"
+        tw_manifest_add "$APPNAME" "$VERSION" "$DOCS_DIR/${APPNAME}_README.md"
+        tw_debug "Added entries to manifest"
+    fi
+    
+    tw_success "Installed $APPNAME v$VERSION"
+    tw_msg "Hook files: $HOOKS_DIR/on-{add,modify}_${APPNAME}.py"
+    tw_msg "Config: $CONFIG_DIR/${APPNAME}.rc"
+    tw_msg "Documentation: $DOCS_DIR/${APPNAME}_README.md"
     
     return 0
 }
 
-#=============================================================================
-# MAIN DISPATCHER
-#=============================================================================
+#------------------------------------------------------------------------------
+# REMOVAL FUNCTION
+#------------------------------------------------------------------------------
 
-case "${1:-}" in
-    install)
-        install
-        ;;
-    remove|uninstall)
-        remove
-        ;;
-    *)
-        echo "Usage: $0 {install|remove}"
-        echo ""
-        echo "Install or remove $APP_NAME hook for Taskwarrior"
-        echo ""
-        echo "Commands:"
-        echo "  install   - Download and install $APP_NAME"
-        echo "  remove    - Remove $APP_NAME and clean up"
-        exit 1
-        ;;
-esac
+remove() {
+    tw_msg "Removing $APPNAME..."
+    
+    # Use manifest-based removal if available
+    if [[ $HAVE_TW_COMMON -eq 1 ]] && type tw_uninstall_app &>/dev/null; then
+        tw_uninstall_app "$APPNAME"
+        return $?
+    fi
+    
+    # Fallback: manual removal for standalone use
+    local removed=0
+    
+    if [[ -f "$HOOKS_DIR/on-add_${APPNAME}.py" ]]; then
+        rm -f "$HOOKS_DIR/on-add_${APPNAME}.py"
+        tw_debug "Removed: $HOOKS_DIR/on-add_${APPNAME}.py"
+        removed=1
+    fi
+    
+    if [[ -f "$HOOKS_DIR/on-modify_${APPNAME}.py" ]]; then
+        rm -f "$HOOKS_DIR/on-modify_${APPNAME}.py"
+        tw_debug "Removed: $HOOKS_DIR/on-modify_${APPNAME}.py"
+        removed=1
+    fi
+    
+    if [[ -f "$CONFIG_DIR/${APPNAME}.rc" ]]; then
+        rm -f "$CONFIG_DIR/${APPNAME}.rc"
+        tw_debug "Removed: $CONFIG_DIR/${APPNAME}.rc"
+        removed=1
+    fi
+    
+    if [[ -f "$DOCS_DIR/${APPNAME}_README.md" ]]; then
+        rm -f "$DOCS_DIR/${APPNAME}_README.md"
+        tw_debug "Removed: $DOCS_DIR/${APPNAME}_README.md"
+        removed=1
+    fi
+    
+    # Remove config line from .taskrc
+    if [[ -f "$TASKRC" ]]; then
+        if grep -q "include $CONFIG_DIR/${APPNAME}.rc" "$TASKRC"; then
+            grep -v "include $CONFIG_DIR/${APPNAME}.rc" "$TASKRC" > "$TASKRC.tmp" || true
+            mv "$TASKRC.tmp" "$TASKRC"
+            tw_debug "Removed config include from .taskrc"
+        fi
+    fi
+    
+    if [[ $removed -eq 1 ]]; then
+        tw_success "Removed $APPNAME"
+        return 0
+    else
+        tw_warn "No files found to remove for $APPNAME"
+        return 1
+    fi
+}
+
+#------------------------------------------------------------------------------
+# MAIN ENTRY POINT
+#------------------------------------------------------------------------------
+
+main() {
+    case "${1:-}" in
+        install)
+            install
+            ;;
+        remove)
+            remove
+            ;;
+        *)
+            echo "Usage: $0 {install|remove}"
+            echo ""
+            echo "Examples:"
+            echo "  $0 install   - Install $APPNAME"
+            echo "  $0 remove    - Remove $APPNAME"
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"

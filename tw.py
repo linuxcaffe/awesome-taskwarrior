@@ -1,600 +1,541 @@
 #!/usr/bin/env python3
 """
-tw.py - Taskwarrior Awesome Package Manager
+tw.py - awesome-taskwarrior package manager and wrapper
 Version: 2.0.0
-Architecture: Curl-based coordination with per-file manifest tracking
 
-This tool coordinates installation of Taskwarrior extensions but does NOT
-control them. Each .install script must work standalone. tw.py adds:
-- Manifest tracking for clean uninstalls
-- Batch operations across multiple apps
-- File integrity verification
-- Convenient discovery of available apps
+A unified wrapper for Taskwarrior that provides:
+- Transparent pass-through to task command
+- Package management for Taskwarrior extensions (hooks, wrappers, configs)
+- Curl-based installation (no git clones)
+- Per-file manifest tracking
+- Checksum verification
 
-Key Principles:
-1. Installers are independent - they work with OR without tw.py
-2. tw.py coordinates - it does not control
-3. Curl-based downloads - no git operations
-4. Per-file manifest - track individual files, not repos
-5. Direct placement - no symlinks by default
+Architecture Changes in v2.0.0:
+- Removed git-based operations
+- Direct file placement via curl
+- Per-file manifest tracking (app|version|file|checksum|date)
+- Added docs_dir for README files
+- Self-contained installers that work with or without tw.py
 """
 
-import argparse
-import hashlib
+import sys
 import os
 import subprocess
-import sys
-from datetime import datetime
+import argparse
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from datetime import datetime
+import hashlib
+import shutil
 
+VERSION = "2.0.0"
 
 class PathManager:
-    """Manages standard Taskwarrior directory structure."""
+    """Manages all filesystem paths for awesome-taskwarrior"""
     
-    def __init__(self, base_dir: Optional[Path] = None):
-        """Initialize with base directory (defaults to ~/.task)."""
-        self.base_dir = base_dir or Path.home() / ".task"
-        self.hooks_dir = self.base_dir / "hooks"
-        self.scripts_dir = self.base_dir / "scripts"
-        self.config_dir = self.base_dir / "config"
-        self.docs_dir = self.base_dir / "docs"
-        self.logs_dir = self.base_dir / "logs"
-        self.lib_dir = self.base_dir / "lib"
-        self.manifest_file = self.base_dir / ".tw_manifest"
+    def __init__(self):
+        self.home = Path.home()
+        self.task_dir = self.home / ".task"
+        self.hooks_dir = self.task_dir / "hooks"
+        self.scripts_dir = self.task_dir / "scripts"
+        self.config_dir = self.task_dir / "config"
+        self.docs_dir = self.task_dir / "docs"
+        self.logs_dir = self.task_dir / "logs"
+        self.taskrc = self.home / ".taskrc"
         
-    def ensure_directories(self):
-        """Create all standard directories if they don't exist."""
+        # awesome-taskwarrior directories
+        self.tw_root = Path(__file__).parent.absolute()
+        self.registry_dir = self.tw_root / "registry.d"
+        self.installers_dir = self.tw_root / "installers"
+        self.lib_dir = self.tw_root / "lib"
+        self.installed_dir = self.tw_root / "installed"
+        self.manifest_file = self.task_dir / ".tw_manifest"
+        
+    def init_directories(self):
+        """Create all required directories"""
         for dir_path in [
-            self.hooks_dir,
-            self.scripts_dir,
-            self.config_dir,
-            self.docs_dir,
-            self.logs_dir,
-            self.lib_dir,
+            self.hooks_dir, self.scripts_dir, self.config_dir,
+            self.docs_dir, self.logs_dir, self.registry_dir,
+            self.installers_dir, self.installed_dir
         ]:
             dir_path.mkdir(parents=True, exist_ok=True)
-    
-    def get_env_dict(self) -> Dict[str, str]:
-        """Return environment variables for passing to installers."""
-        return {
-            "HOOKS_DIR": str(self.hooks_dir),
-            "SCRIPTS_DIR": str(self.scripts_dir),
-            "CONFIG_DIR": str(self.config_dir),
-            "DOCS_DIR": str(self.docs_dir),
-            "LOGS_DIR": str(self.logs_dir),
-            "TASKRC": os.environ.get("TASKRC", str(Path.home() / ".taskrc")),
-        }
-
 
 class MetaFile:
-    """Parser for .meta files that describe an application."""
+    """Parses and manages .meta files for applications"""
     
-    def __init__(self, meta_path: Path):
-        """Initialize with path to .meta file."""
-        self.meta_path = meta_path
-        self.data = self._parse()
+    def __init__(self, meta_path):
+        self.meta_path = Path(meta_path)
+        self.data = {}
+        self._parse()
+    
+    def _parse(self):
+        """Parse the .meta file"""
+        if not self.meta_path.exists():
+            return
         
-    def _parse(self) -> Dict[str, str]:
-        """Parse .meta file into dictionary."""
-        data = {}
-        with open(self.meta_path) as f:
+        with open(self.meta_path, 'r') as f:
             for line in f:
                 line = line.strip()
-                if not line or line.startswith("#"):
+                if not line or line.startswith('#'):
                     continue
-                if "=" in line:
-                    key, value = line.split("=", 1)
-                    data[key.strip()] = value.strip()
-        return data
+                if '=' in line:
+                    key, value = line.split('=', 1)
+                    self.data[key.strip()] = value.strip()
     
-    def get_name(self) -> str:
-        """Get application name."""
-        return self.data.get("name", "")
+    def get(self, key, default=None):
+        """Get a value from the meta file"""
+        return self.data.get(key, default)
     
-    def get_version(self) -> str:
-        """Get application version."""
-        return self.data.get("version", "unknown")
-    
-    def get_description(self) -> str:
-        """Get application description."""
-        return self.data.get("description", "")
-    
-    def get_requires(self) -> List[str]:
-        """Get list of requirements."""
-        requires = self.data.get("requires", "")
-        return [r.strip() for r in requires.split(",") if r.strip()]
-    
-    def get_files(self) -> List[Tuple[str, str]]:
+    def get_files(self):
+        """Parse files= field into list of (filename, type) tuples
+        
+        Format: files=file1.py:hook,file2.sh:script,config.rc:config
+        Returns: [('file1.py', 'hook'), ('file2.sh', 'script'), ...]
         """
-        Get list of (filename, type) tuples from files= field.
-        Format: files=file1.py:hook,file2:script,file3.rc:config
-        Returns: [("file1.py", "hook"), ("file2", "script"), ("file3.rc", "config")]
-        """
-        files_str = self.data.get("files", "")
+        files_str = self.get('files', '')
         if not files_str:
             return []
         
-        files = []
-        for item in files_str.split(","):
+        result = []
+        for item in files_str.split(','):
             item = item.strip()
-            if ":" in item:
-                filename, file_type = item.split(":", 1)
-                files.append((filename.strip(), file_type.strip()))
-        return files
+            if ':' in item:
+                filename, file_type = item.split(':', 1)
+                result.append((filename.strip(), file_type.strip()))
+            else:
+                # Default to 'file' type if not specified
+                result.append((item, 'file'))
+        
+        return result
     
-    def get_base_url(self) -> str:
-        """Get base URL for downloading files."""
-        return self.data.get("base_url", "")
+    def get_base_url(self):
+        """Get base URL for file downloads"""
+        return self.get('base_url', '')
     
-    def get_checksums(self) -> Dict[str, str]:
+    def get_checksums(self):
+        """Parse checksums= field into list of checksums
+        
+        Format: checksums=hash1,hash2,hash3
+        Returns: ['hash1', 'hash2', 'hash3']
         """
-        Get checksums dictionary from checksums= field.
-        Format: checksums=sha256:abc123,sha256:def456
-        Returns: {"file1.py": "abc123", "file2": "def456"}
-        """
-        checksums_str = self.data.get("checksums", "")
+        checksums_str = self.get('checksums', '')
         if not checksums_str:
-            return {}
+            return []
         
-        checksums = {}
-        files = self.get_files()
-        checksum_list = [c.strip() for c in checksums_str.split(",")]
-        
-        for i, (filename, _) in enumerate(files):
-            if i < len(checksum_list):
-                checksum = checksum_list[i]
-                if checksum.startswith("sha256:"):
-                    checksums[filename] = checksum[7:]  # Remove "sha256:" prefix
-                else:
-                    checksums[filename] = checksum
-        
-        return checksums
-
+        return [c.strip() for c in checksums_str.split(',') if c.strip()]
 
 class Manifest:
-    """Manages per-file installation manifest."""
+    """Manages the installation manifest"""
     
-    def __init__(self, manifest_path: Path):
-        """Initialize with path to manifest file."""
-        self.manifest_path = manifest_path
-        self.entries = self._load()
+    def __init__(self, manifest_path):
+        self.manifest_path = Path(manifest_path)
+        self.entries = []
+        self._load()
     
-    def _load(self) -> List[Dict[str, str]]:
-        """Load manifest entries from file."""
-        entries = []
+    def _load(self):
+        """Load manifest from file"""
         if not self.manifest_path.exists():
-            return entries
+            return
         
-        with open(self.manifest_path) as f:
+        with open(self.manifest_path, 'r') as f:
             for line in f:
                 line = line.strip()
-                if not line or line.startswith("#"):
+                if not line:
                     continue
-                parts = line.split("|")
-                if len(parts) >= 4:
-                    entries.append({
-                        "app": parts[0],
-                        "version": parts[1],
-                        "file": parts[2],
-                        "checksum": parts[3] if len(parts) > 3 else "",
-                        "date": parts[4] if len(parts) > 4 else "",
+                parts = line.split('|')
+                if len(parts) >= 5:
+                    self.entries.append({
+                        'app': parts[0],
+                        'version': parts[1],
+                        'file': parts[2],
+                        'checksum': parts[3],
+                        'date': parts[4]
                     })
-        return entries
     
-    def _save(self):
-        """Save manifest entries to file."""
-        self.manifest_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.manifest_path, "w") as f:
-            for entry in self.entries:
-                f.write(f"{entry['app']}|{entry['version']}|{entry['file']}|"
-                       f"{entry['checksum']}|{entry['date']}\n")
-    
-    def add_file(self, app: str, version: str, filepath: str, checksum: str = ""):
-        """Add a file to the manifest."""
-        # Remove existing entry for this file if present
-        self.entries = [e for e in self.entries if e["file"] != filepath]
+    def add(self, app, version, file_path, checksum=''):
+        """Add an entry to the manifest"""
+        # Remove any existing entry for this file
+        self.entries = [e for e in self.entries 
+                       if not (e['app'] == app and e['file'] == file_path)]
         
         # Add new entry
-        self.entries.append({
-            "app": app,
-            "version": version,
-            "file": filepath,
-            "checksum": checksum,
-            "date": datetime.now().isoformat(),
-        })
+        entry = {
+            'app': app,
+            'version': version,
+            'file': file_path,
+            'checksum': checksum,
+            'date': datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+        }
+        self.entries.append(entry)
         self._save()
     
-    def remove_app(self, app: str) -> List[str]:
-        """
-        Remove all files for an app from manifest.
-        Returns list of filepaths that were tracked.
-        """
-        files = [e["file"] for e in self.entries if e["app"] == app]
-        self.entries = [e for e in self.entries if e["app"] != app]
+    def remove_app(self, app):
+        """Remove all entries for an app"""
+        self.entries = [e for e in self.entries if e['app'] != app]
         self._save()
-        return files
     
-    def get_app_files(self, app: str) -> List[Dict[str, str]]:
-        """Get all manifest entries for an app."""
-        return [e for e in self.entries if e["app"] == app]
+    def get_files(self, app):
+        """Get list of files for an app"""
+        return [e['file'] for e in self.entries if e['app'] == app]
     
-    def get_installed_apps(self) -> List[str]:
-        """Get list of installed app names."""
-        apps = set(e["app"] for e in self.entries)
-        return sorted(apps)
+    def is_installed(self, app):
+        """Check if an app is installed"""
+        return any(e['app'] == app for e in self.entries)
     
-    def is_installed(self, app: str) -> bool:
-        """Check if an app is installed."""
-        return any(e["app"] == app for e in self.entries)
+    def get_version(self, app):
+        """Get installed version of an app"""
+        for e in self.entries:
+            if e['app'] == app:
+                return e['version']
+        return None
+    
+    def _save(self):
+        """Save manifest to file"""
+        self.manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.manifest_path, 'w') as f:
+            for entry in self.entries:
+                line = '|'.join([
+                    entry['app'],
+                    entry['version'],
+                    entry['file'],
+                    entry['checksum'],
+                    entry['date']
+                ])
+                f.write(line + '\n')
 
-
-class AwesomeTaskwarrior:
-    """Main application class."""
+class AppManager:
+    """Manages application installation, removal, and updates"""
     
-    def __init__(self, args):
-        """Initialize with parsed arguments."""
-        self.args = args
-        self.paths = PathManager()
-        self.manifest = Manifest(self.paths.manifest_file)
+    def __init__(self, paths):
+        self.paths = paths
+        self.manifest = Manifest(paths.manifest_file)
+    
+    def install(self, app_name, dry_run=False):
+        """Install an application using its installer script"""
+        installer_path = self.paths.installers_dir / f"{app_name}.install"
         
-        # Determine registry and installer directories
-        script_dir = Path(__file__).parent.resolve()
-        self.registry_dir = script_dir / "registry.d"
-        self.installers_dir = script_dir / "installers"
-    
-    def _run_installer(self, installer_path: Path, command: str) -> bool:
-        """Run an installer script with the specified command."""
         if not installer_path.exists():
-            print(f"ERROR: Installer not found: {installer_path}", file=sys.stderr)
+            print(f"[tw] ✗ Installer not found: {installer_path}")
             return False
         
-        # Prepare environment
+        # Set environment variables for the installer
         env = os.environ.copy()
-        env.update(self.paths.get_env_dict())
+        env.update({
+            'INSTALL_DIR': str(self.paths.task_dir),
+            'HOOKS_DIR': str(self.paths.hooks_dir),
+            'SCRIPTS_DIR': str(self.paths.scripts_dir),
+            'CONFIG_DIR': str(self.paths.config_dir),
+            'DOCS_DIR': str(self.paths.docs_dir),
+            'LOGS_DIR': str(self.paths.logs_dir),
+            'TASKRC': str(self.paths.taskrc),
+            'TW_COMMON': str(self.paths.lib_dir / 'tw-common.sh')
+        })
         
-        # Run installer
+        if dry_run:
+            env['TW_DRY_RUN'] = '1'
+            print(f"[tw] DRY RUN: Would execute: bash {installer_path} install")
+            
+            # Show what would be installed
+            meta_path = self.paths.registry_dir / f"{app_name}.meta"
+            if meta_path.exists():
+                meta = MetaFile(meta_path)
+                files = meta.get_files()
+                if files:
+                    print(f"[tw] Would install {len(files)} file(s):")
+                    for filename, file_type in files:
+                        target_dir = self._get_target_dir(file_type)
+                        print(f"[tw]   {filename} → {target_dir}/")
+            return True
+        
+        # Execute installer
         try:
             result = subprocess.run(
-                ["bash", str(installer_path), command],
+                ['bash', str(installer_path), 'install'],
                 env=env,
-                capture_output=True,
-                text=True,
+                capture_output=False,
+                text=True
             )
             
-            # Show output
-            if result.stdout:
-                print(result.stdout)
-            if result.stderr:
-                print(result.stderr, file=sys.stderr)
-            
-            return result.returncode == 0
-            
+            if result.returncode == 0:
+                print(f"[tw] ✓ Installed: {app_name}")
+                return True
+            else:
+                print(f"[tw] ✗ Installation failed: {app_name}")
+                return False
+                
         except Exception as e:
-            print(f"ERROR: Failed to run installer: {e}", file=sys.stderr)
+            print(f"[tw] ✗ Error running installer: {e}")
             return False
     
-    def _calculate_checksum(self, filepath: Path) -> str:
-        """Calculate SHA256 checksum of a file."""
-        sha256 = hashlib.sha256()
-        with open(filepath, "rb") as f:
-            for chunk in iter(lambda: f.read(4096), b""):
-                sha256.update(chunk)
-        return sha256.hexdigest()
-    
-    def _find_installed_files(self, meta: MetaFile) -> List[Path]:
-        """
-        Find files that were installed for an app.
-        Uses the files list from .meta and searches in appropriate directories.
-        """
-        files = []
-        type_to_dir = {
-            "hook": self.paths.hooks_dir,
-            "script": self.paths.scripts_dir,
-            "config": self.paths.config_dir,
-            "doc": self.paths.docs_dir,
-        }
-        
-        for filename, file_type in meta.get_files():
-            target_dir = type_to_dir.get(file_type)
-            if not target_dir:
-                continue
-            
-            # For docs, check for renamed file (appname_README.md pattern)
-            if file_type == "doc" and filename == "README.md":
-                app_name = meta.get_name()
-                renamed = target_dir / f"{app_name}_README.md"
-                if renamed.exists():
-                    files.append(renamed)
-                    continue
-            
-            # Check for file in target directory
-            filepath = target_dir / filename
-            if filepath.exists():
-                files.append(filepath)
-        
-        return files
-    
-    def cmd_install(self) -> int:
-        """Install an application."""
-        app_name = self.args.app
-        
-        # Check if already installed
-        if self.manifest.is_installed(app_name):
-            print(f"WARNING: {app_name} is already installed. Use --update to upgrade.")
-            return 1
-        
-        # Find .meta file
-        meta_path = self.registry_dir / f"{app_name}.meta"
-        if not meta_path.exists():
-            print(f"ERROR: Application not found in registry: {app_name}", file=sys.stderr)
-            return 1
-        
-        # Parse .meta file
-        meta = MetaFile(meta_path)
-        
-        # Find .install script
-        installer_path = self.installers_dir / f"{app_name}.install"
-        if not installer_path.exists():
-            print(f"ERROR: Installer not found: {app_name}", file=sys.stderr)
-            return 1
-        
-        # Ensure directories exist
-        self.paths.ensure_directories()
-        
-        # Run installer
-        print(f"Installing {app_name} v{meta.get_version()}...")
-        if not self._run_installer(installer_path, "install"):
-            print(f"ERROR: Installation failed for {app_name}", file=sys.stderr)
-            return 1
-        
-        # Update manifest with installed files
-        installed_files = self._find_installed_files(meta)
-        checksums = meta.get_checksums()
-        
-        for filepath in installed_files:
-            checksum = checksums.get(filepath.name, "")
-            self.manifest.add_file(
-                app_name,
-                meta.get_version(),
-                str(filepath),
-                checksum
-            )
-        
-        print(f"SUCCESS: Installed {app_name} v{meta.get_version()}")
-        return 0
-    
-    def cmd_remove(self) -> int:
-        """Remove an application."""
-        app_name = self.args.app
-        
-        # Check if installed
+    def remove(self, app_name):
+        """Remove an application using its installer script"""
         if not self.manifest.is_installed(app_name):
-            print(f"WARNING: {app_name} is not installed.", file=sys.stderr)
-            return 1
+            print(f"[tw] ⚠ Not installed: {app_name}")
+            return False
         
-        # Find installer
-        installer_path = self.installers_dir / f"{app_name}.install"
-        if not installer_path.exists():
-            print(f"WARNING: Installer not found: {app_name}", file=sys.stderr)
-            print("Removing from manifest only...")
+        installer_path = self.paths.installers_dir / f"{app_name}.install"
+        
+        if installer_path.exists():
+            # Use installer's remove function
+            env = os.environ.copy()
+            env.update({
+                'INSTALL_DIR': str(self.paths.task_dir),
+                'HOOKS_DIR': str(self.paths.hooks_dir),
+                'SCRIPTS_DIR': str(self.paths.scripts_dir),
+                'CONFIG_DIR': str(self.paths.config_dir),
+                'DOCS_DIR': str(self.paths.docs_dir),
+                'LOGS_DIR': str(self.paths.logs_dir),
+                'TASKRC': str(self.paths.taskrc),
+                'TW_COMMON': str(self.paths.lib_dir / 'tw-common.sh')
+            })
+            
+            try:
+                result = subprocess.run(
+                    ['bash', str(installer_path), 'remove'],
+                    env=env,
+                    capture_output=False
+                )
+                
+                if result.returncode == 0:
+                    self.manifest.remove_app(app_name)
+                    print(f"[tw] ✓ Removed: {app_name}")
+                    return True
+                else:
+                    print(f"[tw] ✗ Removal failed: {app_name}")
+                    return False
+                    
+            except Exception as e:
+                print(f"[tw] ✗ Error running installer: {e}")
+                return False
         else:
-            # Run uninstall
-            print(f"Uninstalling {app_name}...")
-            if not self._run_installer(installer_path, "remove"):
-                print(f"WARNING: Uninstall script failed for {app_name}", file=sys.stderr)
-        
-        # Remove from manifest
-        removed_files = self.manifest.remove_app(app_name)
-        
-        print(f"SUCCESS: Removed {app_name} ({len(removed_files)} files)")
-        return 0
+            # Fallback: use manifest to remove files
+            print(f"[tw] Installer not found, using manifest for removal")
+            files = self.manifest.get_files(app_name)
+            for file_path in files:
+                path = Path(file_path)
+                if path.exists():
+                    path.unlink()
+                    print(f"[tw]   Removed: {file_path}")
+            
+            self.manifest.remove_app(app_name)
+            print(f"[tw] ✓ Removed: {app_name}")
+            return True
     
-    def cmd_update(self) -> int:
-        """Update an application."""
-        app_name = self.args.app
-        
-        # Check if installed
-        if not self.manifest.is_installed(app_name):
-            print(f"ERROR: {app_name} is not installed. Use --install first.", file=sys.stderr)
-            return 1
-        
-        # Remove and reinstall
-        print(f"Updating {app_name}...")
-        
-        # Store current namespace for remove
-        remove_args = argparse.Namespace(app=app_name)
-        original_args = self.args
-        self.args = remove_args
-        
-        if self.cmd_remove() != 0:
-            self.args = original_args
-            return 1
-        
-        self.args = original_args
-        return self.cmd_install()
+    def update(self, app_name):
+        """Update an application (reinstall)"""
+        print(f"[tw] Updating {app_name}...")
+        if self.manifest.is_installed(app_name):
+            self.remove(app_name)
+        return self.install(app_name)
     
-    def cmd_info(self) -> int:
-        """Show information about an application."""
-        app_name = self.args.app
+    def list_installed(self):
+        """List all installed applications"""
+        apps = {}
+        for entry in self.manifest.entries:
+            app = entry['app']
+            if app not in apps:
+                apps[app] = entry['version']
         
-        # Find .meta file
-        meta_path = self.registry_dir / f"{app_name}.meta"
+        if not apps:
+            print("[tw] No applications installed")
+            return
+        
+        print("[tw] Installed applications:")
+        for app, version in sorted(apps.items()):
+            print(f"[tw]   {app} (v{version})")
+    
+    def show_info(self, app_name):
+        """Show information about an application"""
+        meta_path = self.paths.registry_dir / f"{app_name}.meta"
+        
         if not meta_path.exists():
-            print(f"ERROR: Application not found in registry: {app_name}", file=sys.stderr)
-            return 1
+            print(f"[tw] ✗ Application not found: {app_name}")
+            return False
         
-        # Parse .meta file
         meta = MetaFile(meta_path)
         
-        # Show info
-        print(f"Application: {meta.get_name()}")
-        print(f"Version: {meta.get_version()}")
-        print(f"Description: {meta.get_description()}")
+        print(f"[tw] Application: {app_name}")
+        print(f"[tw]   Name: {meta.get('name', 'N/A')}")
+        print(f"[tw]   Version: {meta.get('version', 'N/A')}")
+        print(f"[tw]   Type: {meta.get('type', 'N/A')}")
+        print(f"[tw]   Description: {meta.get('description', 'N/A')}")
+        print(f"[tw]   Repository: {meta.get('repo', 'N/A')}")
+        print(f"[tw]   Base URL: {meta.get('base_url', 'N/A')}")
         
-        requires = meta.get_requires()
-        if requires:
-            print(f"Requirements: {', '.join(requires)}")
-        
+        # Show files
         files = meta.get_files()
         if files:
-            print(f"Files ({len(files)}):")
+            print(f"[tw]   Files ({len(files)}):")
             for filename, file_type in files:
-                print(f"  - {filename} ({file_type})")
+                print(f"[tw]     {filename} ({file_type})")
         
         # Show installation status
         if self.manifest.is_installed(app_name):
-            entries = self.manifest.get_app_files(app_name)
-            print(f"Status: Installed ({len(entries)} files)")
-            if entries:
-                print("Installed files:")
-                for entry in entries:
-                    print(f"  - {entry['file']}")
+            installed_version = self.manifest.get_version(app_name)
+            print(f"[tw]   Status: Installed (v{installed_version})")
+            
+            # Show README location if it exists
+            readme_path = self.paths.docs_dir / f"{app_name}_README.md"
+            if readme_path.exists():
+                print(f"[tw]   README: {readme_path}")
         else:
-            print("Status: Not installed")
+            print(f"[tw]   Status: Not installed")
         
-        return 0
+        return True
     
-    def cmd_list(self) -> int:
-        """List available or installed applications."""
-        if self.args.installed:
-            # List installed apps
-            installed = self.manifest.get_installed_apps()
-            if not installed:
-                print("No applications installed.")
-                return 0
-            
-            print("Installed applications:")
-            for app_name in installed:
-                entries = self.manifest.get_app_files(app_name)
-                version = entries[0]["version"] if entries else "unknown"
-                print(f"  - {app_name} (v{version})")
-            
-            return 0
-        
-        # List available apps
-        if not self.registry_dir.exists():
-            print("No applications available in registry.")
-            return 0
-        
-        meta_files = sorted(self.registry_dir.glob("*.meta"))
-        if not meta_files:
-            print("No applications available in registry.")
-            return 0
-        
-        print("Available applications:")
-        for meta_path in meta_files:
-            meta = MetaFile(meta_path)
-            installed = " [INSTALLED]" if self.manifest.is_installed(meta.get_name()) else ""
-            print(f"  - {meta.get_name()} (v{meta.get_version()}){installed}")
-            if meta.get_description():
-                print(f"    {meta.get_description()}")
-        
-        return 0
-    
-    def cmd_verify(self) -> int:
-        """Verify installed files against checksums."""
-        app_name = self.args.app
-        
-        # Check if installed
+    def verify(self, app_name):
+        """Verify checksums of installed files"""
         if not self.manifest.is_installed(app_name):
-            print(f"ERROR: {app_name} is not installed.", file=sys.stderr)
-            return 1
+            print(f"[tw] ✗ Not installed: {app_name}")
+            return False
         
-        # Get manifest entries
-        entries = self.manifest.get_app_files(app_name)
+        meta_path = self.paths.registry_dir / f"{app_name}.meta"
+        if not meta_path.exists():
+            print(f"[tw] ⚠ Meta file not found: {meta_path}")
+            return False
         
-        print(f"Verifying {app_name}...")
-        all_ok = True
+        meta = MetaFile(meta_path)
+        checksums = meta.get_checksums()
+        files = meta.get_files()
         
-        for entry in entries:
-            filepath = Path(entry["file"])
-            stored_checksum = entry["checksum"]
+        if not checksums:
+            print(f"[tw] ⚠ No checksums available for {app_name}")
+            return True
+        
+        print(f"[tw] Verifying {app_name}...")
+        all_valid = True
+        
+        for i, (filename, file_type) in enumerate(files):
+            if i >= len(checksums):
+                break
             
-            # Check file exists
-            if not filepath.exists():
-                print(f"  ✗ {filepath.name} - MISSING")
-                all_ok = False
+            expected_checksum = checksums[i]
+            if not expected_checksum:
                 continue
             
-            # Check checksum if available
-            if stored_checksum:
-                actual_checksum = self._calculate_checksum(filepath)
-                if actual_checksum == stored_checksum:
-                    print(f"  ✓ {filepath.name} - OK")
-                else:
-                    print(f"  ✗ {filepath.name} - CHECKSUM MISMATCH")
-                    all_ok = False
+            # Find file path
+            target_dir = self._get_target_dir(file_type)
+            file_path = target_dir / filename
+            
+            if not file_path.exists():
+                print(f"[tw] ✗ File not found: {file_path}")
+                all_valid = False
+                continue
+            
+            # Calculate checksum
+            actual_checksum = self._calculate_checksum(file_path)
+            
+            if actual_checksum == expected_checksum:
+                print(f"[tw] ✓ {filename}")
             else:
-                print(f"  ? {filepath.name} - NO CHECKSUM")
+                print(f"[tw] ✗ {filename} (checksum mismatch)")
+                all_valid = False
         
-        if all_ok:
-            print(f"SUCCESS: All files verified for {app_name}")
-            return 0
+        if all_valid:
+            print(f"[tw] ✓ All files verified")
         else:
-            print(f"WARNING: Verification failed for {app_name}", file=sys.stderr)
-            return 1
+            print(f"[tw] ✗ Verification failed")
+        
+        return all_valid
+    
+    def _get_target_dir(self, file_type):
+        """Get target directory for a file type"""
+        type_map = {
+            'hook': self.paths.hooks_dir,
+            'script': self.paths.scripts_dir,
+            'config': self.paths.config_dir,
+            'doc': self.paths.docs_dir
+        }
+        return type_map.get(file_type, self.paths.task_dir)
+    
+    def _calculate_checksum(self, file_path):
+        """Calculate SHA256 checksum of a file"""
+        sha256_hash = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+        return sha256_hash.hexdigest()
 
+def pass_through_to_task(args):
+    """Pass command through to task"""
+    try:
+        # Find task executable
+        task_bin = shutil.which('task')
+        if not task_bin:
+            print("[tw] ✗ task executable not found")
+            return 1
+        
+        # Execute task with arguments
+        result = subprocess.run([task_bin] + args, check=False)
+        return result.returncode
+        
+    except Exception as e:
+        print(f"[tw] ✗ Error executing task: {e}")
+        return 1
 
 def main():
-    """Main entry point."""
+    """Main entry point"""
     parser = argparse.ArgumentParser(
-        description="Taskwarrior Awesome Package Manager v2.0.0",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description='awesome-taskwarrior package manager and wrapper',
+        add_help=False
     )
     
-    subparsers = parser.add_subparsers(dest="command", help="Command to execute")
+    # Package management commands
+    parser.add_argument('--install', metavar='APP', help='Install an application')
+    parser.add_argument('--remove', metavar='APP', help='Remove an application')
+    parser.add_argument('--update', metavar='APP', help='Update an application')
+    parser.add_argument('--list', action='store_true', help='List installed applications')
+    parser.add_argument('--info', metavar='APP', help='Show application info')
+    parser.add_argument('--verify', metavar='APP', help='Verify application checksums')
+    parser.add_argument('--dry-run', action='store_true', help='Show what would be done')
     
-    # Install command
-    install_parser = subparsers.add_parser("install", help="Install an application")
-    install_parser.add_argument("app", help="Application name")
+    # Utility commands
+    parser.add_argument('--version', action='store_true', help='Show tw.py version')
+    parser.add_argument('--help', action='store_true', help='Show this help')
     
-    # Remove command
-    remove_parser = subparsers.add_parser("remove", help="Remove an application")
-    remove_parser.add_argument("app", help="Application name")
+    # Parse known args, let the rest pass through to task
+    args, remaining = parser.parse_known_args()
     
-    # Update command
-    update_parser = subparsers.add_parser("update", help="Update an application")
-    update_parser.add_argument("app", help="Application name")
+    # Initialize paths
+    paths = PathManager()
+    paths.init_directories()
     
-    # Info command
-    info_parser = subparsers.add_parser("info", help="Show application information")
-    info_parser.add_argument("app", help="Application name")
+    # Handle tw.py commands
+    if args.version:
+        print(f"tw.py version {VERSION}")
+        return 0
     
-    # List command
-    list_parser = subparsers.add_parser("list", help="List applications")
-    list_parser.add_argument("--installed", action="store_true", help="List only installed apps")
-    
-    # Verify command
-    verify_parser = subparsers.add_parser("verify", help="Verify installed files")
-    verify_parser.add_argument("app", help="Application name")
-    
-    args = parser.parse_args()
-    
-    if not args.command:
+    if args.help:
         parser.print_help()
-        return 1
+        print("\nFor Taskwarrior help: tw help")
+        return 0
     
-    # Create application instance
-    app = AwesomeTaskwarrior(args)
+    # Package management commands
+    app_manager = AppManager(paths)
     
-    # Dispatch to command handler
-    command_map = {
-        "install": app.cmd_install,
-        "remove": app.cmd_remove,
-        "update": app.cmd_update,
-        "info": app.cmd_info,
-        "list": app.cmd_list,
-        "verify": app.cmd_verify,
-    }
+    if args.install:
+        return 0 if app_manager.install(args.install, dry_run=args.dry_run) else 1
     
-    handler = command_map.get(args.command)
-    if not handler:
-        print(f"ERROR: Unknown command: {args.command}", file=sys.stderr)
-        return 1
+    if args.remove:
+        return 0 if app_manager.remove(args.remove) else 1
     
-    return handler()
+    if args.update:
+        return 0 if app_manager.update(args.update) else 1
+    
+    if args.list:
+        app_manager.list_installed()
+        return 0
+    
+    if args.info:
+        return 0 if app_manager.show_info(args.info) else 1
+    
+    if args.verify:
+        return 0 if app_manager.verify(args.verify) else 1
+    
+    # If no tw.py commands, pass through to task
+    if remaining or (not any(vars(args).values())):
+        return pass_through_to_task(remaining if remaining else sys.argv[1:])
+    
+    return 0
 
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())

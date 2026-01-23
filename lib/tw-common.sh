@@ -1,384 +1,547 @@
 #!/usr/bin/env bash
 #
-# tw-common.sh - Common utilities for Taskwarrior awesome-taskwarrior project
+# tw-common.sh - Shared utilities for Taskwarrior app installers
 # Version: 2.0.0
-# Architecture: Curl-based direct file placement
 #
-# This is a PURE UTILITY LIBRARY with no dependencies on tw.py or manifest operations.
-# Installers can optionally source this for better UX but must work without it.
+# This library provides common functions for installers to use, including:
+# - Curl-based file downloading
+# - Direct file placement and installation
+# - Configuration management
+# - Checksum verification
+# - Manifest tracking
+# - Testing utilities
+#
+# IMPORTANT: v2.0.0 removes git-based operations in favor of curl-based
+# direct file placement. See MIGRATION.md for details.
 #
 # Usage in installers:
-#   if [[ -f ~/.task/lib/tw-common.sh ]]; then
-#       source ~/.task/lib/tw-common.sh
-#   else
-#       # Fallback: define minimal functions inline
-#       tw_msg() { echo "$@"; }
+#   if [[ -f "${TW_COMMON:-$HOME/.local/share/awesome-taskwarrior/lib/tw-common.sh}" ]]; then
+#       source "$TW_COMMON"
 #   fi
+#
 
 set -euo pipefail
 
-# Version
-TW_COMMON_VERSION="2.0.0"
+#------------------------------------------------------------------------------
+# ENVIRONMENT VARIABLES
+#------------------------------------------------------------------------------
 
-#=============================================================================
+: "${INSTALL_DIR:=$HOME/.task}"
+: "${HOOKS_DIR:=$INSTALL_DIR/hooks}"
+: "${SCRIPTS_DIR:=$INSTALL_DIR/scripts}"
+: "${CONFIG_DIR:=$INSTALL_DIR/config}"
+: "${DOCS_DIR:=$INSTALL_DIR/docs}"
+: "${LOGS_DIR:=$INSTALL_DIR/logs}"
+: "${TASKRC:=$HOME/.taskrc}"
+: "${TW_DEBUG:=0}"
+: "${TW_MANIFEST:=$INSTALL_DIR/.tw_manifest}"
+
+#------------------------------------------------------------------------------
 # MESSAGING FUNCTIONS
-#=============================================================================
+#------------------------------------------------------------------------------
 
-# Print info message
 tw_msg() {
-    echo "[INFO] $*"
+    echo "[tw] $*"
 }
 
-# Print success message
 tw_success() {
-    echo "[SUCCESS] $*"
+    echo "[tw] ✓ $*"
 }
 
-# Print warning message
-tw_warn() {
-    echo "[WARNING] $*" >&2
-}
-
-# Print error message
 tw_error() {
-    echo "[ERROR] $*" >&2
+    echo "[tw] ✗ $*" >&2
 }
 
-# Print error and exit
-tw_die() {
-    tw_error "$@"
-    exit 1
+tw_warn() {
+    echo "[tw] ⚠ $*" >&2
 }
 
-# Print debug message (only if TW_DEBUG is set)
 tw_debug() {
-    if [[ -n "${TW_DEBUG:-}" ]]; then
-        echo "[DEBUG] $*" >&2
+    if [[ "${TW_DEBUG:-0}" == "1" ]]; then
+        echo "[tw-debug] $*" >&2
     fi
 }
 
-#=============================================================================
-# VERSION CHECKING FUNCTIONS
-#=============================================================================
+#------------------------------------------------------------------------------
+# INITIALIZATION
+#------------------------------------------------------------------------------
 
-# Check if a command exists
-# Usage: tw_command_exists curl
-tw_command_exists() {
-    command -v "$1" &>/dev/null
+tw_init_directories() {
+    # Create all required directories
+    mkdir -p "$HOOKS_DIR" "$SCRIPTS_DIR" "$CONFIG_DIR" "$DOCS_DIR" "$LOGS_DIR"
+    tw_debug "Directories initialized: hooks, scripts, config, docs, logs"
 }
 
-# Check Taskwarrior version meets minimum requirement
-# Usage: tw_check_taskwarrior_version "2.6.0"
-tw_check_taskwarrior_version() {
-    local required="$1"
+#------------------------------------------------------------------------------
+# CURL-BASED FILE OPERATIONS
+#------------------------------------------------------------------------------
+
+tw_curl_file() {
+    # Download a file using curl
+    # Usage: tw_curl_file URL [OUTPUT_FILE]
+    # Returns: 0 on success, 1 on failure
     
-    if ! tw_command_exists task; then
-        tw_error "Taskwarrior not found. Please install Taskwarrior first."
-        return 1
+    local url="$1"
+    local output="${2:-}"
+    
+    tw_debug "Downloading: $url"
+    
+    if [[ -z "$output" ]]; then
+        # Download to stdout
+        if curl -fsSL "$url"; then
+            return 0
+        else
+            tw_error "Failed to download: $url"
+            return 1
+        fi
+    else
+        # Download to file
+        if curl -fsSL "$url" -o "$output"; then
+            tw_debug "Downloaded to: $output"
+            return 0
+        else
+            tw_error "Failed to download $url to $output"
+            return 1
+        fi
     fi
-    
-    local installed
-    installed=$(task --version | grep -oP '\d+\.\d+\.\d+' | head -1)
-    
-    if [[ -z "$installed" ]]; then
-        tw_warn "Could not determine Taskwarrior version"
-        return 0  # Don't fail, just warn
-    fi
-    
-    # Simple version comparison (assumes semantic versioning)
-    if [[ "$(printf '%s\n' "$required" "$installed" | sort -V | head -1)" != "$required" ]]; then
-        tw_error "Taskwarrior $required or higher required (found $installed)"
-        return 1
-    fi
-    
-    tw_debug "Taskwarrior version check passed: $installed >= $required"
-    return 0
 }
 
-# Check Python version meets minimum requirement
-# Usage: tw_check_python_version "3.6"
-tw_check_python_version() {
-    local required="$1"
-    
-    if ! tw_command_exists python3; then
-        tw_error "Python 3 not found. Please install Python 3."
-        return 1
-    fi
-    
-    local installed
-    installed=$(python3 --version | grep -oP '\d+\.\d+')
-    
-    if [[ -z "$installed" ]]; then
-        tw_warn "Could not determine Python version"
-        return 0  # Don't fail, just warn
-    fi
-    
-    # Simple version comparison
-    if [[ "$(printf '%s\n' "$required" "$installed" | sort -V | head -1)" != "$required" ]]; then
-        tw_error "Python $required or higher required (found $installed)"
-        return 1
-    fi
-    
-    tw_debug "Python version check passed: $installed >= $required"
-    return 0
-}
-
-# Check Bash version meets minimum requirement
-# Usage: tw_check_bash_version "4.0"
-tw_check_bash_version() {
-    local required="$1"
-    local installed="${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}"
-    
-    if [[ "$(printf '%s\n' "$required" "$installed" | sort -V | head -1)" != "$required" ]]; then
-        tw_error "Bash $required or higher required (found $installed)"
-        return 1
-    fi
-    
-    tw_debug "Bash version check passed: $installed >= $required"
-    return 0
-}
-
-#=============================================================================
-# FILE OPERATIONS
-#=============================================================================
-
-# Download a file and place it in target directory
-# Usage: tw_curl_and_place URL TARGET_DIR [FILENAME]
 tw_curl_and_place() {
+    # Download a file and place it in a specific directory with optional renaming
+    # Usage: tw_curl_and_place URL TARGET_DIR [NEW_FILENAME]
+    # Returns: 0 on success, 1 on failure
+    
     local url="$1"
     local target_dir="$2"
-    local filename="${3:-$(basename "$url")}"
-    local target_path="$target_dir/$filename"
+    local new_filename="${3:-}"
     
-    tw_debug "Downloading $url to $target_path"
-    
-    # Ensure target directory exists
-    if [[ ! -d "$target_dir" ]]; then
-        mkdir -p "$target_dir" || {
-            tw_error "Failed to create directory: $target_dir"
-            return 1
-        }
+    # Extract original filename if no new name provided
+    if [[ -z "$new_filename" ]]; then
+        new_filename=$(basename "$url")
     fi
     
-    # Download to temp file first
-    local tmp_file
-    tmp_file=$(mktemp) || {
-        tw_error "Failed to create temporary file"
-        return 1
-    }
+    local target_path="$target_dir/$new_filename"
     
-    if ! curl -fsSL "$url" -o "$tmp_file"; then
-        tw_error "Failed to download: $url"
-        rm -f "$tmp_file"
-        return 1
-    fi
+    tw_debug "Downloading $url -> $target_path"
     
-    # Move to final location
-    if ! mv "$tmp_file" "$target_path"; then
-        tw_error "Failed to move file to: $target_path"
-        rm -f "$tmp_file"
+    mkdir -p "$target_dir"
+    
+    if tw_curl_file "$url" "$target_path"; then
+        tw_debug "Placed: $target_path"
+        return 0
+    else
         return 1
     fi
-    
-    tw_success "Downloaded: $filename"
-    return 0
 }
 
-# Make a file executable
-# Usage: tw_ensure_executable FILE
 tw_ensure_executable() {
+    # Make a file executable
+    # Usage: tw_ensure_executable FILE
+    
     local file="$1"
     
-    if [[ ! -f "$file" ]]; then
+    if [[ -f "$file" ]]; then
+        chmod +x "$file"
+        tw_debug "Made executable: $file"
+        return 0
+    else
         tw_error "File not found: $file"
         return 1
     fi
-    
-    chmod +x "$file" || {
-        tw_error "Failed to make executable: $file"
-        return 1
-    }
-    
-    tw_debug "Made executable: $file"
-    return 0
 }
 
-# Create a backup of a file
-# Usage: tw_backup_file FILE
 tw_backup_file() {
+    # Create a backup of a file before modifying it
+    # Usage: tw_backup_file FILE
+    
+    local file="$1"
+    
+    if [[ -f "$file" ]]; then
+        local backup="${file}.backup.$(date +%Y%m%d_%H%M%S)"
+        cp "$file" "$backup"
+        tw_debug "Backed up: $file -> $backup"
+        return 0
+    else
+        tw_debug "No backup needed (file doesn't exist): $file"
+        return 0
+    fi
+}
+
+#------------------------------------------------------------------------------
+# CHECKSUM VERIFICATION
+#------------------------------------------------------------------------------
+
+tw_verify_checksum() {
+    # Verify SHA256 checksum of a file
+    # Usage: tw_verify_checksum FILE EXPECTED_CHECKSUM
+    # Returns: 0 if matches, 1 if doesn't match
+    
+    local file="$1"
+    local expected="$2"
+    
+    if [[ -z "$expected" ]]; then
+        tw_debug "No checksum provided, skipping verification"
+        return 0
+    fi
+    
+    if [[ ! -f "$file" ]]; then
+        tw_error "Cannot verify checksum: file not found: $file"
+        return 1
+    fi
+    
+    local actual
+    if command -v sha256sum &>/dev/null; then
+        actual=$(sha256sum "$file" | awk '{print $1}')
+    elif command -v shasum &>/dev/null; then
+        actual=$(shasum -a 256 "$file" | awk '{print $1}')
+    else
+        tw_warn "No SHA256 utility found, skipping checksum verification"
+        return 0
+    fi
+    
+    if [[ "$actual" == "$expected" ]]; then
+        tw_debug "Checksum verified: $file"
+        return 0
+    else
+        tw_error "Checksum mismatch for $file"
+        tw_error "  Expected: $expected"
+        tw_error "  Actual:   $actual"
+        return 1
+    fi
+}
+
+tw_calculate_checksum() {
+    # Calculate SHA256 checksum of a file
+    # Usage: tw_calculate_checksum FILE
+    # Outputs: checksum string
+    
     local file="$1"
     
     if [[ ! -f "$file" ]]; then
-        tw_debug "No file to backup: $file"
-        return 0
+        tw_error "Cannot calculate checksum: file not found: $file"
+        return 1
     fi
     
-    local backup="${file}.backup.$(date +%Y%m%d_%H%M%S)"
+    if command -v sha256sum &>/dev/null; then
+        sha256sum "$file" | awk '{print $1}'
+    elif command -v shasum &>/dev/null; then
+        shasum -a 256 "$file" | awk '{print $1}'
+    else
+        tw_error "No SHA256 utility found"
+        return 1
+    fi
+}
+
+#------------------------------------------------------------------------------
+# MANIFEST MANAGEMENT
+#------------------------------------------------------------------------------
+
+tw_manifest_add() {
+    # Add an entry to the installation manifest
+    # Usage: tw_manifest_add APP VERSION FILE [CHECKSUM]
+    # Format: app|version|file|checksum|date
     
-    if cp "$file" "$backup"; then
-        tw_success "Backed up: $file -> $backup"
+    local app="$1"
+    local version="$2"
+    local file="$3"
+    local checksum="${4:-}"
+    local date
+    date=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    
+    mkdir -p "$(dirname "$TW_MANIFEST")"
+    
+    # Remove any existing entry for this file
+    if [[ -f "$TW_MANIFEST" ]]; then
+        grep -v "^${app}|${version}|${file}|" "$TW_MANIFEST" > "${TW_MANIFEST}.tmp" || true
+        mv "${TW_MANIFEST}.tmp" "$TW_MANIFEST"
+    fi
+    
+    # Add new entry
+    echo "${app}|${version}|${file}|${checksum}|${date}" >> "$TW_MANIFEST"
+    tw_debug "Manifest: added $app $version $file"
+}
+
+tw_manifest_remove() {
+    # Remove entries from manifest for a specific app
+    # Usage: tw_manifest_remove APP
+    
+    local app="$1"
+    
+    if [[ -f "$TW_MANIFEST" ]]; then
+        grep -v "^${app}|" "$TW_MANIFEST" > "${TW_MANIFEST}.tmp" || true
+        mv "${TW_MANIFEST}.tmp" "$TW_MANIFEST"
+        tw_debug "Manifest: removed all entries for $app"
+    fi
+}
+
+tw_manifest_get_files() {
+    # Get list of files installed by an app
+    # Usage: tw_manifest_get_files APP
+    # Outputs: one file path per line
+    
+    local app="$1"
+    
+    if [[ -f "$TW_MANIFEST" ]]; then
+        grep "^${app}|" "$TW_MANIFEST" | cut -d'|' -f3
+    fi
+}
+
+tw_manifest_app_installed() {
+    # Check if an app is in the manifest
+    # Usage: tw_manifest_app_installed APP
+    # Returns: 0 if installed, 1 if not
+    
+    local app="$1"
+    
+    if [[ -f "$TW_MANIFEST" ]] && grep -q "^${app}|" "$TW_MANIFEST"; then
         return 0
     else
-        tw_error "Failed to backup: $file"
         return 1
     fi
 }
 
-# Remove a file safely (with confirmation if interactive)
-# Usage: tw_remove_file FILE
-tw_remove_file() {
-    local file="$1"
+#------------------------------------------------------------------------------
+# INSTALLATION HELPERS
+#------------------------------------------------------------------------------
+
+tw_install_to() {
+    # Install a file to the appropriate directory based on type
+    # Usage: tw_install_to TYPE FILE [TARGET_NAME]
+    # TYPE: hook, script, config, doc
+    # Returns: 0 on success, 1 on failure
     
-    if [[ ! -f "$file" ]]; then
-        tw_debug "File does not exist: $file"
-        return 0
-    fi
+    local file_type="$1"
+    local source_file="$2"
+    local target_name="${3:-$(basename "$source_file")}"
     
-    if rm "$file"; then
-        tw_success "Removed: $file"
+    local target_dir
+    case "$file_type" in
+        hook)
+            target_dir="$HOOKS_DIR"
+            ;;
+        script)
+            target_dir="$SCRIPTS_DIR"
+            ;;
+        config)
+            target_dir="$CONFIG_DIR"
+            ;;
+        doc)
+            target_dir="$DOCS_DIR"
+            ;;
+        *)
+            tw_error "Unknown file type: $file_type"
+            return 1
+            ;;
+    esac
+    
+    mkdir -p "$target_dir"
+    
+    if [[ -f "$source_file" ]]; then
+        cp "$source_file" "$target_dir/$target_name"
+        tw_debug "Installed: $target_name -> $target_dir/"
+        
+        # Make hooks and scripts executable
+        if [[ "$file_type" == "hook" ]] || [[ "$file_type" == "script" ]]; then
+            chmod +x "$target_dir/$target_name"
+            tw_debug "Made executable: $target_dir/$target_name"
+        fi
+        
         return 0
     else
-        tw_error "Failed to remove: $file"
+        tw_error "Source file not found: $source_file"
         return 1
     fi
 }
 
-#=============================================================================
-# TASKRC CONFIGURATION MANAGEMENT
-#=============================================================================
-
-# Add a config line to .taskrc if it doesn't exist
-# Usage: tw_add_config "include ~/.task/config/myapp.rc"
-tw_add_config() {
-    local config_line="$1"
-    local taskrc="${TASKRC:-$HOME/.taskrc}"
+tw_uninstall_app() {
+    # Uninstall an app using manifest data
+    # Usage: tw_uninstall_app APP
+    # Returns: 0 on success, 1 if app not installed
     
-    if [[ ! -f "$taskrc" ]]; then
-        tw_error ".taskrc not found: $taskrc"
+    local app="$1"
+    
+    if ! tw_manifest_app_installed "$app"; then
+        tw_warn "App not installed: $app"
         return 1
     fi
     
-    # Check if config already exists
-    if grep -Fxq "$config_line" "$taskrc"; then
-        tw_debug "Config already exists in .taskrc: $config_line"
-        return 0
+    # Get list of files and remove them
+    local files
+    files=$(tw_manifest_get_files "$app")
+    
+    if [[ -n "$files" ]]; then
+        while IFS= read -r file; do
+            if [[ -f "$file" ]]; then
+                rm -f "$file"
+                tw_debug "Removed: $file"
+            elif [[ -L "$file" ]]; then
+                rm -f "$file"
+                tw_debug "Removed symlink: $file"
+            else
+                tw_debug "File not found (already removed?): $file"
+            fi
+        done <<< "$files"
     fi
     
-    # Add config line
-    if echo "$config_line" >> "$taskrc"; then
-        tw_success "Added to .taskrc: $config_line"
-        return 0
-    else
-        tw_error "Failed to add to .taskrc: $config_line"
-        return 1
-    fi
-}
-
-# Remove a config line from .taskrc
-# Usage: tw_remove_config "include ~/.task/config/myapp.rc"
-tw_remove_config() {
-    local config_line="$1"
-    local taskrc="${TASKRC:-$HOME/.taskrc}"
+    # Remove from manifest
+    tw_manifest_remove "$app"
     
-    if [[ ! -f "$taskrc" ]]; then
-        tw_warn ".taskrc not found: $taskrc"
-        return 0
-    fi
-    
-    # Check if config exists
-    if ! grep -Fxq "$config_line" "$taskrc"; then
-        tw_debug "Config not found in .taskrc: $config_line"
-        return 0
-    fi
-    
-    # Remove config line (using temp file for safety)
-    local tmp_file
-    tmp_file=$(mktemp) || {
-        tw_error "Failed to create temporary file"
-        return 1
-    }
-    
-    if grep -Fxv "$config_line" "$taskrc" > "$tmp_file" && mv "$tmp_file" "$taskrc"; then
-        tw_success "Removed from .taskrc: $config_line"
-        return 0
-    else
-        tw_error "Failed to remove from .taskrc: $config_line"
-        rm -f "$tmp_file"
-        return 1
-    fi
-}
-
-# Check if a config line exists in .taskrc
-# Usage: tw_config_exists "include ~/.task/config/myapp.rc"
-tw_config_exists() {
-    local config_line="$1"
-    local taskrc="${TASKRC:-$HOME/.taskrc}"
-    
-    if [[ ! -f "$taskrc" ]]; then
-        return 1
-    fi
-    
-    grep -Fxq "$config_line" "$taskrc"
-}
-
-#=============================================================================
-# TESTING HELPERS
-#=============================================================================
-
-# Check if running in test mode
-# Usage: if tw_is_test_mode; then ... fi
-tw_is_test_mode() {
-    [[ -n "${TW_TEST_MODE:-}" ]]
-}
-
-# Get test environment directory
-# Usage: test_dir=$(tw_get_test_dir)
-tw_get_test_dir() {
-    echo "${TW_TEST_DIR:-/tmp/tw-test-$$}"
-}
-
-# Initialize test environment
-# Usage: tw_init_test_env
-tw_init_test_env() {
-    local test_dir
-    test_dir=$(tw_get_test_dir)
-    
-    if [[ -d "$test_dir" ]]; then
-        tw_warn "Test directory already exists: $test_dir"
-        return 0
-    fi
-    
-    mkdir -p "$test_dir"/{hooks,scripts,config,docs,lib} || {
-        tw_error "Failed to create test directory structure"
-        return 1
-    }
-    
-    tw_success "Initialized test environment: $test_dir"
+    tw_success "Uninstalled: $app"
     return 0
 }
 
-# Clean up test environment
-# Usage: tw_cleanup_test_env
-tw_cleanup_test_env() {
-    local test_dir
-    test_dir=$(tw_get_test_dir)
+#------------------------------------------------------------------------------
+# CONFIGURATION MANAGEMENT
+#------------------------------------------------------------------------------
+
+tw_config_exists() {
+    # Check if a configuration line exists in .taskrc
+    # Usage: tw_config_exists "config line"
+    # Returns: 0 if exists, 1 if not
+    
+    local config_line="$1"
+    
+    if [[ -f "$TASKRC" ]] && grep -Fq "$config_line" "$TASKRC"; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+tw_add_config() {
+    # Add a configuration line to .taskrc if not already present
+    # Usage: tw_add_config "config line"
+    
+    local config_line="$1"
+    
+    if ! tw_config_exists "$config_line"; then
+        echo "$config_line" >> "$TASKRC"
+        tw_debug "Added to .taskrc: $config_line"
+    else
+        tw_debug "Already in .taskrc: $config_line"
+    fi
+}
+
+tw_remove_config() {
+    # Remove a configuration line from .taskrc
+    # Usage: tw_remove_config "config line"
+    
+    local config_line="$1"
+    
+    if [[ -f "$TASKRC" ]]; then
+        tw_backup_file "$TASKRC"
+        grep -Fv "$config_line" "$TASKRC" > "${TASKRC}.tmp" || true
+        mv "${TASKRC}.tmp" "$TASKRC"
+        tw_debug "Removed from .taskrc: $config_line"
+    fi
+}
+
+#------------------------------------------------------------------------------
+# VERSION CHECKING
+#------------------------------------------------------------------------------
+
+tw_check_version() {
+    # Check if a version meets a requirement
+    # Usage: tw_check_version CURRENT REQUIRED
+    # Returns: 0 if current >= required, 1 otherwise
+    
+    local current="$1"
+    local required="$2"
+    
+    # Simple version comparison (works for X.Y.Z format)
+    if [[ "$(printf '%s\n' "$required" "$current" | sort -V | head -n1)" == "$required" ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+tw_check_taskwarrior_version() {
+    # Check if Taskwarrior version meets requirement
+    # Usage: tw_check_taskwarrior_version REQUIRED_VERSION
+    # Returns: 0 if meets requirement, 1 otherwise
+    
+    local required="$1"
+    
+    if ! command -v task &>/dev/null; then
+        tw_error "Taskwarrior not found"
+        return 1
+    fi
+    
+    local current
+    current=$(task --version | head -n1 | awk '{print $2}')
+    
+    if tw_check_version "$current" "$required"; then
+        tw_debug "Taskwarrior version OK: $current >= $required"
+        return 0
+    else
+        tw_error "Taskwarrior version $current < $required"
+        return 1
+    fi
+}
+
+tw_check_python_version() {
+    # Check if Python version meets requirement
+    # Usage: tw_check_python_version REQUIRED_VERSION
+    # Returns: 0 if meets requirement, 1 otherwise
+    
+    local required="$1"
+    
+    if ! command -v python3 &>/dev/null; then
+        tw_error "Python 3 not found"
+        return 1
+    fi
+    
+    local current
+    current=$(python3 --version | awk '{print $2}')
+    
+    if tw_check_version "$current" "$required"; then
+        tw_debug "Python version OK: $current >= $required"
+        return 0
+    else
+        tw_error "Python version $current < $required"
+        return 1
+    fi
+}
+
+#------------------------------------------------------------------------------
+# TESTING UTILITIES
+#------------------------------------------------------------------------------
+
+tw_run_tests() {
+    # Run tests for an app if test directory exists
+    # Usage: tw_run_tests APP_DIR
+    # Returns: 0 if tests pass, 1 if tests fail
+    
+    local app_dir="$1"
+    local test_dir="$app_dir/test"
     
     if [[ ! -d "$test_dir" ]]; then
-        tw_debug "Test directory does not exist: $test_dir"
+        tw_debug "No test directory found: $test_dir"
         return 0
     fi
     
-    if rm -rf "$test_dir"; then
-        tw_success "Cleaned up test environment: $test_dir"
-        return 0
+    tw_msg "Running tests..."
+    
+    if [[ -f "$test_dir/run_tests.sh" ]]; then
+        if bash "$test_dir/run_tests.sh"; then
+            tw_success "Tests passed"
+            return 0
+        else
+            tw_error "Tests failed"
+            return 1
+        fi
     else
-        tw_error "Failed to clean up test environment: $test_dir"
-        return 1
+        tw_warn "No run_tests.sh found in $test_dir"
+        return 0
     fi
 }
 
-#=============================================================================
-# LIBRARY INITIALIZATION
-#=============================================================================
+#------------------------------------------------------------------------------
+# INITIALIZATION ON LOAD
+#------------------------------------------------------------------------------
 
-tw_debug "tw-common.sh v${TW_COMMON_VERSION} loaded"
+# Create directories when library is sourced
+tw_init_directories
+
+tw_debug "tw-common.sh v2.0.0 loaded"

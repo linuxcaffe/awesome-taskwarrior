@@ -1,193 +1,413 @@
-# Migrating from v1.3.0 to v2.0.0
+# Migration Guide: v1.3.0 to v2.0.0
 
 ## Overview
 
-Version 2.0.0 represents a fundamental architectural shift in how awesome-taskwarrior installs and manages Taskwarrior extensions.
+Version 2.0.0 is a **major architectural change** that replaces git-based installation with curl-based direct file placement. This provides cleaner installations and better control over what gets installed.
 
-## What Changed
+**Key Benefits:**
+- No nested git repositories under `~/.task/`
+- Only needed files installed (no tests, CI configs, etc.)
+- Cleaner directory structure
+- Better uninstall granularity
+- Faster installations
 
-### Installation Method
+**Breaking Changes:**
+- All installers must be rewritten
+- Directory structure changed
+- Manifest format changed
+- Several functions removed from tw-common.sh
 
-- **v1.3.0**: Git clone to subdirectories + symlinks
-- **v2.0.0**: Curl direct file placement
+## For Users
 
-### Directory Structure
+### Backing Up
 
-**v1.3.0:**
-```
-~/.task/
-├── hooks/
-│   └── recurrence/          # Git repo
-│       ├── on-add.py
-│       └── .git/
-├── scripts/
-│   └── nicedates/           # Git repo
-```
-
-**v2.0.0:**
-```
-~/.task/
-├── hooks/
-│   ├── on-add_recurrence.py # Direct file
-│   └── on-modify_recurrence.py
-├── scripts/
-│   └── nicedates            # Direct file
-├── config/
-│   └── recurrence.rc
-└── docs/
-    └── recurrence_README.md
-```
-
-### Installer Independence
-
-- **v1.3.0**: Installers required tw-common.sh functions
-- **v2.0.0**: Installers are completely self-contained
-
-### File Management
-
-- **v1.3.0**: Symlink forests, git submodules
-- **v2.0.0**: Direct file placement, no symlinks (except when needed within same directory)
-
-## Why We Changed
-
-### Problems with v1.3.0
-
-1. **Nested git repos**: Cloning under ~/.task/ created nested repos
-2. **Unnecessary files**: CHANGELOG, DEVELOPERS.md, .git/ cluttered ~/.task/
-3. **Fragile symlinks**: Complex symlink management prone to breakage
-4. **Tight coupling**: Installers depended on tw.py
-
-### Benefits of v2.0.0
-
-1. **Clean ~/.task/**: No git repos, only needed files
-2. **Simple installation**: Direct file placement
-3. **Independence**: Installers work standalone
-4. **Maintainable**: Each installer self-contained
-5. **Flexible**: tw.py adds convenience, not dependency
-
-## Migration Steps
-
-### For Users
-
-1. **Backup your current setup:**
+Before upgrading, backup your installation:
 
 ```bash
-cp -r ~/.task ~/.task.backup.v1.3.0
-cp ~/.taskrc ~/.taskrc.backup.v1.3.0
+# Backup task data
+cp -r ~/.task ~/.task.backup
+
+# Backup taskrc
+cp ~/.taskrc ~/.taskrc.backup
+
+# Note installed apps
+tw.py --list > ~/installed_apps.txt
 ```
 
-2. **Uninstall v1.3.0 apps:**
+### Upgrading
 
+1. **Remove old installations:**
 ```bash
-tw --remove tw-recurrence
-tw --remove tw-nicedates
-# etc for each app
+# Uninstall all apps with v1.3.0
+for app in $(tw.py --list | grep -v "No applications" | awk '{print $1}'); do
+    tw.py --remove "$app"
+done
 ```
 
-3. **Update awesome-taskwarrior:**
-
+2. **Update awesome-taskwarrior:**
 ```bash
 cd ~/awesome-taskwarrior
 git pull
 # or download v2.0.0 release
 ```
 
-4. **Reinstall apps with v2.0.0:**
-
+3. **Reinstall apps:**
 ```bash
-tw --install tw-recurrence
-tw --install tw-nicedates
+# Apps will use v2.0.0 installers
+tw.py --install tw-recurrence
+tw.py --install tw-priority
+# etc.
 ```
 
-### For Developers
+### What Changed for Users
 
-#### Update Your .meta Files
+**Directory Structure:**
 
-**v1.3.0 format:**
+v1.3.0:
+```
+~/.task/
+├── hooks/
+│   ├── on-add_recurrence.py -> recurrence/on-add_recurrence.py
+│   └── recurrence/           # Project subdirectory
+│       ├── on-add_recurrence.py
+│       └── test/
+```
+
+v2.0.0:
+```
+~/.task/
+├── hooks/
+│   ├── on-add_recurrence.py  # Direct placement
+│   └── on-modify_recurrence.py
+├── docs/
+│   └── recurrence_README.md  # Documentation
+```
+
+**No More:**
+- Project subdirectories under hooks/ and scripts/
+- Nested git repositories
+- Unnecessary test files
+
+**New:**
+- `~/.task/docs/` directory for README files
+- Flatter, cleaner structure
+- Per-file manifest tracking
+
+## For Developers
+
+### .meta File Changes
+
+**v1.3.0 Format:**
 ```ini
-name=tw-recurrence
+name=My App
 version=1.0.0
-description=Enhanced recurrence system
-requires=python3
+type=hook
+short_name=myapp
+description=Does something
+repo=https://github.com/user/myapp
 ```
 
-**v2.0.0 format:**
+**v2.0.0 Format:**
 ```ini
-name=tw-recurrence
-version=2.0.0
-description=Enhanced recurrence system
-requires=python3
-files=on-add_recurrence.py:hook,on-modify_recurrence.py:hook,recurrence.rc:config,README.md:doc
-base_url=https://raw.githubusercontent.com/user/repo/main/
-checksums=sha256:abc123...,sha256:def456...
+name=My App
+version=1.0.0
+type=hook
+description=Does something
+repo=https://github.com/user/myapp
+base_url=https://raw.githubusercontent.com/user/myapp/main/
+files=on-add_myapp.py:hook,myapp.rc:config,README.md:doc
+checksums=abc123...,def456...,ghi789...
 ```
 
-#### Update Your .install Scripts
+**Changes:**
+- ❌ Removed: `short_name` field
+- ✅ Added: `base_url` - for curl downloads
+- ✅ Added: `files` - list of files with types
+- ✅ Added: `checksums` - optional SHA256 hashes
 
-**v1.3.0 pattern:**
+### .install Script Changes
+
+**v1.3.0 Pattern:**
 ```bash
+APPNAME="tw-myapp"
+SHORT_NAME="myapp"
+REPO_URL="https://github.com/user/myapp"
+
 install() {
-    tw_clone_to_project hook recurrence "$REPO_URL" || return 1
-    tw_symlink_hook "$INSTALL_DIR/recurrence" "on-add_recurrence.py" || return 1
-    tw_add_config "include $CONFIG_DIR/recurrence/recurrence.rc"
+    # Clone to project directory
+    local project_dir
+    project_dir=$(tw_clone_to_project hook "$SHORT_NAME" "$REPO_URL")
+    
+    # Create symlinks
+    tw_symlink_hook "$project_dir" "on-add_myapp.py"
 }
 ```
 
-**v2.0.0 pattern:**
+**v2.0.0 Pattern:**
 ```bash
+APPNAME="myapp"
+VERSION="1.0.0"
+BASE_URL="https://raw.githubusercontent.com/user/myapp/main"
+
+: "${HOOKS_DIR:=$HOME/.task/hooks}"
+: "${CONFIG_DIR:=$HOME/.task/config}"
+
 install() {
-    # Environment detection
-    : ${HOOKS_DIR:=~/.task/hooks}
-    : ${CONFIG_DIR:=~/.task/config}
-    : ${DOCS_DIR:=~/.task/docs}
+    # Download directly
+    if type tw_curl_and_place &>/dev/null; then
+        tw_curl_and_place "$BASE_URL/on-add_myapp.py" "$HOOKS_DIR"
+    else
+        curl -fsSL "$BASE_URL/on-add_myapp.py" -o "$HOOKS_DIR/on-add_myapp.py"
+    fi
     
-    # Download
-    curl -fsSL "$BASE_URL/on-add_recurrence.py" -o "/tmp/on-add_recurrence.py" || return 1
-    curl -fsSL "$BASE_URL/recurrence.rc" -o "/tmp/recurrence.rc" || return 1
+    chmod +x "$HOOKS_DIR/on-add_myapp.py"
     
-    # Install
-    mv "/tmp/on-add_recurrence.py" "$HOOKS_DIR/"
-    chmod +x "$HOOKS_DIR/on-add_recurrence.py"
-    mv "/tmp/recurrence.rc" "$CONFIG_DIR/"
-    
-    # Configure
-    if ! grep -q "include.*recurrence.rc" ~/.taskrc; then
-        echo "include $CONFIG_DIR/recurrence.rc" >> ~/.taskrc
+    # Track in manifest
+    if type tw_manifest_add &>/dev/null; then
+        tw_manifest_add "$APPNAME" "$VERSION" "$HOOKS_DIR/on-add_myapp.py"
     fi
 }
 ```
 
-#### Repository Structure
+**Key Changes:**
+1. ❌ No `SHORT_NAME` variable
+2. ❌ No `REPO_URL` variable
+3. ✅ Add `BASE_URL` for downloads
+4. ✅ Add `VERSION` variable
+5. ✅ Environment detection: `: "${HOOKS_DIR:=...}"`
+6. ✅ Fallback logic for standalone operation
+7. ✅ Direct file placement instead of git clone
 
-**Organize for curl-friendly installation:**
+### Function Changes
+
+#### Removed Functions
+
+These functions no longer exist in tw-common.sh v2.0.0:
+
+```bash
+# v1.3.0 - REMOVED in v2.0.0
+tw_clone_to_project()    # Use tw_curl_and_place()
+tw_clone_or_update()     # Use curl downloads
+tw_get_install_dir()     # Use explicit directory variables
+tw_symlink_hook()        # Use direct placement
+tw_symlink_wrapper()     # Use direct placement
+tw_remove_hook()         # Use tw_uninstall_app()
+tw_remove_wrapper()      # Use tw_uninstall_app()
 ```
-your-repo/
-├── on-add_myapp.py      # Will go to ~/.task/hooks/
-├── myapp                # Will go to ~/.task/scripts/
-├── myapp.rc             # Will go to ~/.task/config/
-├── README.md            # Will go to ~/.task/docs/ as myapp_README.md
-├── myapp.meta           # For awesome-taskwarrior registry
-├── myapp.install        # Self-contained installer
-└── tests/               # Your test suite
+
+#### New Functions
+
+```bash
+# v2.0.0 - NEW
+tw_curl_file()           # Download a file
+tw_curl_and_place()      # Download and place file
+tw_ensure_executable()   # Make file executable
+tw_backup_file()         # Create backup with timestamp
+tw_verify_checksum()     # Verify SHA256
+tw_calculate_checksum()  # Calculate SHA256
+tw_manifest_add()        # Add to manifest
+tw_manifest_remove()     # Remove from manifest
+tw_manifest_get_files()  # Get installed files
+tw_manifest_app_installed() # Check if installed
+tw_install_to()          # Install file by type
+tw_uninstall_app()       # Uninstall using manifest
 ```
 
-## Breaking Changes
+#### Unchanged Functions
 
-- **No SHORT_NAME variable**: Apps referenced by full name only
-- **No git operations**: tw_clone_to_project() removed
-- **No symlink helpers**: tw_symlink_hook() removed
-- **Manifest format changed**: Now per-file tracking
-- **Directory structure**: Files in root dirs, not subdirs
+These functions work the same in v2.0.0:
 
-## Compatibility
+```bash
+tw_msg()
+tw_success()
+tw_error()
+tw_warn()
+tw_debug()
+tw_config_exists()
+tw_add_config()
+tw_remove_config()
+tw_check_version()
+tw_check_taskwarrior_version()
+tw_check_python_version()
+tw_run_tests()
+```
 
-- **Taskwarrior**: Still requires v2.6.2
-- **Bash**: Still requires 4.0+
-- **Python**: Still requires 3.6+
-- **Existing hooks**: May need path updates if they reference subdirectories
+### Migration Checklist
+
+To migrate your installer from v1.3.0 to v2.0.0:
+
+#### 1. Update .meta File
+
+- [ ] Remove `short_name` field
+- [ ] Add `base_url` field (raw GitHub URL)
+- [ ] Add `files` field with filename:type pairs
+- [ ] Optionally add `checksums` field
+
+#### 2. Update .install Script
+
+- [ ] Remove `SHORT_NAME` variable
+- [ ] Remove `REPO_URL` variable
+- [ ] Add `VERSION` variable
+- [ ] Add `BASE_URL` variable
+- [ ] Add environment detection: `: "${HOOKS_DIR:=...}"`
+- [ ] Replace `tw_clone_to_project()` with curl downloads
+- [ ] Replace `tw_symlink_hook()` with direct placement
+- [ ] Add fallback logic for tw-common.sh functions
+- [ ] Update paths (no subdirectories)
+- [ ] Use `tw_manifest_add()` for tracking
+- [ ] Use `tw_uninstall_app()` for removal
+
+#### 3. Test
+
+- [ ] Test standalone: `bash installers/yourapp.install install`
+- [ ] Test with tw.py: `tw.py --install yourapp`
+- [ ] Verify file locations
+- [ ] Test removal: `tw.py --remove yourapp`
+- [ ] Verify clean removal (no leftover files)
+
+### Example Migration
+
+**Before (v1.3.0):**
+
+.meta file:
+```ini
+name=My Hook
+version=1.0.0
+type=hook
+short_name=myhook
+repo=https://github.com/user/myhook
+```
+
+.install file:
+```bash
+APPNAME="tw-myhook"
+SHORT_NAME="myhook"
+REPO_URL="https://github.com/user/myhook"
+
+install() {
+    local project_dir
+    project_dir=$(tw_clone_to_project hook "$SHORT_NAME" "$REPO_URL")
+    tw_symlink_hook "$project_dir" "on-add_myhook.py"
+}
+
+remove() {
+    tw_remove_hook "on-add_myhook.py"
+}
+```
+
+**After (v2.0.0):**
+
+.meta file:
+```ini
+name=My Hook
+version=1.0.0
+type=hook
+repo=https://github.com/user/myhook
+base_url=https://raw.githubusercontent.com/user/myhook/main/
+files=on-add_myhook.py:hook,README.md:doc
+checksums=
+```
+
+.install file:
+```bash
+APPNAME="myhook"
+VERSION="1.0.0"
+BASE_URL="https://raw.githubusercontent.com/user/myhook/main"
+
+: "${HOOKS_DIR:=$HOME/.task/hooks}"
+: "${DOCS_DIR:=$HOME/.task/docs}"
+
+if [[ -f "${TW_COMMON:-}" ]]; then
+    source "$TW_COMMON"
+else
+    tw_msg() { echo "[tw] $*"; }
+    tw_success() { echo "[tw] ✓ $*"; }
+    tw_error() { echo "[tw] ✗ $*" >&2; }
+fi
+
+install() {
+    tw_msg "Installing $APPNAME v$VERSION..."
+    
+    if type tw_curl_and_place &>/dev/null; then
+        tw_curl_and_place "$BASE_URL/on-add_myhook.py" "$HOOKS_DIR"
+        tw_curl_and_place "$BASE_URL/README.md" "$DOCS_DIR" "myhook_README.md"
+    else
+        mkdir -p "$HOOKS_DIR" "$DOCS_DIR"
+        curl -fsSL "$BASE_URL/on-add_myhook.py" -o "$HOOKS_DIR/on-add_myhook.py"
+        curl -fsSL "$BASE_URL/README.md" -o "$DOCS_DIR/myhook_README.md"
+    fi
+    
+    chmod +x "$HOOKS_DIR/on-add_myhook.py"
+    
+    if type tw_manifest_add &>/dev/null; then
+        tw_manifest_add "$APPNAME" "$VERSION" "$HOOKS_DIR/on-add_myhook.py"
+        tw_manifest_add "$APPNAME" "$VERSION" "$DOCS_DIR/myhook_README.md"
+    fi
+    
+    tw_success "Installed $APPNAME v$VERSION"
+}
+
+remove() {
+    tw_msg "Removing $APPNAME..."
+    
+    if type tw_uninstall_app &>/dev/null; then
+        tw_uninstall_app "$APPNAME"
+    else
+        rm -f "$HOOKS_DIR/on-add_myhook.py"
+        rm -f "$DOCS_DIR/myhook_README.md"
+    fi
+    
+    tw_success "Removed $APPNAME"
+}
+
+case "${1:-}" in
+    install) install ;;
+    remove) remove ;;
+    *) echo "Usage: $0 {install|remove}"; exit 1 ;;
+esac
+```
+
+## Common Issues
+
+### Issue: Installer fails standalone
+
+**Problem:** Installer requires tw-common.sh functions
+
+**Solution:** Add fallback implementations:
+```bash
+if [[ -f "${TW_COMMON:-}" ]]; then
+    source "$TW_COMMON"
+else
+    tw_msg() { echo "[tw] $*"; }
+    tw_success() { echo "[tw] ✓ $*"; }
+    # etc.
+fi
+```
+
+### Issue: Files not found after installation
+
+**Problem:** Using old subdirectory paths
+
+**Solution:** Update to flat structure:
+```bash
+# OLD
+$HOOKS_DIR/myapp/on-add_myapp.py
+
+# NEW
+$HOOKS_DIR/on-add_myapp.py
+```
+
+### Issue: Manifest not working
+
+**Problem:** Not calling tw_manifest_add()
+
+**Solution:** Track all installed files:
+```bash
+if type tw_manifest_add &>/dev/null; then
+    tw_manifest_add "$APPNAME" "$VERSION" "$file_path"
+fi
+```
 
 ## Questions?
 
-See [DEVELOPERS.md](DEVELOPERS.md) for detailed v2.0.0 architecture documentation.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for how to update your apps.
+See [DEVELOPERS.md](DEVELOPERS.md) for architecture details or open an issue for help with migration.

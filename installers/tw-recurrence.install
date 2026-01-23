@@ -1,273 +1,287 @@
 #!/usr/bin/env bash
 #
-# tw-recurrence.install - Installer for tw-recurrence enhanced recurrence system
+# tw-recurrence.install - Installer for Enhanced Recurrence System
 # Version: 2.0.0
-# Repository: https://github.com/linuxcaffe/tw-recurrence_overhaul-hook
 #
-# This is a real-world example of a v2.0.0 self-contained installer.
-# It demonstrates:
-# - Multiple hook files with symlink (on-add → on-modify)
-# - Config file installation
-# - README renaming
-# - Complete standalone operation
+# Installs the enhanced recurrence system with support for:
+# - Chained recurrence (from completion date)
+# - Periodic recurrence (from due date)
+# - Instance pile-up control
+# - Relative date handling
+#
+# This is a real-world example of v2.0.0 architecture in action.
+#
 
 set -euo pipefail
 
-#=============================================================================
-# CONFIGURATION
-#=============================================================================
+#------------------------------------------------------------------------------
+# APPLICATION METADATA
+#------------------------------------------------------------------------------
 
-APP_NAME="tw-recurrence"
-APP_VERSION="2.0.0"
+APPNAME="tw-recurrence"
+VERSION="2.0.0"
 BASE_URL="https://raw.githubusercontent.com/linuxcaffe/tw-recurrence_overhaul-hook/main"
 
-#=============================================================================
-# OPTIONAL HELPER SOURCING
-#=============================================================================
+#------------------------------------------------------------------------------
+# ENVIRONMENT DETECTION
+#------------------------------------------------------------------------------
 
-if [[ -f ~/.task/lib/tw-common.sh ]]; then
-    source ~/.task/lib/tw-common.sh
+: "${HOOKS_DIR:=$HOME/.task/hooks}"
+: "${CONFIG_DIR:=$HOME/.task/config}"
+: "${DOCS_DIR:=$HOME/.task/docs}"
+: "${LOGS_DIR:=$HOME/.task/logs}"
+: "${TASKRC:=$HOME/.taskrc}"
+: "${TW_DEBUG:=0}"
+
+#------------------------------------------------------------------------------
+# LIBRARY SOURCING (OPTIONAL)
+#------------------------------------------------------------------------------
+
+if [[ -f "${TW_COMMON:-}" ]]; then
+    source "$TW_COMMON"
+    HAVE_TW_COMMON=1
 else
-    # Fallback: Define minimal messaging functions
-    tw_msg() { echo "[INFO] $*"; }
-    tw_success() { echo "[SUCCESS] $*"; }
-    tw_warn() { echo "[WARNING] $*" >&2; }
-    tw_error() { echo "[ERROR] $*" >&2; }
-    tw_die() { tw_error "$@"; exit 1; }
+    HAVE_TW_COMMON=0
+    
+    tw_msg() { echo "[tw] $*"; }
+    tw_success() { echo "[tw] ✓ $*"; }
+    tw_error() { echo "[tw] ✗ $*" >&2; }
+    tw_warn() { echo "[tw] ⚠ $*" >&2; }
+    tw_debug() { [[ "${TW_DEBUG:-0}" == "1" ]] && echo "[tw-debug] $*" >&2 || true; }
 fi
 
-#=============================================================================
-# ENVIRONMENT DETECTION
-#=============================================================================
+#------------------------------------------------------------------------------
+# INSTALLATION FUNCTION
+#------------------------------------------------------------------------------
 
-: ${HOOKS_DIR:=~/.task/hooks}
-: ${CONFIG_DIR:=~/.task/config}
-: ${DOCS_DIR:=~/.task/docs}
-: ${TASKRC:=~/.taskrc}
-
-#=============================================================================
-# HELPER FUNCTIONS
-#=============================================================================
-
-check_requirements() {
-    tw_msg "Checking requirements..."
+install() {
+    tw_msg "Installing Enhanced Recurrence System v$VERSION..."
     
-    if ! command -v curl &>/dev/null; then
-        tw_die "curl is required but not found"
-    fi
+    # Create directories
+    mkdir -p "$HOOKS_DIR" "$CONFIG_DIR" "$DOCS_DIR" "$LOGS_DIR"
     
-    if ! command -v task &>/dev/null; then
-        tw_die "Taskwarrior is required but not found"
-    fi
+    # Download hook files
+    tw_msg "Downloading recurrence hooks..."
     
-    if ! command -v python3 &>/dev/null; then
-        tw_die "Python 3 is required but not found"
-    fi
-    
-    # Use version checkers if available
-    if type tw_check_taskwarrior_version &>/dev/null; then
-        tw_check_taskwarrior_version "2.6.2" || return 1
-    fi
-    
-    if type tw_check_python_version &>/dev/null; then
-        tw_check_python_version "3.6" || return 1
-    fi
-    
-    tw_success "Requirements met"
-    return 0
-}
-
-download_file() {
-    local filename="$1"
-    local url="${BASE_URL}/${filename}"
-    local target_path="$2"
-    
-    # Use helper if available
-    if type tw_curl_and_place &>/dev/null; then
-        local target_dir=$(dirname "$target_path")
-        local target_name=$(basename "$target_path")
-        tw_curl_and_place "$url" "$target_dir" "$target_name" || return 1
-    else
-        local tmp_file
-        tmp_file=$(mktemp) || {
-            tw_error "Failed to create temporary file"
+    if [[ $HAVE_TW_COMMON -eq 1 ]] && type tw_curl_and_place &>/dev/null; then
+        # Use tw-common.sh helpers
+        tw_curl_and_place "$BASE_URL/on-add_recurrence.py" "$HOOKS_DIR" || {
+            tw_error "Failed to download on-add hook"
             return 1
         }
         
-        if ! curl -fsSL "$url" -o "$tmp_file"; then
-            tw_error "Failed to download: $url"
-            rm -f "$tmp_file"
+        tw_curl_and_place "$BASE_URL/on-modify_recurrence.py" "$HOOKS_DIR" || {
+            tw_error "Failed to download on-modify hook"
+            return 1
+        }
+        
+        tw_curl_and_place "$BASE_URL/on-exit_recurrence.py" "$HOOKS_DIR" || {
+            tw_error "Failed to download on-exit hook"
+            return 1
+        }
+    else
+        # Fallback for standalone use
+        if ! curl -fsSL "$BASE_URL/on-add_recurrence.py" -o "$HOOKS_DIR/on-add_recurrence.py"; then
+            tw_error "Failed to download on-add hook"
             return 1
         fi
         
-        if ! mv "$tmp_file" "$target_path"; then
-            tw_error "Failed to move file to: $target_path"
-            rm -f "$tmp_file"
+        if ! curl -fsSL "$BASE_URL/on-modify_recurrence.py" -o "$HOOKS_DIR/on-modify_recurrence.py"; then
+            tw_error "Failed to download on-modify hook"
             return 1
         fi
         
-        tw_success "Downloaded: $(basename "$target_path")"
+        if ! curl -fsSL "$BASE_URL/on-exit_recurrence.py" -o "$HOOKS_DIR/on-exit_recurrence.py"; then
+            tw_error "Failed to download on-exit hook"
+            return 1
+        fi
     fi
-    
-    return 0
-}
-
-#=============================================================================
-# INSTALL FUNCTION
-#=============================================================================
-
-install() {
-    tw_msg "Installing $APP_NAME v$APP_VERSION..."
-    
-    # Check requirements
-    check_requirements || return 1
-    
-    # Create directories
-    mkdir -p "$HOOKS_DIR" "$CONFIG_DIR" "$DOCS_DIR"
-    
-    # Download hook files
-    tw_msg "Downloading hook files..."
-    download_file "on-add_recurrence.py" "$HOOKS_DIR/on-add_recurrence.py" || return 1
-    download_file "on-modify_recurrence.py" "$HOOKS_DIR/on-modify_recurrence.py" || return 1
-    download_file "on-exit_recurrence.py" "$HOOKS_DIR/on-exit_recurrence.py" || return 1
-    
-    # Note: on-add and on-modify are the same file in the repo,
-    # so we create a symlink after downloading on-modify
-    tw_msg "Creating symlink: on-add_recurrence.py -> on-modify_recurrence.py"
-    ln -sf "on-modify_recurrence.py" "$HOOKS_DIR/on-add_recurrence.py"
     
     # Make hooks executable
+    chmod +x "$HOOKS_DIR/on-add_recurrence.py"
     chmod +x "$HOOKS_DIR/on-modify_recurrence.py"
     chmod +x "$HOOKS_DIR/on-exit_recurrence.py"
+    tw_debug "Made hooks executable"
     
-    # Download config file
+    # Download configuration
     tw_msg "Downloading configuration..."
-    download_file "recurrence.rc" "$CONFIG_DIR/recurrence.rc" || return 1
     
-    # Download README (renamed to avoid conflicts)
-    tw_msg "Downloading documentation..."
-    download_file "README.md" "$DOCS_DIR/recurrence_README.md" || return 1
-    
-    # Configure Taskwarrior
-    configure_taskwarrior || return 1
-    
-    tw_success "Successfully installed $APP_NAME v$APP_VERSION"
-    tw_msg "Files installed to:"
-    tw_msg "  Hooks: $HOOKS_DIR"
-    tw_msg "  Config: $CONFIG_DIR/recurrence.rc"
-    tw_msg "  Docs: $DOCS_DIR/recurrence_README.md"
-    
-    return 0
-}
-
-configure_taskwarrior() {
-    tw_msg "Configuring Taskwarrior..."
-    
-    local config_line="include $CONFIG_DIR/recurrence.rc"
-    
-    if [[ ! -f "$TASKRC" ]]; then
-        tw_warn ".taskrc not found at $TASKRC"
-        tw_warn "Please add manually: $config_line"
-        return 0
-    fi
-    
-    # Add config
-    if type tw_add_config &>/dev/null; then
-        tw_add_config "$config_line" || return 1
+    if [[ $HAVE_TW_COMMON -eq 1 ]] && type tw_curl_and_place &>/dev/null; then
+        tw_curl_and_place "$BASE_URL/recurrence.rc" "$CONFIG_DIR" || {
+            tw_warn "Failed to download config (continuing)"
+        }
     else
-        if grep -Fxq "$config_line" "$TASKRC"; then
-            tw_msg "Config already exists in .taskrc"
-        else
-            echo "$config_line" >> "$TASKRC" || {
-                tw_error "Failed to add config to .taskrc"
-                return 1
-            }
-            tw_success "Added config to .taskrc"
+        if ! curl -fsSL "$BASE_URL/recurrence.rc" -o "$CONFIG_DIR/recurrence.rc"; then
+            tw_warn "Failed to download config (continuing)"
         fi
     fi
     
-    return 0
-}
-
-#=============================================================================
-# REMOVE FUNCTION
-#=============================================================================
-
-remove() {
-    tw_msg "Removing $APP_NAME..."
-    
-    # Remove hook files (including symlink)
-    rm -f "$HOOKS_DIR/on-add_recurrence.py"
-    rm -f "$HOOKS_DIR/on-modify_recurrence.py"
-    rm -f "$HOOKS_DIR/on-exit_recurrence.py"
-    tw_success "Removed hook files"
-    
-    # Remove config file
-    rm -f "$CONFIG_DIR/recurrence.rc"
-    tw_success "Removed config file"
-    
-    # Remove documentation
-    rm -f "$DOCS_DIR/recurrence_README.md"
-    tw_success "Removed documentation"
-    
-    # Remove config from .taskrc
-    remove_config || return 1
-    
-    tw_success "Successfully removed $APP_NAME"
-    
-    return 0
-}
-
-remove_config() {
-    local config_line="include $CONFIG_DIR/recurrence.rc"
-    
-    if [[ ! -f "$TASKRC" ]]; then
-        return 0
-    fi
-    
-    if type tw_remove_config &>/dev/null; then
-        tw_remove_config "$config_line"
-    else
-        if grep -Fxq "$config_line" "$TASKRC"; then
-            local tmp_file
-            tmp_file=$(mktemp) || {
-                tw_error "Failed to create temporary file"
-                return 1
-            }
-            
-            if grep -Fxv "$config_line" "$TASKRC" > "$tmp_file" 2>/dev/null; then
-                mv "$tmp_file" "$TASKRC"
-                tw_success "Removed config from .taskrc"
-            else
-                tw_warn "Failed to remove config from .taskrc"
-                rm -f "$tmp_file"
+    # Add config include to .taskrc
+    if [[ -f "$CONFIG_DIR/recurrence.rc" ]]; then
+        if [[ $HAVE_TW_COMMON -eq 1 ]] && type tw_add_config &>/dev/null; then
+            tw_add_config "include $CONFIG_DIR/recurrence.rc"
+        else
+            if [[ -f "$TASKRC" ]] && ! grep -q "include $CONFIG_DIR/recurrence.rc" "$TASKRC"; then
+                echo "include $CONFIG_DIR/recurrence.rc" >> "$TASKRC"
+                tw_debug "Added config include to .taskrc"
+            elif [[ ! -f "$TASKRC" ]]; then
+                echo "include $CONFIG_DIR/recurrence.rc" > "$TASKRC"
+                tw_debug "Created .taskrc with config include"
             fi
         fi
     fi
     
+    # Download documentation
+    tw_msg "Downloading documentation..."
+    
+    if [[ $HAVE_TW_COMMON -eq 1 ]] && type tw_curl_and_place &>/dev/null; then
+        tw_curl_and_place "$BASE_URL/README.md" "$DOCS_DIR" "recurrence_README.md" || {
+            tw_warn "Failed to download README (continuing)"
+        }
+    else
+        if ! curl -fsSL "$BASE_URL/README.md" -o "$DOCS_DIR/recurrence_README.md"; then
+            tw_warn "Failed to download README (continuing)"
+        fi
+    fi
+    
+    # Create logs directory for recurrence
+    mkdir -p "$LOGS_DIR/recurrence"
+    tw_debug "Created logs directory"
+    
+    # Track installation in manifest (if available)
+    if [[ $HAVE_TW_COMMON -eq 1 ]] && type tw_manifest_add &>/dev/null; then
+        tw_manifest_add "$APPNAME" "$VERSION" "$HOOKS_DIR/on-add_recurrence.py"
+        tw_manifest_add "$APPNAME" "$VERSION" "$HOOKS_DIR/on-modify_recurrence.py"
+        tw_manifest_add "$APPNAME" "$VERSION" "$HOOKS_DIR/on-exit_recurrence.py"
+        tw_manifest_add "$APPNAME" "$VERSION" "$CONFIG_DIR/recurrence.rc"
+        tw_manifest_add "$APPNAME" "$VERSION" "$DOCS_DIR/recurrence_README.md"
+        tw_debug "Added entries to manifest"
+    fi
+    
+    tw_success "Installed Enhanced Recurrence System v$VERSION"
+    echo ""
+    tw_msg "Files installed:"
+    tw_msg "  Hooks: $HOOKS_DIR/on-{add,modify,exit}_recurrence.py"
+    tw_msg "  Config: $CONFIG_DIR/recurrence.rc"
+    tw_msg "  Docs: $DOCS_DIR/recurrence_README.md"
+    tw_msg "  Logs: $LOGS_DIR/recurrence/"
+    echo ""
+    tw_msg "Recurrence system is now active for all tasks with 'recur:' attribute."
+    tw_msg "See $DOCS_DIR/recurrence_README.md for usage details."
+    
     return 0
 }
 
-#=============================================================================
-# MAIN DISPATCHER
-#=============================================================================
+#------------------------------------------------------------------------------
+# REMOVAL FUNCTION
+#------------------------------------------------------------------------------
 
-case "${1:-}" in
-    install)
-        install
-        ;;
-    remove|uninstall)
-        remove
-        ;;
-    *)
-        echo "Usage: $0 {install|remove}"
-        echo ""
-        echo "Enhanced recurrence system for Taskwarrior"
-        echo "Supports both chained and periodic recurrence modes"
-        echo ""
-        echo "Commands:"
-        echo "  install   - Download and install tw-recurrence"
-        echo "  remove    - Remove tw-recurrence and clean up"
-        exit 1
-        ;;
-esac
+remove() {
+    tw_msg "Removing Enhanced Recurrence System..."
+    
+    # Use manifest-based removal if available
+    if [[ $HAVE_TW_COMMON -eq 1 ]] && type tw_uninstall_app &>/dev/null; then
+        tw_uninstall_app "$APPNAME"
+        
+        # Remove config line from .taskrc
+        if [[ $HAVE_TW_COMMON -eq 1 ]] && type tw_remove_config &>/dev/null; then
+            tw_remove_config "include $CONFIG_DIR/recurrence.rc"
+        fi
+        
+        # Optionally remove logs directory
+        if [[ -d "$LOGS_DIR/recurrence" ]]; then
+            tw_msg "Logs directory preserved: $LOGS_DIR/recurrence/"
+            tw_msg "Remove manually if desired: rm -rf $LOGS_DIR/recurrence"
+        fi
+        
+        return 0
+    fi
+    
+    # Fallback: manual removal for standalone use
+    local removed=0
+    
+    if [[ -f "$HOOKS_DIR/on-add_recurrence.py" ]]; then
+        rm -f "$HOOKS_DIR/on-add_recurrence.py"
+        tw_debug "Removed: on-add_recurrence.py"
+        removed=1
+    fi
+    
+    if [[ -f "$HOOKS_DIR/on-modify_recurrence.py" ]]; then
+        rm -f "$HOOKS_DIR/on-modify_recurrence.py"
+        tw_debug "Removed: on-modify_recurrence.py"
+        removed=1
+    fi
+    
+    if [[ -f "$HOOKS_DIR/on-exit_recurrence.py" ]]; then
+        rm -f "$HOOKS_DIR/on-exit_recurrence.py"
+        tw_debug "Removed: on-exit_recurrence.py"
+        removed=1
+    fi
+    
+    if [[ -f "$CONFIG_DIR/recurrence.rc" ]]; then
+        rm -f "$CONFIG_DIR/recurrence.rc"
+        tw_debug "Removed: recurrence.rc"
+        removed=1
+    fi
+    
+    if [[ -f "$DOCS_DIR/recurrence_README.md" ]]; then
+        rm -f "$DOCS_DIR/recurrence_README.md"
+        tw_debug "Removed: recurrence_README.md"
+        removed=1
+    fi
+    
+    # Remove config line from .taskrc
+    if [[ -f "$TASKRC" ]]; then
+        if grep -q "include $CONFIG_DIR/recurrence.rc" "$TASKRC"; then
+            grep -v "include $CONFIG_DIR/recurrence.rc" "$TASKRC" > "$TASKRC.tmp" || true
+            mv "$TASKRC.tmp" "$TASKRC"
+            tw_debug "Removed config include from .taskrc"
+        fi
+    fi
+    
+    # Note about logs
+    if [[ -d "$LOGS_DIR/recurrence" ]]; then
+        tw_msg "Logs directory preserved: $LOGS_DIR/recurrence/"
+        tw_msg "Remove manually if desired: rm -rf $LOGS_DIR/recurrence"
+    fi
+    
+    if [[ $removed -eq 1 ]]; then
+        tw_success "Removed Enhanced Recurrence System"
+        return 0
+    else
+        tw_warn "No files found to remove"
+        return 1
+    fi
+}
+
+#------------------------------------------------------------------------------
+# MAIN ENTRY POINT
+#------------------------------------------------------------------------------
+
+main() {
+    case "${1:-}" in
+        install)
+            install
+            ;;
+        remove)
+            remove
+            ;;
+        *)
+            echo "Usage: $0 {install|remove}"
+            echo ""
+            echo "Enhanced Recurrence System for Taskwarrior"
+            echo "Version: $VERSION"
+            echo ""
+            echo "Commands:"
+            echo "  install - Install the recurrence system"
+            echo "  remove  - Remove the recurrence system"
+            echo ""
+            echo "Examples:"
+            echo "  bash $0 install"
+            echo "  tw.py --install tw-recurrence"
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"

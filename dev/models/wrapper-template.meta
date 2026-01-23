@@ -1,35 +1,37 @@
-# wrapper-template.meta - Template for wrapper/script .meta files
+# .meta File Template for Wrappers
 # Version: 2.0.0
 #
-# This file describes a wrapper/script application for awesome-taskwarrior.
-# Use this template for executables that go in ~/.task/scripts/
+# This file defines metadata for a Taskwarrior wrapper application.
+# Place this file in: registry.d/yourwrapper.meta
 
-# Required: Application identifier (used in commands like `tw.py install mywrapper`)
-# Rules: lowercase letters, numbers, hyphens, underscores only
-name=mywrapper
-
-# Required: Semantic version number
+# Required Fields
+name=My Wrapper Application
 version=1.0.0
+type=wrapper
+description=Brief description of what this wrapper does
 
-# Required: One-line description (shown in listings, keep under 80 chars)
-description=Brief description of what your wrapper script does
+# Repository Information
+repo=https://github.com/username/project-name
 
-# Optional: Comma-separated list of requirements
-# Note: Wrapper scripts often have language-specific requirements
-requires=bash>=4.0,taskwarrior>=2.6.0
+# Download Configuration (v2.0.0)
+# base_url should point to raw GitHub content or any URL where files can be downloaded
+base_url=https://raw.githubusercontent.com/username/project-name/main/
 
-# Required: Comma-separated list of filename:type pairs
-# Types: script, config, doc (hooks not applicable for wrappers)
-# Order matters - must match order of checksums field
-# README.md will be renamed to appname_README.md when installed
+# Files to Install (v2.0.0)
+# Format: filename:type,filename:type,...
+# Types: hook, script, config, doc
+# Wrappers typically go to scripts/ directory
+# Example: mywrapper:script,mywrapper.rc:config,README.md:doc
 files=mywrapper:script,mywrapper.rc:config,README.md:doc
 
-# Required: Base URL for curl downloads
-# Must serve raw file content (not HTML)
-base_url=https://raw.githubusercontent.com/username/mywrapper/main/
-
-# Optional: SHA256 checksums for file integrity verification
-# Format: sha256:hash1,sha256:hash2,sha256:hash3,...
-# Order must match files= field
-# checksums=sha256:abc123...,sha256:def456...,sha256:789xyz...
+# Checksums (Optional but Recommended)
+# Format: SHA256 hash for each file in same order as files= list
+# Generate with: sha256sum file1 file2 file3
+# Leave empty if not using checksums
 checksums=
+
+# Additional Optional Fields
+# author=Your Name
+# license=MIT
+# requires_taskwarrior=2.6.0
+# requires_python=3.6
