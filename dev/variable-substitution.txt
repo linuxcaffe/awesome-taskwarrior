@@ -1,0 +1,76 @@
+CONFIGURATION VARIABLE SUBSTITUTION
+
+Taskwarrior configuration values may reference other configuration variables using the syntax:
+
+${variable}
+
+
+At configuration read time, referenced variables are expanded to their current values.
+
+Example
+priority.span=3
+priority.need.span=${priority.span}
+
+
+is equivalent to:
+
+priority.need.span=3
+
+
+after configuration processing.
+
+Scope and Resolution
+
+Substitution applies to all configuration files, including those loaded via include and rc: overrides.
+
+Referenced variables may be defined in:
+
+the primary configuration file (~/.taskrc)
+
+any included configuration file
+
+command-line rc: overrides
+
+Expansion occurs after all configuration files are read and before values are used.
+
+Undefined Variables
+
+If a referenced variable is undefined, it expands to an empty string.
+
+Example:
+
+foo=${bar}
+
+
+results in:
+
+foo=
+
+Characteristics
+
+Substitution is not recursive beyond the referenced value.
+
+Substitution is not shell expansion and does not evaluate commands.
+
+Expansion is purely textual and occurs once per configuration read.
+
+Use Cases
+
+Variable substitution allows centralization of commonly used values:
+
+priority.span=5
+priority.need.span=${priority.span}
+priority.want.span=${priority.span}
+
+
+Changing priority.span updates all dependent configuration values.
+
+Limitations
+
+Substitution does not provide conditional logic.
+
+Substitution does not persist expanded values; only the reference is stored.
+
+SEE ALSO
+
+task(1), task-config(5)

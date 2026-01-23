@@ -1,11 +1,11 @@
 # tw-recurrence.meta
 # Enhanced Recurrence System for Taskwarrior
-# Version: 0.3.7
+# Version: 2.0.0
 
 name=tw-recurrence_overhaul-hook
-version=0.3.7
+version=2.0.0
 type=hook
-description=Advanced task recurrence with chained and periodic patterns, and relative sched, until and wait date handling
+description=Advanced task recurrence with chained and periodic patterns, instance pile-up control, and relative date handling
 repo=https://github.com/linuxcaffe/tw-recurrence_overhaul-hook
 base_url=https://raw.githubusercontent.com/linuxcaffe/tw-recurrence_overhaul-hook/main/
 files=on-add_recurrence.py:hook,on-exit_recurrence.py:hook,recurrence.rc:config,rr:script,README.md:doc

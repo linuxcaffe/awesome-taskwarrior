@@ -7,7 +7,7 @@ set -euo pipefail
 # ============================================================================
 
 APPNAME="tw-recurrence"
-VERSION="0.3.7"
+VERSION="2.0.0"
 BASE_URL="https://raw.githubusercontent.com/linuxcaffe/tw-recurrence_overhaul-hook/main"
 
 # Environment detection with defaults (works standalone or with tw.py)
@@ -23,9 +23,9 @@ if [[ -f "${TW_COMMON:-}" ]]; then
 else
     # Fallback functions for standalone use
     tw_msg() { echo "[tw] $*"; }
-    tw_success() { echo "[tw] ✓ $*"; }
-    tw_error() { echo "[tw] ✗ $*" >&2; }
-    tw_warn() { echo "[tw] ⚠ $*" >&2; }
+    tw_success() { echo "[tw] âœ“ $*"; }
+    tw_error() { echo "[tw] âœ— $*" >&2; }
+    tw_warn() { echo "[tw] âš  $*" >&2; }
 fi
 
 # ============================================================================
@@ -125,10 +125,10 @@ install() {
     tw_success "Installed Enhanced Recurrence System v$VERSION"
     echo ""
     tw_msg "Files installed:"
-    tw_msg "  • Hooks: $HOOKS_DIR/on-{add,exit,modify}_recurrence.py"
-    tw_msg "  • Config: $CONFIG_DIR/recurrence.rc"
-    tw_msg "  • Tool: $SCRIPTS_DIR/rr"
-    tw_msg "  • Docs: $DOCS_DIR/recurrence_README.md"
+    tw_msg "  â€¢ Hooks: $HOOKS_DIR/on-{add,exit,modify}_recurrence.py"
+    tw_msg "  â€¢ Config: $CONFIG_DIR/recurrence.rc"
+    tw_msg "  â€¢ Tool: $SCRIPTS_DIR/rr"
+    tw_msg "  â€¢ Docs: $DOCS_DIR/recurrence_README.md"
     echo ""
     tw_msg "Configuration added to: $TASKRC"
     echo ""
