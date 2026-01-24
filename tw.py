@@ -28,8 +28,18 @@ import hashlib
 import shutil
 import shlex
 import readline
+import json
+import tempfile
+from urllib.request import urlopen, Request
+from urllib.error import URLError, HTTPError
 
-VERSION = "2.0.0"
+VERSION = "2.1.0"
+
+# GitHub configuration
+GITHUB_REPO = "linuxcaffe/awesome-taskwarrior"
+GITHUB_BRANCH = "main"
+GITHUB_API_BASE = f"https://api.github.com/repos/{GITHUB_REPO}"
+GITHUB_RAW_BASE = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}"
 
 # Shell configuration
 SHELL_NAME = "tw"
@@ -171,22 +181,129 @@ class PathManager:
         self.logs_dir = self.task_dir / "logs"
         self.taskrc = self.home / ".taskrc"
         
-        # awesome-taskwarrior directories
+        # Check if we're in a local repo (dev mode)
         self.tw_root = Path(__file__).parent.absolute()
-        self.registry_dir = self.tw_root / "registry.d"
-        self.installers_dir = self.tw_root / "installers"
+        debug(f"PathManager: __file__ = {__file__}", 2)
+        debug(f"PathManager: tw_root = {self.tw_root}", 2)
+        
+        self.local_registry = self.tw_root / "registry.d"
+        self.local_installers = self.tw_root / "installers"
         self.lib_dir = self.tw_root / "lib"
         self.installed_dir = self.tw_root / "installed"
         self.manifest_file = self.task_dir / ".tw_manifest"
+        
+        # Determine mode: local (dev) or remote (production)
+        self.is_dev_mode = self.local_registry.exists() and self.local_installers.exists()
+        debug(f"Dev mode: {self.is_dev_mode}", 1)
         
     def init_directories(self):
         """Create all required directories"""
         for dir_path in [
             self.hooks_dir, self.scripts_dir, self.config_dir,
-            self.docs_dir, self.logs_dir, self.registry_dir,
-            self.installers_dir, self.installed_dir
+            self.docs_dir, self.logs_dir, self.installed_dir
         ]:
             dir_path.mkdir(parents=True, exist_ok=True)
+        
+        # Only create registry and installers dirs in dev mode
+        if self.is_dev_mode:
+            self.local_registry.mkdir(parents=True, exist_ok=True)
+            self.local_installers.mkdir(parents=True, exist_ok=True)
+
+class RegistryManager:
+    """Manages registry access - local files or GitHub API"""
+    
+    def __init__(self, paths):
+        self.paths = paths
+        self.is_dev_mode = paths.is_dev_mode
+    
+    def list_apps(self):
+        """List all available applications from registry"""
+        if self.is_dev_mode:
+            return self._list_local_apps()
+        else:
+            return self._list_github_apps()
+    
+    def _list_local_apps(self):
+        """List apps from local registry.d/ directory"""
+        debug("Listing apps from local registry", 2)
+        apps = []
+        for meta_path in self.paths.local_registry.glob("*.meta"):
+            apps.append(meta_path.stem)
+        return sorted(apps)
+    
+    def _list_github_apps(self):
+        """List apps from GitHub registry.d/ via API"""
+        debug("Fetching apps from GitHub registry", 2)
+        try:
+            url = f"{GITHUB_API_BASE}/contents/registry.d"
+            req = Request(url)
+            req.add_header('Accept', 'application/vnd.github.v3+json')
+            
+            with urlopen(req, timeout=10) as response:
+                data = json.loads(response.read().decode())
+            
+            apps = [item['name'][:-5] for item in data if item['name'].endswith('.meta')]
+            debug(f"Found {len(apps)} apps on GitHub", 2)
+            return sorted(apps)
+        
+        except (URLError, HTTPError) as e:
+            print(f"[tw] ✗ Failed to fetch registry from GitHub: {e}")
+            return []
+    
+    def get_meta(self, app_name):
+        """Get MetaFile object for an app"""
+        if self.is_dev_mode:
+            meta_path = self.paths.local_registry / f"{app_name}.meta"
+            if meta_path.exists():
+                return MetaFile(meta_path)
+        else:
+            # Fetch .meta from GitHub
+            url = f"{GITHUB_RAW_BASE}/registry.d/{app_name}.meta"
+            try:
+                debug(f"Fetching {app_name}.meta from GitHub", 2)
+                with urlopen(url, timeout=10) as response:
+                    content = response.read().decode()
+                
+                # Create temporary file
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.meta', delete=False) as f:
+                    f.write(content)
+                    temp_path = f.name
+                
+                meta = MetaFile(temp_path)
+                os.unlink(temp_path)
+                return meta
+            
+            except (URLError, HTTPError) as e:
+                debug(f"Failed to fetch {app_name}.meta: {e}", 1)
+                return None
+        
+        return None
+    
+    def get_installer(self, app_name):
+        """Get path to installer script (local or downloaded temp file)"""
+        if self.is_dev_mode:
+            installer_path = self.paths.local_installers / f"{app_name}.install"
+            return installer_path if installer_path.exists() else None
+        else:
+            # Download installer from GitHub
+            url = f"{GITHUB_RAW_BASE}/installers/{app_name}.install"
+            try:
+                debug(f"Downloading {app_name}.install from GitHub", 2)
+                with urlopen(url, timeout=10) as response:
+                    content = response.read().decode()
+                
+                # Create temporary file
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.install', delete=False) as f:
+                    f.write(content)
+                    temp_path = f.name
+                
+                # Make executable
+                os.chmod(temp_path, 0o755)
+                return Path(temp_path)
+            
+            except (URLError, HTTPError) as e:
+                debug(f"Failed to download {app_name}.install: {e}", 1)
+                return None
 
 class MetaFile:
     """Parses and manages .meta files for applications"""
@@ -349,6 +466,7 @@ class AppManager:
     def __init__(self, paths):
         self.paths = paths
         self.manifest = Manifest(paths.manifest_file)
+        self.registry = RegistryManager(paths)
     
     def install(self, app_name, dry_run=False):
         """Install an application using its installer script"""
@@ -556,25 +674,37 @@ class AppManager:
         Args:
             tag_filter: Optional TagFilter to filter apps by tags
         """
+        debug(f"show_info_all called, registry_dir={self.paths.registry_dir}", 2)
+        debug(f"Registry directory exists: {self.paths.registry_dir.exists()}", 2)
+        
         # Get all apps from registry
         all_apps = []
-        for meta_path in self.paths.registry_dir.glob("*.meta"):
+        meta_files = list(self.paths.registry_dir.glob("*.meta"))
+        debug(f"Found {len(meta_files)} .meta files", 2)
+        
+        for meta_path in meta_files:
             app_name = meta_path.stem
+            debug(f"Processing {app_name} from {meta_path}", 3)
             
             # Apply tag filter if provided
             if tag_filter and tag_filter.has_filters():
                 meta = MetaFile(meta_path)
                 tags = meta.get_tags()
+                debug(f"App {app_name} has tags: {tags}", 3)
                 if not tag_filter.matches(tags):
+                    debug(f"App {app_name} filtered out by tag filter", 3)
                     continue
             
             all_apps.append(app_name)
+        
+        debug(f"Final app list: {all_apps}", 2)
         
         if not all_apps:
             if tag_filter and tag_filter.has_filters():
                 print(f"[tw] No applications match filter: {tag_filter}")
             else:
-                print("[tw] No applications found in registry")
+                print(f"[tw] No applications found in registry")
+                print(f"[tw] Registry directory: {self.paths.registry_dir}")
             return False
         
         # Show info for each app
