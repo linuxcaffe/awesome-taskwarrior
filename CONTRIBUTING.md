@@ -305,7 +305,35 @@ ls ~/.task/config/myext.rc         # Should be gone
 grep myext ~/.task/config/.tw_manifest  # Should be empty
 ```
 
-### 2. Test with tw.py (Local/Dev Mode)
+### 2. Test with Debug (Important!)
+
+Test that your installer respects debug environment variables:
+
+```bash
+# Test debug level 1
+TW_DEBUG=1 bash installers/my-extension.install install
+
+# Should see debug output:
+[debug] 16:45:23.123 | my-extension | Debug enabled (level 1)
+[debug] 16:45:23.200 | my-extension | Starting installation
+[debug] 16:45:28.450 | my-extension | Installation complete
+
+# Check debug log was created
+ls -la ~/.task/logs/debug/
+cat ~/.task/logs/debug/my-extension_debug_*.log
+
+# Test debug level 2 (more detail)
+TW_DEBUG=2 bash installers/my-extension.install install
+
+# Should see detailed output:
+[debug] 16:45:23.210 | my-extension | Downloading hook: on-add_myext.py
+[debug] 16:45:25.100 | my-extension | Installed: ~/.task/hooks/on-add_myext.py
+
+# Test removal with debug
+TW_DEBUG=2 bash installers/my-extension.install remove
+```
+
+### 3. Test with tw.py (Local/Dev Mode)
 
 If you've cloned awesome-taskwarrior:
 
@@ -317,15 +345,32 @@ cp ~/my-extension/my-extension.meta registry.d/
 cp ~/my-extension/my-extension.install installers/
 chmod +x installers/my-extension.install
 
-# Test
+# Test without debug
 ./tw.py --list          # Should show your extension
 ./tw.py --info my-extension
 ./tw.py --install my-extension
 ./tw.py --list          # Should show as installed
+
+# Test with debug
+./tw.py --debug=2 --install my-extension
+
+# Should see both tw.py AND installer debug output:
+[debug] 16:45:23.100 | main              | Debug mode enabled (level 2)
+[debug] 16:45:23.110 | AppManager.install| Installing my-extension
+[debug] 16:45:23.200 | my-extension      | Debug enabled (level 2)
+[debug] 16:45:23.210 | my-extension      | Downloading hook.py
+[tw] ✓ Successfully installed my-extension
+
+# Check both log files were created:
+ls -la ~/.task/logs/debug/
+cat ~/.task/logs/debug/tw_debug_*.log
+cat ~/.task/logs/debug/my-extension_debug_*.log
+
+# Test removal
 ./tw.py --remove my-extension
 ```
 
-### 3. Test with tw.py (Production Mode)
+### 4. Test with tw.py (Production Mode)
 
 After submitting PR and it's merged:
 
@@ -469,10 +514,14 @@ Before submitting your PR:
 - [ ] Extension files pushed to GitHub
 - [ ] `.meta` file created with all required fields
 - [ ] `.install` script created with fallback logic
+- [ ] **Debug support added** (use make-awesome-install.sh)
 - [ ] Checksums generated (optional but recommended)
 - [ ] Tested standalone: `bash installers/my-extension.install install`
+- [ ] **Tested with debug**: `TW_DEBUG=2 bash installers/my-extension.install install`
 - [ ] Tested with tw.py: `./tw.py --install my-extension`
+- [ ] **Tested tw.py debug**: `./tw.py --debug=2 --install my-extension`
 - [ ] Verified all files install correctly
+- [ ] Verified debug logs created in `~/.task/logs/debug/`
 - [ ] Tested removal cleans up completely
 - [ ] Documentation in your repo explains usage
 - [ ] LICENSE file in your repo

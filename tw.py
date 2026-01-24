@@ -159,6 +159,88 @@ def debug(message, context='', level=1):
     if debug_logger:
         debug_logger.debug(message, context, level)
 
+class TagFilter:
+    """Parse and apply tag filters (+tag includes, -tag excludes)"""
+    
+    def __init__(self, filter_args=None):
+        self.include_tags = []  # +tag or tag (must have ALL)
+        self.exclude_tags = []  # -tag (must have NONE)
+        
+        if filter_args:
+            self._parse(filter_args)
+    
+    def _parse(self, filter_args):
+        """Parse tag filter arguments
+        
+        Supports:
+        - +tag (include)
+        - -tag (exclude)
+        - tag (include, no prefix)
+        - Multiple tags: +hook +priority -deprecated
+        """
+        # Handle both string and list
+        if isinstance(filter_args, str):
+            tags = filter_args.split()
+        else:
+            tags = filter_args
+        
+        for tag in tags:
+            tag = tag.strip()
+            if not tag:
+                continue
+                
+            if tag.startswith('+'):
+                # Include tag
+                self.include_tags.append(tag[1:].lower())
+            elif tag.startswith('-'):
+                # Exclude tag
+                self.exclude_tags.append(tag[1:].lower())
+            else:
+                # No prefix = include
+                self.include_tags.append(tag.lower())
+        
+        debug(f"Tag filter: include={self.include_tags}, exclude={self.exclude_tags}", 
+              "TagFilter._parse", level=2)
+    
+    def matches(self, app_tags):
+        """Check if app's tags match this filter
+        
+        Rules:
+        - Must have ALL include tags (AND logic)
+        - Must have NONE of the exclude tags
+        - Empty filter matches everything
+        """
+        if not app_tags:
+            app_tags = []
+        
+        # Normalize app tags to lowercase
+        app_tag_set = set(tag.lower().strip() for tag in app_tags if tag.strip())
+        
+        # If no filters, match everything
+        if not self.include_tags and not self.exclude_tags:
+            return True
+        
+        # Must have ALL include tags (AND logic)
+        if self.include_tags:
+            if not all(tag in app_tag_set for tag in self.include_tags):
+                return False
+        
+        # Must NOT have ANY exclude tags
+        if self.exclude_tags:
+            if any(tag in app_tag_set for tag in self.exclude_tags):
+                return False
+        
+        return True
+    
+    def __str__(self):
+        """String representation for display"""
+        parts = []
+        if self.include_tags:
+            parts.extend([f"+{tag}" for tag in self.include_tags])
+        if self.exclude_tags:
+            parts.extend([f"-{tag}" for tag in self.exclude_tags])
+        return " ".join(parts) if parts else "none"
+
 class PathManager:
     """Manages all filesystem paths for awesome-taskwarrior"""
     
@@ -240,6 +322,20 @@ class MetaFile:
     def get(self, key, default=None):
         """Get a value from the meta file"""
         return self.data.get(key, default)
+    
+    def get_tags(self):
+        """Parse tags= field into list of tags
+        
+        Format: tags=hook,python,stable,advanced
+        Returns: ['hook', 'python', 'stable', 'advanced']
+        """
+        tags_str = self.get('tags', '')
+        if not tags_str:
+            return []
+        
+        # Split by comma, strip whitespace, filter empty, lowercase
+        tags = [tag.strip().lower() for tag in tags_str.split(',')]
+        return [tag for tag in tags if tag]
     
     def get_files(self):
         """Parse files= field into list of (filename, type) tuples
@@ -736,8 +832,50 @@ class AppManager:
         debug(f"Installing updated version", "AppManager.update", level=2)
         return self.install(app_name)
     
-    def list_apps(self):
-        """List all applications (installed and available) with status"""
+    def list_all_tags(self):
+        """List all tags used across all applications"""
+        debug("Listing all tags", "AppManager.list_all_tags")
+        
+        # Collect all tags with app counts
+        tag_counts = {}
+        tag_apps = {}  # tag -> [app names]
+        
+        for app_name in self.registry.get_available_apps():
+            meta = self.registry.get_meta(app_name)
+            if meta:
+                tags = meta.get_tags()
+                for tag in tags:
+                    if tag not in tag_counts:
+                        tag_counts[tag] = 0
+                        tag_apps[tag] = []
+                    tag_counts[tag] += 1
+                    tag_apps[tag].append(app_name)
+        
+        if not tag_counts:
+            print("\nNo tags found in registry")
+            return
+        
+        print(f"\n{'='*70}")
+        print(f"AVAILABLE TAGS ({len(tag_counts)} tags across {len(self.registry.get_available_apps())} applications)")
+        print(f"{'='*70}\n")
+        
+        # Sort by count (descending), then alphabetically
+        sorted_tags = sorted(tag_counts.items(), key=lambda x: (-x[1], x[0]))
+        
+        for tag, count in sorted_tags:
+            print(f"  {tag:<25} ({count} app{'s' if count != 1 else ''})")
+        
+        print(f"\nUse: tw --list +tag to filter by tag")
+        print(f"     tw --list +tag1 +tag2 to require multiple tags")
+        print(f"     tw --list +tag -exclude to include/exclude tags")
+        print()
+    
+    def list_apps(self, tag_filter=None):
+        """List all applications (installed and available) with status
+        
+        Args:
+            tag_filter: TagFilter object or None
+        """
         debug("Listing applications", "AppManager.list_apps")
         
         # Get all available apps from registry
@@ -748,20 +886,41 @@ class AppManager:
             print("[tw] No applications found in registry")
             return
         
+        # Apply tag filter if provided
+        if tag_filter:
+            debug(f"Applying tag filter: {tag_filter}", "AppManager.list_apps", level=2)
+            filtered_apps = []
+            for app_name in available_apps:
+                meta = self.registry.get_meta(app_name)
+                if meta:
+                    app_tags = meta.get_tags()
+                    if tag_filter.matches(app_tags):
+                        filtered_apps.append(app_name)
+            available_apps = filtered_apps
+            debug(f"Filtered to {len(available_apps)} apps", "AppManager.list_apps", level=2)
+        
         # Get installed apps
         installed_apps = self.manifest.get_apps()
         
         debug(f"Found {len(available_apps)} available, {len(installed_apps)} installed", 
               "AppManager.list_apps", level=2)
         
-        # Count
-        installed_count = len(installed_apps)
+        # Count installed from filtered list
+        installed_count = sum(1 for app in available_apps if self.manifest.is_installed(app))
         total_count = len(available_apps)
         
         print(f"\n{'='*70}")
-        print(f"APPLICATIONS ({installed_count} installed / {total_count} available)")
+        if tag_filter and str(tag_filter) != "none":
+            print(f"APPLICATIONS ({installed_count} installed / {total_count} matching)")
+            print(f"Filters: {tag_filter}")
+        else:
+            print(f"APPLICATIONS ({installed_count} installed / {total_count} available)")
         print(f"tw.py version {VERSION} | Colors: {'enabled' if USE_COLORS else 'disabled'}")
         print(f"{'='*70}\n")
+        
+        if not available_apps:
+            print("No applications match the filter.")
+            return
         
         for app_name in sorted(available_apps):
             meta = self.registry.get_meta(app_name)
@@ -775,6 +934,7 @@ class AppManager:
             # Get metadata
             registry_version = meta.get('version', 'unknown')
             desc = meta.get('description', 'No description')
+            tags = meta.get_tags()
             
             # Format status
             if is_installed:
@@ -788,14 +948,19 @@ class AppManager:
                 status = gray("○")
                 version_display = gray(f"v{registry_version}")
             
-            # Print app line
+            # Print app line with tags
+            tag_display = f"[{', '.join(tags)}]" if tags else ""
             print(f"{status} {app_name:<40} {version_display}")
             
-            # Print description (indented, gray if not installed)
+            # Print description and tags (indented, gray if not installed)
             if is_installed:
                 print(f"    {desc}")
+                if tag_display:
+                    print(f"    {tag_display}")
             else:
                 print(f"    {gray(desc)}")
+                if tag_display:
+                    print(f"    {gray(tag_display)}")
             print()
         
         print()
@@ -976,6 +1141,8 @@ def main():
     parser.add_argument('--help', action='store_true', help='Show this help')
     parser.add_argument('--debug', nargs='?', const='1', metavar='LEVEL',
                        help='Enable debug output (1=basic, 2=detailed, 3=all+taskwarrior)')
+    parser.add_argument('--tags', nargs='*', metavar='TAG',
+                       help='Filter by tags (+include, -exclude, or list all if no args)')
     
     # Parse known args, let the rest pass through to task
     args, remaining = parser.parse_known_args()
@@ -1032,6 +1199,18 @@ def main():
     # Package management commands
     app_manager = AppManager(paths, registry)
     
+    # Handle --tags command
+    if args.tags is not None:
+        if len(args.tags) == 0:
+            # No arguments: list all tags
+            app_manager.list_all_tags()
+            return 0
+        else:
+            # Arguments provided: filter --list by tags
+            tag_filter = TagFilter(args.tags)
+            app_manager.list_apps(tag_filter)
+            return 0
+    
     if args.install:
         return 0 if app_manager.install(args.install, dry_run=args.dry_run) else 1
     
@@ -1042,7 +1221,14 @@ def main():
         return 0 if app_manager.update(args.update) else 1
     
     if args.list:
-        app_manager.list_apps()
+        # Check if we have tag arguments from remaining args
+        # (e.g., tw --list +hook +python)
+        tag_args = [arg for arg in remaining if arg.startswith('+') or arg.startswith('-')]
+        if tag_args:
+            tag_filter = TagFilter(tag_args)
+            app_manager.list_apps(tag_filter)
+        else:
+            app_manager.list_apps()
         return 0
     
     if args.info:

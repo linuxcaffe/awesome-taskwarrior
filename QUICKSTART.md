@@ -42,6 +42,11 @@ tw --update tw
 
 # Check versions
 tw --version
+
+# Debug mode (troubleshooting)
+tw --debug --list                    # Basic debug
+tw --debug=2 --install tw-recurrence # Detailed debug
+tw --debug=3 task next               # Full debug + taskwarrior hooks
 ```
 
 ## Your First Extension: tw-recurrence
@@ -140,6 +145,18 @@ Check if it's available:
 tw --list
 ```
 
+Try with debug to see what's happening:
+```bash
+tw --debug=2 --install app-name
+```
+
+Check debug logs:
+```bash
+ls -la ~/.task/logs/debug/
+cat ~/.task/logs/debug/tw_debug_*.log
+cat ~/.task/logs/debug/app-name_debug_*.log
+```
+
 Try dry-run to see what would happen:
 ```bash
 tw --dry-run --install app-name
@@ -149,6 +166,38 @@ tw --dry-run --install app-name
 ```bash
 rm -rf ~/.task/scripts/tw ~/.task/config/.tw_manifest
 curl -fsSL https://raw.githubusercontent.com/.../install.sh | bash
+```
+
+## Debug Mode
+
+When things aren't working as expected, use debug mode:
+
+```bash
+# Level 1: See basic operations
+tw --debug --list
+
+# Level 2: See detailed operations and file downloads
+tw --debug=2 --install tw-recurrence
+
+# Level 3: See everything including taskwarrior hook debugging
+tw --debug=3 task add "Test task"
+```
+
+**Debug output goes to:**
+- Screen (stderr, color-coded blue)
+- Log file: `~/.task/logs/debug/tw_debug_TIMESTAMP.log`
+- Extension logs: `~/.task/logs/debug/APPNAME_debug_TIMESTAMP.log`
+
+**Check logs:**
+```bash
+# List debug sessions
+ls -la ~/.task/logs/debug/
+
+# View latest tw.py log
+tail -f ~/.task/logs/debug/tw_debug_*.log
+
+# View latest extension log
+tail -f ~/.task/logs/debug/*_debug_*.log
 ```
 
 ## Next Steps

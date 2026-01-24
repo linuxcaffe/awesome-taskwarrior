@@ -65,6 +65,32 @@ tw --verify tw-recurrence
 tw --version
 ```
 
+### Debug Mode
+```bash
+tw --debug <command>           # Basic debug (level 1)
+tw --debug=2 <command>         # Detailed debug
+tw --debug=3 <command>         # Full debug + taskwarrior hooks
+
+# Examples:
+tw --debug --list
+tw --debug=2 --install tw-recurrence
+tw --debug=3 task next
+
+# Check logs:
+ls ~/.task/logs/debug/
+cat ~/.task/logs/debug/tw_debug_*.log
+```
+
+**Debug levels:**
+- **1**: Basic operations (default)
+- **2**: Detailed + file operations
+- **3**: Everything + taskwarrior debug.hooks
+
+**Debug output:**
+- Color-coded to stderr
+- Logged to `~/.task/logs/debug/`
+- Separate logs for tw.py and each extension
+
 ## How It Works
 
 awesome-taskwarrior is a **registry** that points to extension repositories:

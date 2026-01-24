@@ -158,6 +158,36 @@ prompt_for_info() {
     
     read -p "Requires Python version (leave blank if N/A): " REQ_PY
     
+    # Tags
+    echo ""
+    msg "Tags help users find your extension"
+    echo "Examples: hook, script, priority, recurrence, gtd, python, bash, stable, beta"
+    echo "Suggested tags for your extension:"
+    
+    # Auto-suggest tags based on detected files
+    SUGGESTED_TAGS=()
+    [ ${#HOOKS[@]} -gt 0 ] && SUGGESTED_TAGS+=("hook")
+    [ ${#SCRIPTS[@]} -gt 0 ] && SUGGESTED_TAGS+=("script")
+    
+    # Detect language
+    if ls *.py 2>/dev/null | grep -q .; then
+        SUGGESTED_TAGS+=("python")
+    fi
+    if ls *.sh 2>/dev/null | grep -q .; then
+        SUGGESTED_TAGS+=("bash")
+    fi
+    
+    # Show suggestions
+    if [ ${#SUGGESTED_TAGS[@]} -gt 0 ]; then
+        echo "  - ${SUGGESTED_TAGS[*]}"
+    fi
+    
+    echo ""
+    read -p "Tags (comma-separated): " TAGS_INPUT
+    
+    # Convert to comma-separated, lowercase, no spaces
+    TAGS=$(echo "$TAGS_INPUT" | tr '[:upper:]' '[:lower:]' | tr -s ',' | tr -d ' ')
+    
     echo ""
 }
 
@@ -209,6 +239,7 @@ description=${DESCRIPTION}
 repo=${REPO_URL}
 base_url=${BASE_URL}
 files=${FILES_LIST}
+tags=${TAGS}
 
 # Checksums (SHA256)
 checksums=${CHECKSUMS_LIST}

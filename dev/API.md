@@ -46,6 +46,49 @@ tw --version               # Show versions
 tw --help                  # Show help
 ```
 
+### Debug Mode
+
+```bash
+tw --debug <command>           # Enable debug (default level 1)
+tw --debug=1 <command>         # Level 1: Basic operations
+tw --debug=2 <command>         # Level 2: Detailed + subprocess calls
+tw --debug=3 <command>         # Level 3: Everything + taskwarrior debug.hooks
+
+# Named modes
+tw --debug=tw <command>        # Same as level 1
+tw --debug=hooks <command>     # Same as level 2
+tw --debug=task <command>      # Same as level 3
+tw --debug=all <command>       # Same as level 3
+tw --debug=verbose <command>   # Same as level 3
+```
+
+**Debug Levels:**
+- **Level 1**: Basic tw.py operations, success/failure
+- **Level 2**: Detailed operations, subprocess calls, file paths
+- **Level 3**: Everything from level 2 + taskwarrior's `rc.debug.hooks=2`
+
+**Debug Output:**
+- Goes to **stderr** (color-coded blue)
+- Logs to `~/.task/logs/debug/tw_debug_TIMESTAMP.log`
+- Keeps last 10 debug sessions
+- Sets environment variables for installers
+
+**Example:**
+```bash
+tw --debug=2 --install tw-recurrence
+
+# Output:
+[debug] 16:45:23.123 | main              | Debug mode enabled (level 2)
+[debug] 16:45:23.130 | AppManager.install| Installing tw-recurrence
+[debug] 16:45:23.200 | tw-recurrence     | Debug enabled (level 2)
+[debug] 16:45:23.211 | tw-recurrence     | Downloading hook: on-add_recurrence.py
+[tw] ✓ Successfully installed tw-recurrence
+
+# Check logs:
+cat ~/.task/logs/debug/tw_debug_20260123_164523.log
+cat ~/.task/logs/debug/tw-recurrence_debug_20260123_164523.log
+```
+
 ### Pass-through to Taskwarrior
 
 ```bash
@@ -89,6 +132,39 @@ LOGS_DIR=~/.task/logs            # Debug/test logs
 TASKRC=~/.taskrc                 # Taskwarrior config
 TW_COMMON=path/to/tw-common.sh   # Helper library (dev mode only)
 TW_DRY_RUN=1                     # Set if --dry-run
+```
+
+### Debug Environment Variables
+
+When `tw --debug` is used, these are also set:
+
+```bash
+TW_DEBUG=<level>                 # Debug level (1-3)
+TW_DEBUG_LEVEL=<level>           # Same as TW_DEBUG
+DEBUG_HOOKS=1                    # Set to 1 if level >= 2
+TW_DEBUG_LOG=/path/to/logs       # Directory for debug logs
+```
+
+**Installers should check these and enable their own debug output:**
+
+```bash
+if [[ "${TW_DEBUG:-0}" -gt 0 ]] || [[ "${DEBUG_HOOKS:-0}" == "1" ]]; then
+    DEBUG_ENABLED=1
+    DEBUG_LEVEL="${TW_DEBUG_LEVEL:-${TW_DEBUG:-1}}"
+    DEBUG_LOG="${TW_DEBUG_LOG:-$HOME/.task/logs/debug}/myapp_debug_$(date +%Y%m%d_%H%M%S).log"
+    
+    debug_msg() {
+        if [[ "$DEBUG_LEVEL" -ge "${2:-1}" ]]; then
+            echo "[debug] $(date +%H:%M:%S) | myapp | $1" | tee -a "$DEBUG_LOG" >&2
+        fi
+    }
+else
+    debug_msg() { :; }  # No-op
+fi
+
+# Use in installer:
+debug_msg "Starting installation" 1
+debug_msg "Downloading from $BASE_URL" 2
 ```
 
 ## Manifest Format
@@ -150,31 +226,66 @@ else
     tw_error() { echo "[tw] ✗ $*" >&2; }
 fi
 
+# Debug support - automatically added by make-awesome-install.sh
+if [[ "${TW_DEBUG:-0}" -gt 0 ]] || [[ "${DEBUG_HOOKS:-0}" == "1" ]]; then
+    DEBUG_ENABLED=1
+    DEBUG_LEVEL="${TW_DEBUG_LEVEL:-${TW_DEBUG:-1}}"
+    DEBUG_LOG_DIR="${TW_DEBUG_LOG:-$HOME/.task/logs/debug}"
+    DEBUG_LOG="${DEBUG_LOG_DIR}/${APPNAME}_debug_$(date +%Y%m%d_%H%M%S).log"
+    
+    mkdir -p "$DEBUG_LOG_DIR"
+    
+    debug_msg() {
+        local level="${2:-1}"
+        if [[ "$DEBUG_LEVEL" -ge "$level" ]]; then
+            local timestamp=$(date +"%H:%M:%S.%N" | cut -c1-12)
+            local msg="[debug] $timestamp | $APPNAME | $1"
+            echo -e "\033[34m$msg\033[0m" >&2
+            echo "$msg" >> "$DEBUG_LOG"
+        fi
+    }
+    
+    debug_msg "Debug enabled (level $DEBUG_LEVEL)" 1
+    debug_msg "Log file: $DEBUG_LOG" 2
+else
+    debug_msg() { :; }  # No-op when debug disabled
+fi
+
 install() {
     tw_msg "Installing $APPNAME v$VERSION..."
+    debug_msg "Starting installation" 1
+    debug_msg "BASE_URL: $BASE_URL" 2
     
     # Create directories
     mkdir -p "$HOOKS_DIR" "$CONFIG_DIR" "$DOCS_DIR"
     
     # Download files
+    debug_msg "Downloading hook.py" 2
     curl -fsSL "$BASE_URL/hook.py" -o "$HOOKS_DIR/hook.py" || {
         tw_error "Failed to download hook"
+        debug_msg "Download failed: hook.py" 1
         return 1
     }
     chmod +x "$HOOKS_DIR/hook.py"
+    debug_msg "Installed: $HOOKS_DIR/hook.py" 2
     
+    debug_msg "Downloading config.rc" 2
     curl -fsSL "$BASE_URL/config.rc" -o "$CONFIG_DIR/config.rc" || {
         tw_error "Failed to download config"
+        debug_msg "Download failed: config.rc" 1
         return 1
     }
+    debug_msg "Installed: $CONFIG_DIR/config.rc" 2
     
     # Add config to .taskrc
     local config_line="include $CONFIG_DIR/config.rc"
     if ! grep -qF "$config_line" "$TASKRC" 2>/dev/null; then
         echo "$config_line" >> "$TASKRC"
+        debug_msg "Added config to .taskrc" 2
     fi
     
     # Track in manifest
+    debug_msg "Writing to manifest" 2
     MANIFEST_FILE="${HOME}/.task/config/.tw_manifest"
     TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     mkdir -p "$(dirname "$MANIFEST_FILE")"
@@ -182,16 +293,20 @@ install() {
     echo "$APPNAME|$VERSION|$HOOKS_DIR/hook.py||$TIMESTAMP" >> "$MANIFEST_FILE"
     echo "$APPNAME|$VERSION|$CONFIG_DIR/config.rc||$TIMESTAMP" >> "$MANIFEST_FILE"
     
+    debug_msg "Installation complete" 1
     tw_success "Installed $APPNAME v$VERSION"
     return 0
 }
 
 remove() {
     tw_msg "Removing $APPNAME..."
+    debug_msg "Starting removal" 1
     
     # Remove files
     rm -f "$HOOKS_DIR/hook.py"
+    debug_msg "Removed: $HOOKS_DIR/hook.py" 2
     rm -f "$CONFIG_DIR/config.rc"
+    debug_msg "Removed: $CONFIG_DIR/config.rc" 2
     
     # Remove config from .taskrc
     local config_line="include $CONFIG_DIR/config.rc"
@@ -199,12 +314,14 @@ remove() {
     mv "$TASKRC.tmp" "$TASKRC"
     
     # Remove from manifest
+    debug_msg "Removing from manifest" 2
     MANIFEST_FILE="${HOME}/.task/config/.tw_manifest"
     if [[ -f "$MANIFEST_FILE" ]]; then
         grep -v "^$APPNAME|" "$MANIFEST_FILE" > "$MANIFEST_FILE.tmp" 2>/dev/null || true
         mv "$MANIFEST_FILE.tmp" "$MANIFEST_FILE"
     fi
     
+    debug_msg "Removal complete" 1
     tw_success "Removed $APPNAME"
     return 0
 }

@@ -9,6 +9,7 @@ description=Advanced task recurrence with chained and periodic patterns, instanc
 repo=https://github.com/linuxcaffe/tw-recurrence_overhaul-hook
 base_url=https://raw.githubusercontent.com/linuxcaffe/tw-recurrence_overhaul-hook/main/
 files=on-add_recurrence.py:hook,on-exit_recurrence.py:hook,recurrence.rc:config,rr:script,README.md:doc
+tags=hook,recurrence,python,advanced,stable
 
 # Checksums (SHA256)
 # Generate with: sha256sum on-add_recurrence.py on-exit_recurrence.py recurrence.rc rr README.md
