@@ -262,12 +262,43 @@ else
     tw_warn() { echo "[tw] ⚠ $*" >&2; }
 fi
 
+# Debug support - check for TW_DEBUG environment variable
+if [[ "${TW_DEBUG:-0}" -gt 0 ]] || [[ "${DEBUG_HOOKS:-0}" == "1" ]]; then
+    DEBUG_ENABLED=1
+    DEBUG_LEVEL="${TW_DEBUG_LEVEL:-${TW_DEBUG:-1}}"
+    DEBUG_LOG_DIR="${TW_DEBUG_LOG:-$HOME/.task/logs/debug}"
+    DEBUG_LOG="${DEBUG_LOG_DIR}/[APP_NAME]_debug_$(date +%Y%m%d_%H%M%S).log"
+    
+    mkdir -p "$DEBUG_LOG_DIR"
+    
+    # Debug logging function
+    debug_msg() {
+        local level="${2:-1}"
+        if [[ "$DEBUG_LEVEL" -ge "$level" ]]; then
+            local timestamp=$(date +"%H:%M:%S.%N" | cut -c1-12)
+            local msg="[debug] $timestamp | [APP_NAME] | $1"
+            echo -e "\033[34m$msg\033[0m" >&2
+            echo "$msg" >> "$DEBUG_LOG"
+        fi
+    }
+    
+    debug_msg "Debug enabled (level $DEBUG_LEVEL)" 1
+    debug_msg "Log file: $DEBUG_LOG" 2
+else
+    DEBUG_ENABLED=0
+    debug_msg() { :; }  # No-op when debug disabled
+fi
+
 # ============================================================================
 # Installation Function
 # ============================================================================
 
 install() {
     tw_msg "Installing [APP_NAME] v$VERSION..."
+    debug_msg "Starting installation" 1
+    debug_msg "BASE_URL: $BASE_URL" 2
+    debug_msg "HOOKS_DIR: $HOOKS_DIR" 2
+    debug_msg "CONFIG_DIR: $CONFIG_DIR" 2
     
     # Create directories
     mkdir -p "$HOOKS_DIR" "$SCRIPTS_DIR" "$CONFIG_DIR" "$DOCS_DIR"
@@ -277,17 +308,21 @@ EOF
     # Add download commands for each file type
     if [ ${#HOOKS[@]} -gt 0 ] || [ ${#SCRIPTS[@]} -gt 0 ]; then
         echo '    tw_msg "Downloading files..."' >> "${APP_NAME}.install"
+        echo '    debug_msg "Downloading hooks and scripts" 2' >> "${APP_NAME}.install"
     fi
     
     # Add hooks downloads
     for item in "${HOOKS[@]}"; do
         file=$(echo "$item" | cut -d':' -f1)
         cat >> "${APP_NAME}.install" <<EOF
+    debug_msg "Downloading hook: $file" 2
     curl -fsSL "\$BASE_URL/$file" -o "\$HOOKS_DIR/$file" || {
         tw_error "Failed to download $file"
+        debug_msg "Download failed: $file" 1
         return 1
     }
     chmod +x "\$HOOKS_DIR/$file"
+    debug_msg "Installed hook: \$HOOKS_DIR/$file" 2
 EOF
     done
     
@@ -295,11 +330,14 @@ EOF
     for item in "${SCRIPTS[@]}"; do
         file=$(echo "$item" | cut -d':' -f1)
         cat >> "${APP_NAME}.install" <<EOF
+    debug_msg "Downloading script: $file" 2
     curl -fsSL "\$BASE_URL/$file" -o "\$SCRIPTS_DIR/$file" || {
         tw_error "Failed to download $file"
+        debug_msg "Download failed: $file" 1
         return 1
     }
     chmod +x "\$SCRIPTS_DIR/$file"
+    debug_msg "Installed script: \$SCRIPTS_DIR/$file" 2
 EOF
     done
     
@@ -307,10 +345,13 @@ EOF
     for item in "${CONFIGS[@]}"; do
         file=$(echo "$item" | cut -d':' -f1)
         cat >> "${APP_NAME}.install" <<EOF
+    debug_msg "Downloading config: $file" 2
     curl -fsSL "\$BASE_URL/$file" -o "\$CONFIG_DIR/$file" || {
         tw_error "Failed to download $file"
+        debug_msg "Download failed: $file" 1
         return 1
     }
+    debug_msg "Installed config: \$CONFIG_DIR/$file" 2
 EOF
     done
     
@@ -348,6 +389,7 @@ EOF
     cat >> "${APP_NAME}.install" <<'EOF'
     
     # Track in manifest
+    debug_msg "Writing to manifest" 2
     MANIFEST_FILE="${HOME}/.task/config/.tw_manifest"
     TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     mkdir -p "$(dirname "$MANIFEST_FILE")"
@@ -367,11 +409,13 @@ EOF
         esac
         
         echo "    echo \"\$APPNAME|\$VERSION|$dir/$file||\$TIMESTAMP\" >> \"\$MANIFEST_FILE\"" >> "${APP_NAME}.install"
+        echo "    debug_msg \"Manifest entry: $dir/$file\" 3" >> "${APP_NAME}.install"
     done
     
     # Finish install function
     cat >> "${APP_NAME}.install" <<'EOF'
     
+    debug_msg "Installation complete" 1
     tw_success "Installed [APP_NAME] v$VERSION"
     echo ""
     tw_msg "Documentation: $DOCS_DIR/[APP_NAME]_README.md"
@@ -386,8 +430,10 @@ EOF
 
 remove() {
     tw_msg "Removing [APP_NAME]..."
+    debug_msg "Starting removal" 1
     
     tw_msg "Removing files..."
+    debug_msg "Removing installed files" 2
 EOF
 
     # Add file removal commands
@@ -403,6 +449,7 @@ EOF
         esac
         
         echo "    rm -f \"$dir/$file\"" >> "${APP_NAME}.install"
+        echo "    debug_msg \"Removed: $dir/$file\" 2" >> "${APP_NAME}.install"
     done
     
     # Remove config from .taskrc if needed
@@ -425,12 +472,15 @@ EOF
     cat >> "${APP_NAME}.install" <<'EOF'
     
     # Remove from manifest
+    debug_msg "Removing from manifest" 2
     MANIFEST_FILE="${HOME}/.task/config/.tw_manifest"
     if [[ -f "$MANIFEST_FILE" ]]; then
         grep -v "^$APPNAME|" "$MANIFEST_FILE" > "$MANIFEST_FILE.tmp" 2>/dev/null || true
         mv "$MANIFEST_FILE.tmp" "$MANIFEST_FILE"
+        debug_msg "Manifest updated" 2
     fi
     
+    debug_msg "Removal complete" 1
     tw_success "Removed [APP_NAME]"
     echo ""
     

@@ -28,6 +28,33 @@ else
     tw_warn() { echo "[tw] âš  $*" >&2; }
 fi
 
+# Debug support - check for TW_DEBUG environment variable
+if [[ "${TW_DEBUG:-0}" -gt 0 ]] || [[ "${DEBUG_HOOKS:-0}" == "1" ]]; then
+    DEBUG_ENABLED=1
+    DEBUG_LEVEL="${TW_DEBUG_LEVEL:-${TW_DEBUG:-1}}"
+    DEBUG_LOG_DIR="${TW_DEBUG_LOG:-$HOME/.task/logs/debug}"
+    DEBUG_LOG="${DEBUG_LOG_DIR}/tw-recurrence_debug_$(date +%Y%m%d_%H%M%S).log"
+    
+    mkdir -p "$DEBUG_LOG_DIR"
+    
+    # Debug logging function
+    debug_msg() {
+        local level="${2:-1}"
+        if [[ "$DEBUG_LEVEL" -ge "$level" ]]; then
+            local timestamp=$(date +"%H:%M:%S.%N" | cut -c1-12)
+            local msg="[debug] $timestamp | tw-recurrence | $1"
+            echo -e "\033[34m$msg\033[0m" >&2
+            echo "$msg" >> "$DEBUG_LOG"
+        fi
+    }
+    
+    debug_msg "Debug enabled (level $DEBUG_LEVEL)" 1
+    debug_msg "Log file: $DEBUG_LOG" 2
+else
+    DEBUG_ENABLED=0
+    debug_msg() { :; }  # No-op when debug disabled
+fi
+
 # ============================================================================
 # Installation Function
 # ============================================================================

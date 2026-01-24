@@ -30,6 +30,7 @@ import json
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 import tempfile
+import glob
 
 VERSION = "2.0.0"
 
@@ -54,16 +55,116 @@ def gray(text):
     """Gray text"""
     return colorize(text, "90")
 
+def blue(text):
+    """Blue text"""
+    return colorize(text, "34")
+
 # GitHub configuration
 GITHUB_REPO = "linuxcaffe/awesome-taskwarrior"
 GITHUB_BRANCH = "main"
 GITHUB_API_BASE = f"https://api.github.com/repos/{GITHUB_REPO}"
 GITHUB_RAW_BASE = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}"
 
+class DebugLogger:
+    """Manages debug output and logging"""
+    
+    def __init__(self, level=0, log_dir=None):
+        self.level = level
+        self.session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Set up log directory
+        if log_dir:
+            self.log_dir = Path(log_dir)
+        else:
+            self.log_dir = Path.home() / ".task" / "logs" / "debug"
+        
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create session log file
+        if self.level > 0:
+            self.log_file = self.log_dir / f"tw_debug_{self.session_id}.log"
+            self._init_log()
+            self._cleanup_old_logs()
+        else:
+            self.log_file = None
+    
+    def _init_log(self):
+        """Initialize log file with header"""
+        with open(self.log_file, 'w') as f:
+            f.write(f"{'='*70}\n")
+            f.write(f"tw.py Debug Session - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Debug Level: {self.level}\n")
+            f.write(f"Session ID: {self.session_id}\n")
+            f.write(f"{'='*70}\n\n")
+    
+    def _cleanup_old_logs(self, keep_last=10):
+        """Keep only the last N debug session logs"""
+        if not self.log_dir.exists():
+            return
+        
+        log_files = sorted(self.log_dir.glob("tw_debug_*.log"))
+        
+        # Remove older logs, keep last N
+        if len(log_files) > keep_last:
+            for old_log in log_files[:-keep_last]:
+                try:
+                    old_log.unlink()
+                except:
+                    pass
+    
+    def debug(self, message, context='', level=1):
+        """Log debug message if current level >= required level"""
+        if self.level < level:
+            return
+        
+        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        
+        if context:
+            formatted = f"[debug] {timestamp} | {context:30s} | {message}"
+        else:
+            formatted = f"[debug] {timestamp} | {message}"
+        
+        # Print to stderr (colored)
+        print(blue(formatted), file=sys.stderr)
+        
+        # Write to log file
+        if self.log_file:
+            with open(self.log_file, 'a') as f:
+                f.write(formatted + '\n')
+    
+    def set_environment(self):
+        """Set debug environment variables for subprocesses"""
+        os.environ['TW_DEBUG'] = str(self.level)
+        os.environ['TW_DEBUG_LEVEL'] = str(self.level)
+        os.environ['DEBUG_HOOKS'] = '1' if self.level >= 2 else '0'
+        
+        if self.log_file:
+            os.environ['TW_DEBUG_LOG'] = str(self.log_file.parent)
+        
+        self.debug(f"Environment variables set", "DebugLogger.set_environment")
+        self.debug(f"  TW_DEBUG={self.level}", "", level=2)
+        self.debug(f"  DEBUG_HOOKS={os.environ['DEBUG_HOOKS']}", "", level=2)
+    
+    def log_subprocess(self, cmd, context=''):
+        """Log subprocess execution"""
+        if self.level >= 2:
+            cmd_str = ' '.join(cmd) if isinstance(cmd, list) else cmd
+            self.debug(f"Executing: {cmd_str}", context, level=2)
+
+# Global debug logger (initialized in main)
+debug_logger = None
+
+def debug(message, context='', level=1):
+    """Convenience function for debug logging"""
+    if debug_logger:
+        debug_logger.debug(message, context, level)
+
 class PathManager:
     """Manages all filesystem paths for awesome-taskwarrior"""
     
     def __init__(self):
+        debug("Initializing PathManager", "PathManager.__init__")
+        
         self.home = Path.home()
         self.task_dir = self.home / ".task"
         self.hooks_dir = self.task_dir / "hooks"
@@ -74,6 +175,9 @@ class PathManager:
         self.taskrc = self.home / ".taskrc"
         self.manifest_file = self.config_dir / ".tw_manifest"  # Moved to config dir
         
+        debug(f"task_dir: {self.task_dir}", "PathManager", level=2)
+        debug(f"manifest: {self.manifest_file}", "PathManager", level=2)
+        
         # Check if we're in a local repo (dev mode)
         self.tw_root = Path(__file__).parent.absolute()
         self.local_registry = self.tw_root / "registry.d"
@@ -82,6 +186,8 @@ class PathManager:
         
         # Determine mode: local (dev) or remote (production)
         self.is_dev_mode = self.local_registry.exists() and self.local_installers.exists()
+        
+        debug(f"is_dev_mode: {self.is_dev_mode}", "PathManager", level=2)
         
         # Only announce dev mode (production is normal/expected)
         if self.is_dev_mode:
@@ -198,8 +304,12 @@ class RegistryManager:
     
     def _get_remote_apps(self):
         """Get apps from GitHub registry.d/"""
+        debug("Fetching apps from GitHub", "RegistryManager._get_remote_apps")
+        
         try:
             url = f"{GITHUB_API_BASE}/contents/registry.d"
+            debug(f"URL: {url}", "RegistryManager", level=2)
+            
             req = Request(url)
             req.add_header('Accept', 'application/vnd.github.v3+json')
             
@@ -212,9 +322,11 @@ class RegistryManager:
                     app_name = file_info['name'].replace('.meta', '')
                     apps.append(app_name)
             
+            debug(f"Found {len(apps)} apps", "RegistryManager", level=2)
             return sorted(apps)
         
         except (URLError, HTTPError) as e:
+            debug(f"Failed to fetch: {e}", "RegistryManager._get_remote_apps")
             print(f"[tw] ✗ Failed to fetch registry from GitHub: {e}")
             return []
     
@@ -431,6 +543,8 @@ class AppManager:
     
     def install(self, app_name, dry_run=False):
         """Install an application using its installer script"""
+        debug(f"Installing {app_name} (dry_run={dry_run})", "AppManager.install")
+        
         # Special case: installing tw.py itself
         if app_name == "tw":
             return self._install_tw_itself(dry_run)
@@ -438,16 +552,21 @@ class AppManager:
         # Check if already installed
         if self.manifest.is_installed(app_name):
             installed_version = self.manifest.get_version(app_name)
+            debug(f"{app_name} already installed (v{installed_version})", "AppManager.install", level=2)
             print(f"[tw] ℹ {app_name} v{installed_version} is already installed")
             print(f"[tw] Use --update {app_name} to reinstall/upgrade")
             return True
         
         # Get installer
+        debug(f"Getting installer for {app_name}", "AppManager.install", level=2)
         installer_path = self.registry.get_installer_path(app_name)
         
         if not installer_path:
+            debug(f"Installer not found for {app_name}", "AppManager.install")
             print(f"[tw] ✗ Installer not found: {app_name}")
             return False
+        
+        debug(f"Installer path: {installer_path}", "AppManager.install", level=2)
         
         # Set environment variables for the installer
         env = os.environ.copy()
@@ -462,6 +581,8 @@ class AppManager:
             'TW_COMMON': str(self.paths.lib_dir / 'tw-common.sh') if self.paths.is_dev_mode else ''
         })
         
+        debug(f"Environment configured for installer", "AppManager.install", level=3)
+        
         if dry_run:
             env['TW_DRY_RUN'] = '1'
             print(f"[tw] [DRY RUN] Would execute: {installer_path} install")
@@ -469,29 +590,39 @@ class AppManager:
         
         try:
             print(f"[tw] Installing {app_name}...")
+            
+            if debug_logger and debug_logger.level >= 2:
+                debug_logger.log_subprocess([installer_path, 'install'], "AppManager.install")
+            
             result = subprocess.run(
                 [installer_path, 'install'],
                 env=env,
                 check=False
             )
             
+            debug(f"Installer exit code: {result.returncode}", "AppManager.install", level=2)
+            
             # Clean up temp file if in production mode
             if not self.paths.is_dev_mode:
                 try:
                     os.unlink(installer_path)
+                    debug(f"Cleaned up temp installer", "AppManager.install", level=3)
                 except:
                     pass
             
             if result.returncode == 0:
                 # Reload manifest
                 self.manifest = Manifest(self.paths.manifest_file)
+                debug(f"Installation successful, manifest reloaded", "AppManager.install")
                 print(f"[tw] ✓ Successfully installed {app_name}")
                 return True
             else:
+                debug(f"Installation failed", "AppManager.install")
                 print(f"[tw] ✗ Installation failed (exit code {result.returncode})")
                 return False
         
         except Exception as e:
+            debug(f"Installation error: {e}", "AppManager.install")
             print(f"[tw] ✗ Installation error: {e}")
             if not self.paths.is_dev_mode:
                 try:
@@ -502,48 +633,65 @@ class AppManager:
     
     def remove(self, app_name):
         """Remove an application"""
+        debug(f"Removing {app_name}", "AppManager.remove")
+        
         # Special case: removing tw.py itself
         if app_name == "tw":
+            debug("Attempting to remove tw.py itself", "AppManager.remove", level=2)
             print(f"[tw] ⚠ Warning: This will remove tw.py itself!")
             print(f"[tw] You'll need to reinstall using the bootstrap script")
             print(f"[tw] Continue? (yes/no): ", end='')
             response = input().strip().lower()
             if response != "yes":
+                debug("Removal cancelled by user", "AppManager.remove")
                 print(f"[tw] Cancelled")
                 return False
         
         if not self.manifest.is_installed(app_name):
+            debug(f"{app_name} not installed", "AppManager.remove", level=2)
             print(f"[tw] ✗ Not installed: {app_name}")
             return False
         
         # Get installer
+        debug(f"Getting installer for {app_name}", "AppManager.remove", level=2)
         installer_path = self.registry.get_installer_path(app_name)
         
         if installer_path:
+            debug(f"Using installer: {installer_path}", "AppManager.remove", level=2)
+            
             # Use installer's remove function
             env = os.environ.copy()
             env['TW_COMMON'] = str(self.paths.lib_dir / 'tw-common.sh') if self.paths.is_dev_mode else ''
             
             try:
                 print(f"[tw] Removing {app_name}...")
+                
+                if debug_logger and debug_logger.level >= 2:
+                    debug_logger.log_subprocess([installer_path, 'remove'], "AppManager.remove")
+                
                 result = subprocess.run(
                     [installer_path, 'remove'],
                     env=env,
                     check=False
                 )
                 
+                debug(f"Installer exit code: {result.returncode}", "AppManager.remove", level=2)
+                
                 # Clean up temp file if in production mode
                 if not self.paths.is_dev_mode:
                     try:
                         os.unlink(installer_path)
+                        debug("Cleaned up temp installer", "AppManager.remove", level=3)
                     except:
                         pass
                 
                 if result.returncode == 0:
                     self.manifest = Manifest(self.paths.manifest_file)
+                    debug("Removal successful, manifest reloaded", "AppManager.remove")
                     print(f"[tw] ✓ Successfully removed {app_name}")
                     return True
                 else:
+                    debug("Removal failed", "AppManager.remove")
                     print(f"[tw] ✗ Removal failed")
                     return False
             
@@ -571,28 +719,40 @@ class AppManager:
     
     def update(self, app_name):
         """Update an application (reinstall)"""
+        debug(f"Updating {app_name}", "AppManager.update")
+        
         # Special case: updating tw.py itself
         if app_name == "tw":
             print(f"[tw] Updating tw.py...")
+            debug("Self-updating tw.py", "AppManager.update", level=2)
             return self._install_tw_itself(dry_run=False)
         
         print(f"[tw] Updating {app_name}...")
         if self.manifest.is_installed(app_name):
+            debug(f"Removing existing installation", "AppManager.update", level=2)
             if not self.remove(app_name):
+                debug("Update failed: removal failed", "AppManager.update")
                 return False
+        debug(f"Installing updated version", "AppManager.update", level=2)
         return self.install(app_name)
     
     def list_apps(self):
         """List all applications (installed and available) with status"""
+        debug("Listing applications", "AppManager.list_apps")
+        
         # Get all available apps from registry
         available_apps = self.registry.get_available_apps()
         
         if not available_apps:
+            debug("No apps found in registry", "AppManager.list_apps")
             print("[tw] No applications found in registry")
             return
         
         # Get installed apps
         installed_apps = self.manifest.get_apps()
+        
+        debug(f"Found {len(available_apps)} available, {len(installed_apps)} installed", 
+              "AppManager.list_apps", level=2)
         
         # Count
         installed_count = len(installed_apps)
@@ -778,7 +938,17 @@ def pass_through_to_task(args):
             return 1
         
         # Execute task with arguments
+        # If debug level 3, enable taskwarrior's debug.hooks
+        if debug_logger and debug_logger.level >= 3:
+            debug("Enabling taskwarrior debug.hooks=2", "task_passthrough")
+            args = ['rc.debug.hooks=2'] + args
+        
+        if debug_logger and debug_logger.level >= 2:
+            debug_logger.log_subprocess([task_bin] + args, "task_passthrough")
+        
         result = subprocess.run([task_bin] + args, check=False)
+        
+        debug(f"task exit code: {result.returncode}", "task_passthrough", level=2)
         return result.returncode
         
     except Exception as e:
@@ -804,9 +974,32 @@ def main():
     # Utility commands
     parser.add_argument('--version', action='store_true', help='Show tw.py version')
     parser.add_argument('--help', action='store_true', help='Show this help')
+    parser.add_argument('--debug', nargs='?', const='1', metavar='LEVEL',
+                       help='Enable debug output (1=basic, 2=detailed, 3=all+taskwarrior)')
     
     # Parse known args, let the rest pass through to task
     args, remaining = parser.parse_known_args()
+    
+    # Initialize debug logger if requested
+    global debug_logger
+    if args.debug:
+        try:
+            debug_level = int(args.debug)
+        except ValueError:
+            # Allow named modes: tw, hooks, task, all, verbose
+            mode_map = {
+                'tw': 1,
+                'hooks': 2,
+                'task': 3,
+                'all': 3,
+                'verbose': 3
+            }
+            debug_level = mode_map.get(args.debug.lower(), 1)
+        
+        debug_logger = DebugLogger(level=debug_level)
+        debug_logger.set_environment()
+        debug(f"Debug mode enabled (level {debug_level})", "main")
+        debug(f"Log file: {debug_logger.log_file}", "main", level=2)
     
     # Handle tw.py commands
     if args.version:
