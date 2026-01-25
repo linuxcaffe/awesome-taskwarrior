@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 tw.py - awesome-taskwarrior package manager and wrapper
-Version: 2.0.0
+Version: 2.1.2
 
 A unified wrapper for Taskwarrior that provides:
 - Transparent pass-through to task command
@@ -9,6 +9,7 @@ A unified wrapper for Taskwarrior that provides:
 - Curl-based installation (no git clones)
 - Per-file manifest tracking
 - Checksum verification
+- Dev mode indicator for local development
 
 Architecture Changes in v2.0.0:
 - Removed git-based operations
@@ -16,6 +17,11 @@ Architecture Changes in v2.0.0:
 - Per-file manifest tracking (app|version|file|checksum|date)
 - Added docs_dir for README files
 - Self-contained installers that work with or without tw.py
+
+Updates in v2.1.2:
+- Dev mode indicator shows when using local registry
+- All unicode symbols replaced with ASCII equivalents
+- Added PathManager.registry_dir property
 """
 
 import sys
@@ -33,7 +39,7 @@ import tempfile
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 
-VERSION = "2.1.1"
+VERSION = "2.1.2"
 
 # GitHub configuration
 GITHUB_REPO = "linuxcaffe/awesome-taskwarrior"
@@ -1413,6 +1419,12 @@ def main():
     # Package management commands
     app_manager = AppManager(paths)
     
+    # Show dev mode indicator if in dev mode and using package management
+    def show_dev_mode_if_needed():
+        """Show dev mode indicator for package management commands"""
+        if paths.is_dev_mode:
+            print(f"[tw] DEV MODE - using local registry: {paths.local_registry}")
+    
     # Parse tag filters from remaining args (look for +/- tags)
     tag_filter = None
     tag_args = [arg for arg in remaining if arg.startswith(('+', '-'))]
@@ -1424,34 +1436,40 @@ def main():
     
     # Handle --tags command (list tags)
     if args.tags:
+        show_dev_mode_if_needed()
         # Use app_names from remaining args if provided
         app_manager.list_tags(app_names if app_names else None)
         return 0
     
     if args.install:
+        show_dev_mode_if_needed()
         # Tag filter applies to install
         if tag_filter:
             print(f"[tw] Note: Tag filtering not implemented for --install yet")
         return 0 if app_manager.install(args.install, dry_run=args.dry_run) else 1
     
     if args.remove:
+        show_dev_mode_if_needed()
         # Tag filter applies to remove
         if tag_filter:
             print(f"[tw] Note: Tag filtering not implemented for --remove yet")
         return 0 if app_manager.remove(args.remove) else 1
     
     if args.update:
+        show_dev_mode_if_needed()
         # Tag filter applies to update
         if tag_filter:
             print(f"[tw] Note: Tag filtering not implemented for --update yet")
         return 0 if app_manager.update(args.update) else 1
     
     if args.list:
+        show_dev_mode_if_needed()
         # Tag filter applies to list
         app_manager.list_installed(tag_filter)
         return 0
     
     if args.info is not None:
+        show_dev_mode_if_needed()
         # args.info will be '' if just --info with no immediate argument
         # or will be the app name if provided like --info myapp
         
@@ -1488,6 +1506,7 @@ def main():
             return 0 if app_manager.show_info_all(tag_filter) else 1
     
     if args.verify:
+        show_dev_mode_if_needed()
         return 0 if app_manager.verify(args.verify) else 1
     
     # If no tw.py commands, pass through to task
