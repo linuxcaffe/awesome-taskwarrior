@@ -221,6 +221,7 @@ rm /tmp/tw
 ```
 
 **Dev Mode (with local registry):**
+### NOTE FROM DAVID ### Dev mode for tw is only activated when the folder registry.d is in the cwd, presumes to be in a clone of awsome-taskwarrior github. In dev mode, tw file related actions; list info tags etc, use local .install and .meta files, otherwise always from awesome github.
 ```bash
 cd ~/dev/awesome-taskwarrior
 
@@ -250,7 +251,7 @@ cd ~/dev/awesome-taskwarrior
 ### 🎯 Priority Order
 
 1. **Critical** (breaks functionality): Fix the 7 AppManager methods above
-2. **High** (usability): Add --available command
+2. **High** (usability): Add --available command ###NOTE### do the opposite of this. --available is deprecated, --list now shows installed and available, please clear out any references you see to --available
 3. **Medium** (polish): Update documentation
 4. **Low** (nice to have): Enhanced mode indicators
 

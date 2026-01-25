@@ -20,12 +20,11 @@
   - Color-coded output to stderr
 - `--tags` feature for tag management:
   - List all tags with `tw --tags`
-  - Filter tags by app name: `tw --tags app1 app2`
   - TagFilter class supporting `+tag` (include) and `-tag` (exclude) syntax
   - Tag filtering applies to `--list` and `--info`
   - Tags stored in `.meta` files and displayed in listings
 - Enhanced `--info` command:
-  - `tw --info` shows all available apps (installed or not)
+  - `tw --info` shows full info of all available apps (installed or not)
   - `tw --info app1 app2` shows info for specific apps
   - `tw --info +python` shows apps matching tag filter
   - Tag filtering support integrated

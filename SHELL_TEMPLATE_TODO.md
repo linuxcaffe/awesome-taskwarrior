@@ -5,7 +5,7 @@ Add user-configurable templates for the interactive shell, stored in `~/.task/tw
 
 ## Design Decisions (from session 2026-01-24)
 
-**File Location:** `~/.task/tw-templates.rc`
+**File Location:** `~/.task/config/tw-templates.rc`
 
 **Format:**
 ```ini
@@ -183,7 +183,7 @@ Templates:
 - Uses shlex.split() to handle quoted values properly
 - Reloads templates on :tpl edit for immediate feedback
 - Follows taskwarrior .rc file conventions
-- File location in ~/.task/ keeps everything in one place
+- File location in ~/.task/config/ keeps everything in one place
 - Simple format makes it easy to version control and share
 
 ## Related Files to Update

@@ -107,12 +107,6 @@ registry.d/tw-recurrence.meta
   - base_url= pointing to GitHub raw
   - checksums= (placeholder, needs real SHA256s)
 
-MIGRATION.md
-  - v1.3.0 to v2.0.0 migration guide
-  - Architectural changes explained
-  - Step-by-step migration for users and developers
-  - Breaking changes documentation
-
 -----------------------------------------------------------------------------
 ARCHITECTURAL PRINCIPLES
 -----------------------------------------------------------------------------
@@ -183,23 +177,6 @@ v2.0.0 Structure:
 └── docs/
     ├── recurrence_README.md                         (direct file)
     └── nicedates_README.md                          (direct file)
-
------------------------------------------------------------------------------
-MIGRATION PATH
------------------------------------------------------------------------------
-
-For Users:
-1. Backup ~/.task/ and ~/.taskrc
-2. Uninstall all v1.3.0 apps: tw --remove <app>
-3. Update awesome-taskwarrior to v2.0.0
-4. Reinstall apps: tw --install <app>
-
-For Developers:
-1. Update .meta files with files= and base_url= fields
-2. Rewrite .install scripts using curl-based pattern
-3. Organize repo for curl-friendly structure (files in root)
-4. Test standalone: bash app.install install
-5. Test with tw.py: tw --install app
 
 -----------------------------------------------------------------------------
 COMPATIBILITY
