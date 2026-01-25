@@ -656,6 +656,7 @@ in_docstring = False
 docstring_delimiter = None
 after_shebang = False
 in_imports = False
+docstring_found = False  # Track if we've already found the module docstring
 
 for i, line in enumerate(lines):
     # Handle shebang
@@ -664,26 +665,39 @@ for i, line in enumerate(lines):
         after_shebang = True
         continue
     
-    # Handle docstring
-    if not in_docstring and (line.strip().startswith('"""') or line.strip().startswith("'''")):
+    # Handle module-level docstring (only the FIRST one, right after shebang/comments)
+    if not docstring_found and not in_docstring and (line.strip().startswith('"""') or line.strip().startswith("'''")):
+        # Check if this looks like a function docstring (indented or follows 'def')
+        if i > 0 and ('def ' in lines[i-1] or 'class ' in lines[i-1]):
+            # This is a function/class docstring, treat as rest
+            rest_lines.append(line)
+            continue
+        
+        # This is the module docstring
         in_docstring = True
         docstring_delimiter = '"""' if '"""' in line else "'''"
         docstring_lines.append(line)
         # Check if docstring ends on same line
         if line.strip().count(docstring_delimiter) >= 2:
             in_docstring = False
+            docstring_found = True
         continue
     
     if in_docstring:
         docstring_lines.append(line)
         if docstring_delimiter in line:
             in_docstring = False
+            docstring_found = True
         continue
     
-    # After docstring, collect imports
+    # After module docstring, collect imports
     if line.startswith('import ') or line.startswith('from '):
         import_lines.append(line)
         in_imports = True
+        continue
+    
+    # Blank lines and comments after shebang/docstring but before imports
+    if not docstring_found and (line.strip() == '' or line.strip().startswith('#')):
         continue
     
     # Blank lines after imports still count as import section
@@ -860,8 +874,36 @@ run_debug_mode() {
     echo "[$(date '+%H:%M:%S')] Scanning for Python files in current directory..." >> "$log_file"
     
     local python_files=()
+    
+    # Find .py files
     for file in *.py; do
         if [ -f "$file" ]; then
+            python_files+=("$file")
+        fi
+    done
+    
+    # Find executable files without extension that have Python shebangs
+    for file in *; do
+        # Skip if not a regular file or not executable
+        [ -f "$file" ] || continue
+        [ -x "$file" ] || continue
+        
+        # Skip if has .py extension (already handled)
+        [[ "$file" == *.py ]] && continue
+        
+        # Skip if has other common extensions
+        [[ "$file" == *.sh ]] && continue
+        [[ "$file" == *.install ]] && continue
+        [[ "$file" == *.md ]] && continue
+        [[ "$file" == *.txt ]] && continue
+        [[ "$file" == *.rc ]] && continue
+        [[ "$file" == *.conf ]] && continue
+        
+        # Skip make-awesome.sh itself
+        [[ "$file" == "make-awesome.sh" ]] && continue
+        
+        # Check if it has a Python shebang
+        if head -1 "$file" 2>/dev/null | grep -q "python"; then
             python_files+=("$file")
         fi
     done
