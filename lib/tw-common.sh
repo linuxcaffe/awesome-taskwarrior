@@ -45,15 +45,15 @@ tw_msg() {
 }
 
 tw_success() {
-    echo "[tw] ✓ $*"
+    echo "[tw] [+] $*"
 }
 
 tw_error() {
-    echo "[tw] ✗ $*" >&2
+    echo "[tw] [X] $*" >&2
 }
 
 tw_warn() {
-    echo "[tw] ⚠ $*" >&2
+    echo "[tw] [!] $*" >&2
 }
 
 tw_debug() {

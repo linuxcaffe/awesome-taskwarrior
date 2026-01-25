@@ -1,0 +1,30 @@
+under ~/.task/
+
+├── backlog.data
+├── completed.data
+├── config
+│   ├── alias-candy.rc
+│   ├── need.rc
+│   ├── recurrence.rc
+│   └── .tw_manifest
+├── docs
+│   ├── need-priority_README.md
+│   ├── recurrence_README.md
+│   └── tw_README.md
+├── hooks
+│   ├── on-add_priority.py
+│   ├── on-add_recurrence.py
+│   ├── on-exit_priority.py
+│   ├── on-exit_recurrence.py
+│   ├── on-modify_priority.py
+│   └── on-modify_recurrence.py -> on-add_recurrence.py
+├── logs                    # not created until the first --debug or --test run
+│   ├── debug
+│   └── test
+├── pending.data
+├── scripts                 # must be on the $PATH
+│   ├── cmx
+│   ├── nicedates
+│   ├── rr
+│   └── tw
+└── undo.data

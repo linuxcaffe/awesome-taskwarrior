@@ -33,7 +33,7 @@ import tempfile
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 
-VERSION = "2.1.0"
+VERSION = "2.1.1"
 
 # GitHub configuration
 GITHUB_REPO = "linuxcaffe/awesome-taskwarrior"
@@ -190,11 +190,14 @@ class PathManager:
         self.local_installers = self.tw_root / "installers"
         self.lib_dir = self.tw_root / "lib"
         self.installed_dir = self.tw_root / "installed"
-        self.manifest_file = self.task_dir / ".tw_manifest"
+        self.manifest_file = self.config_dir / ".tw_manifest"
         
         # Determine mode: local (dev) or remote (production)
         self.is_dev_mode = self.local_registry.exists() and self.local_installers.exists()
         debug(f"Dev mode: {self.is_dev_mode}", 1)
+        
+        # Set registry_dir based on mode (for compatibility)
+        self.registry_dir = self.local_registry if self.is_dev_mode else None
         
     def init_directories(self):
         """Create all required directories"""
@@ -247,7 +250,7 @@ class RegistryManager:
             return sorted(apps)
         
         except (URLError, HTTPError) as e:
-            print(f"[tw] ✗ Failed to fetch registry from GitHub: {e}")
+            print(f"[tw] Ã¢Å“â€” Failed to fetch registry from GitHub: {e}")
             return []
     
     def get_meta(self, app_name):
@@ -470,11 +473,15 @@ class AppManager:
     
     def install(self, app_name, dry_run=False):
         """Install an application using its installer script"""
-        installer_path = self.paths.installers_dir / f"{app_name}.install"
+        debug(f"AppManager.install: Getting installer for {app_name}", 2)
+        installer_path = self.registry.get_installer(app_name)
+        is_temp_file = not self.paths.is_dev_mode
         
-        if not installer_path.exists():
-            print(f"[tw] âœ— Installer not found: {installer_path}")
+        if not installer_path:
+            print(f"[tw] [X] Installer not found: {app_name}")
             return False
+        
+        debug(f"AppManager.install: Installer path: {installer_path}", 2)
         
         # Set environment variables for the installer
         env = os.environ.copy()
@@ -494,15 +501,18 @@ class AppManager:
             print(f"[tw] DRY RUN: Would execute: bash {installer_path} install")
             
             # Show what would be installed
-            meta_path = self.paths.registry_dir / f"{app_name}.meta"
-            if meta_path.exists():
-                meta = MetaFile(meta_path)
+            meta = self.registry.get_meta(app_name)
+            if meta:
                 files = meta.get_files()
                 if files:
                     print(f"[tw] Would install {len(files)} file(s):")
                     for filename, file_type in files:
                         target_dir = self._get_target_dir(file_type)
-                        print(f"[tw]   {filename} â†’ {target_dir}/")
+                        print(f"[tw]   {filename} -> {target_dir}/")
+            
+            # Clean up temp file if needed
+            if is_temp_file and installer_path:
+                os.unlink(installer_path)
             return True
         
         # Execute installer
@@ -514,26 +524,38 @@ class AppManager:
                 text=True
             )
             
+            # Clean up temp file if needed
+            if is_temp_file and installer_path:
+                os.unlink(installer_path)
+            
             if result.returncode == 0:
-                print(f"[tw] âœ“ Installed: {app_name}")
+                print(f"[tw] [+] Installed: {app_name}")
                 return True
             else:
-                print(f"[tw] âœ— Installation failed: {app_name}")
+                print(f"[tw] [X] Installation failed: {app_name}")
                 return False
                 
         except Exception as e:
-            print(f"[tw] âœ— Error running installer: {e}")
+            # Clean up temp file if needed
+            if is_temp_file and installer_path:
+                try:
+                    os.unlink(installer_path)
+                except:
+                    pass
+            print(f"[tw] [X] Error running installer: {e}")
             return False
     
     def remove(self, app_name):
         """Remove an application using its installer script"""
         if not self.manifest.is_installed(app_name):
-            print(f"[tw] âš  Not installed: {app_name}")
+            print(f"[tw] [!] Not installed: {app_name}")
             return False
         
-        installer_path = self.paths.installers_dir / f"{app_name}.install"
+        debug(f"AppManager.remove: Getting installer for {app_name}", 2)
+        installer_path = self.registry.get_installer(app_name)
+        is_temp_file = not self.paths.is_dev_mode
         
-        if installer_path.exists():
+        if installer_path:
             # Use installer's remove function
             env = os.environ.copy()
             env.update({
@@ -554,16 +576,26 @@ class AppManager:
                     capture_output=False
                 )
                 
+                # Clean up temp file if needed
+                if is_temp_file and installer_path:
+                    os.unlink(installer_path)
+                
                 if result.returncode == 0:
                     self.manifest.remove_app(app_name)
-                    print(f"[tw] âœ“ Removed: {app_name}")
+                    print(f"[tw] [+] Removed: {app_name}")
                     return True
                 else:
-                    print(f"[tw] âœ— Removal failed: {app_name}")
+                    print(f"[tw] [X] Removal failed: {app_name}")
                     return False
                     
             except Exception as e:
-                print(f"[tw] âœ— Error running installer: {e}")
+                # Clean up temp file if needed
+                if is_temp_file and installer_path:
+                    try:
+                        os.unlink(installer_path)
+                    except:
+                        pass
+                print(f"[tw] [X] Error running installer: {e}")
                 return False
         else:
             # Fallback: use manifest to remove files
@@ -576,7 +608,7 @@ class AppManager:
                     print(f"[tw]   Removed: {file_path}")
             
             self.manifest.remove_app(app_name)
-            print(f"[tw] âœ“ Removed: {app_name}")
+            print(f"[tw] [+] Removed: {app_name}")
             return True
     
     def update(self, app_name):
@@ -602,9 +634,9 @@ class AppManager:
         if tag_filter and tag_filter.has_filters():
             filtered_apps = {}
             for app, version in apps.items():
-                meta_path = self.paths.registry_dir / f"{app}.meta"
-                if meta_path.exists():
-                    meta = MetaFile(meta_path)
+                meta = self.registry.get_meta(app)
+
+                if meta:
                     tags = meta.get_tags()
                     if tag_filter.matches(tags):
                         filtered_apps[app] = version
@@ -620,10 +652,9 @@ class AppManager:
         
         for app, version in sorted(apps.items()):
             # Get tags for display
-            meta_path = self.paths.registry_dir / f"{app}.meta"
+            meta = self.registry.get_meta(app)
             tags_str = ""
-            if meta_path.exists():
-                meta = MetaFile(meta_path)
+            if meta:
                 tags = meta.get_tags()
                 if tags:
                     tags_str = f" [{', '.join(tags)}]"
@@ -638,15 +669,16 @@ class AppManager:
         """
         tag_counts = {}
         
-        # Scan all .meta files in registry
-        for meta_path in self.paths.registry_dir.glob("*.meta"):
-            app_name = meta_path.stem
-            
+        # Scan all apps in registry
+        apps = self.registry.list_apps()
+        for app_name in apps:
             # Filter by app names if provided
             if app_names and app_name not in app_names:
                 continue
             
-            meta = MetaFile(meta_path)
+            meta = self.registry.get_meta(app_name)
+            if not meta:
+                continue
             tags = meta.get_tags()
             
             for tag in tags:
@@ -674,21 +706,21 @@ class AppManager:
         Args:
             tag_filter: Optional TagFilter to filter apps by tags
         """
-        debug(f"show_info_all called, registry_dir={self.paths.registry_dir}", 2)
-        debug(f"Registry directory exists: {self.paths.registry_dir.exists()}", 2)
+        debug(f"show_info_all called, dev_mode={self.paths.is_dev_mode}", 2)
         
         # Get all apps from registry
         all_apps = []
-        meta_files = list(self.paths.registry_dir.glob("*.meta"))
-        debug(f"Found {len(meta_files)} .meta files", 2)
+        apps = self.registry.list_apps()
+        debug(f"Found {len(apps)} apps in registry", 2)
         
-        for meta_path in meta_files:
-            app_name = meta_path.stem
-            debug(f"Processing {app_name} from {meta_path}", 3)
+        for app_name in apps:
+            debug(f"Processing {app_name}", 3)
             
             # Apply tag filter if provided
             if tag_filter and tag_filter.has_filters():
-                meta = MetaFile(meta_path)
+                meta = self.registry.get_meta(app_name)
+                if not meta:
+                    continue
                 tags = meta.get_tags()
                 debug(f"App {app_name} has tags: {tags}", 3)
                 if not tag_filter.matches(tags):
@@ -704,7 +736,6 @@ class AppManager:
                 print(f"[tw] No applications match filter: {tag_filter}")
             else:
                 print(f"[tw] No applications found in registry")
-                print(f"[tw] Registry directory: {self.paths.registry_dir}")
             return False
         
         # Show info for each app
@@ -723,13 +754,11 @@ class AppManager:
     
     def show_info(self, app_name):
         """Show information about an application"""
-        meta_path = self.paths.registry_dir / f"{app_name}.meta"
+        meta = self.registry.get_meta(app_name)
         
-        if not meta_path.exists():
-            print(f"[tw] âœ— Application not found: {app_name}")
+        if not meta:
+            print(f"[tw] [X] Application not found: {app_name}")
             return False
-        
-        meta = MetaFile(meta_path)
         
         print(f"[tw] Application: {app_name}")
         print(f"[tw]   Name: {meta.get('name', 'N/A')}")
@@ -763,20 +792,18 @@ class AppManager:
     def verify(self, app_name):
         """Verify checksums of installed files"""
         if not self.manifest.is_installed(app_name):
-            print(f"[tw] âœ— Not installed: {app_name}")
+            print(f"[tw] ÃƒÂ¢Ã…â€œÃ¢â‚¬â€� Not installed: {app_name}")
             return False
         
-        meta_path = self.paths.registry_dir / f"{app_name}.meta"
-        if not meta_path.exists():
-            print(f"[tw] âš  Meta file not found: {meta_path}")
+        meta = self.registry.get_meta(app_name)
+        if not meta:
+            print(f"[tw] [!] Meta file not found for: {app_name}")
             return False
-        
-        meta = MetaFile(meta_path)
         checksums = meta.get_checksums()
         files = meta.get_files()
         
         if not checksums:
-            print(f"[tw] âš  No checksums available for {app_name}")
+            print(f"[tw] ÃƒÂ¢Ã…Â¡Ã‚Â  No checksums available for {app_name}")
             return True
         
         print(f"[tw] Verifying {app_name}...")
@@ -795,7 +822,7 @@ class AppManager:
             file_path = target_dir / filename
             
             if not file_path.exists():
-                print(f"[tw] âœ— File not found: {file_path}")
+                print(f"[tw] ÃƒÂ¢Ã…â€œÃ¢â‚¬â€� File not found: {file_path}")
                 all_valid = False
                 continue
             
@@ -803,15 +830,15 @@ class AppManager:
             actual_checksum = self._calculate_checksum(file_path)
             
             if actual_checksum == expected_checksum:
-                print(f"[tw] âœ“ {filename}")
+                print(f"[tw] ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ {filename}")
             else:
-                print(f"[tw] âœ— {filename} (checksum mismatch)")
+                print(f"[tw] ÃƒÂ¢Ã…â€œÃ¢â‚¬â€� {filename} (checksum mismatch)")
                 all_valid = False
         
         if all_valid:
-            print(f"[tw] âœ“ All files verified")
+            print(f"[tw] ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ All files verified")
         else:
-            print(f"[tw] âœ— Verification failed")
+            print(f"[tw] ÃƒÂ¢Ã…â€œÃ¢â‚¬â€� Verification failed")
         
         return all_valid
     
@@ -1152,10 +1179,10 @@ How it Works:
   5. Copies README to ~/.task/docs/
 
 File Placement:
-  - hook files  → ~/.task/hooks/
-  - script files → ~/.task/scripts/
-  - config files → ~/.task/config/
-  - doc files    → ~/.task/docs/
+  - hook files  Ã¢â€ â€™ ~/.task/hooks/
+  - script files Ã¢â€ â€™ ~/.task/scripts/
+  - config files Ã¢â€ â€™ ~/.task/config/
+  - doc files    Ã¢â€ â€™ ~/.task/docs/
 
 Example:
   tw --install tw-recurrence-hooks
@@ -1266,7 +1293,7 @@ def pass_through_to_task(args):
         # Find task executable
         task_bin = shutil.which('task')
         if not task_bin:
-            print("[tw] âœ— task executable not found")
+            print("[tw] ÃƒÂ¢Ã…â€œÃ¢â‚¬â€� task executable not found")
             return 1
         
         # Execute task with arguments
@@ -1274,7 +1301,7 @@ def pass_through_to_task(args):
         return result.returncode
         
     except Exception as e:
-        print(f"[tw] âœ— Error executing task: {e}")
+        print(f"[tw] ÃƒÂ¢Ã…â€œÃ¢â‚¬â€� Error executing task: {e}")
         return 1
 
 def main():
