@@ -58,7 +58,8 @@ awesome-taskwarrior v2.0.0 introduces a **curl-based architecture** that replace
 │   ├── tw_README.md
 │   └── nicedates_README.md
 ├── logs/                           # Debug and test logs
-│   └── recurrence/                 
+│   ├── debug/
+│   └── test/                 
 ├── .tw_manifest                    # Installation manifest
 ├── pending.data
 ├── completed.data
@@ -315,4 +316,3 @@ tw.py --remove myapp
 
 - [API.md](dev/API.md) - Function reference for tw-common.sh
 - [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution workflow
-- [MIGRATION.md](MIGRATION.md) - Migrating from v1.3.0

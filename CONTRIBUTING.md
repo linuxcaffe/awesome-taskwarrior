@@ -36,7 +36,7 @@ See [MAKE_AWESOME_GUIDE.md](MAKE_AWESOME_GUIDE.md) for detailed usage.
 1. Create `.meta` file with metadata
 2. Create `.install` script (self-contained bash)
 3. Test standalone
-4. Test with tw.py
+4. Test with tw.py locally (dev mode)
 5. Submit PR
 
 ## Understanding the Architecture
@@ -137,6 +137,7 @@ requires_python=3.6
 - `repo` - GitHub repository URL
 - `base_url` - Raw GitHub URL (for curl downloads)
 - `files` - Comma-separated `filename:type` pairs
+- `tags` - Comma-separated list of tags
 
 **File Types:**
 - `hook` → `~/.task/hooks/` (made executable)
@@ -569,22 +570,6 @@ When releasing a new version:
 - **Tool**: [MAKE_AWESOME_GUIDE.md](MAKE_AWESOME_GUIDE.md)
 - **Issues**: https://github.com/linuxcaffe/awesome-taskwarrior/issues
 - **Community**: https://taskwarrior.org
-
-## Migration from v1.x
-
-Key changes in v2.0.0:
-
-- **Manifest location**: `~/.task/.tw_manifest` → `~/.task/config/.tw_manifest`
-- **Self-contained installers**: Must work without tw.py
-- **Registry-based**: No file hosting in awesome-taskwarrior
-- **Fallback functions**: Required for standalone operation
-- **New directory**: `~/.task/scripts/` for tw.py and scripts
-
-Update your installers:
-1. Change manifest path
-2. Add fallback functions
-3. Test standalone operation
-4. Submit updated files
 
 ## Questions?
 

@@ -1,6 +1,6 @@
 # awesome-taskwarrior
 
-A package manager and registry for Taskwarrior extensions (hooks, scripts, and configurations).
+A handy shortcut for task (tw) that features shell-mode, debug utility and package manager for Taskwarrior extensions (hooks, scripts, configuration and docs).
 
 ## Features
 
@@ -27,27 +27,27 @@ This will:
 
 ### Browse Extensions
 ```bash
-tw --list
+tw -l (or --list)
 ```
 
 ### Install an Extension
 ```bash
-tw --install tw-recurrence
+tw -I (or --install) tw-recurrence
 ```
 
 ### Update an Extension
 ```bash
-tw --update tw-recurrence
+tw -u (or --update) tw-recurrence
 ```
 
 ### Remove an Extension
 ```bash
-tw --remove tw-recurrence
+tw -r (or --remove) tw-recurrence
 ```
 
 ### Show Extension Info
 ```bash
-tw --info tw-recurrence
+tw -i (or --info) tw-recurrence
 ```
 
 ### Update tw.py Itself
@@ -60,9 +60,9 @@ tw --update tw
 tw --verify tw-recurrence
 ```
 
-### Check Version
+### Check Version of tw, taskwarrior and dependancies
 ```bash
-tw --version
+tw -v (or --version)
 ```
 
 ### Debug Mode
@@ -231,7 +231,7 @@ Downloads latest from GitHub and replaces itself.
 When tw.py is installed via bootstrap, it fetches registry from GitHub.
 
 ### Dev Mode
-When tw.py detects local `registry.d/` and `installers/` directories, it uses local files for testing.
+When tw.py detects local `registry.d/` and `installers/` directories in the cwd, it uses local files for testing.
 
 ## Troubleshooting
 
