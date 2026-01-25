@@ -90,6 +90,9 @@ detect_files() {
     for hook in on-add on-exit on-modify; do
         for ext in py sh; do
             for file in ${hook}*.${ext}; do
+                # Skip debug.* and *.orig files
+                [[ "$file" == debug.* ]] && continue
+                [[ "$file" == *.orig ]] && continue
                 [ -f "$file" ] && HOOKS+=("$file:hook")
             done
         done
@@ -98,6 +101,10 @@ detect_files() {
     # Detect scripts (executable files not hooks)
     for ext in sh py; do
         for file in *.${ext}; do
+            # Skip debug.* and *.orig files
+            [[ "$file" == debug.* ]] && continue
+            [[ "$file" == *.orig ]] && continue
+            
             if [ -f "$file" ] && [ -x "$file" ]; then
                 # Skip if it's a hook
                 if [[ ! "$file" =~ ^on-(add|exit|modify) ]]; then
