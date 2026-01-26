@@ -1,9 +1,9 @@
 # need-priority.meta
 # Replace pri:H,M,L with pri:1-6 Mazlow's Human Needs, and filter accordingly
-# Version: 0.3.4
+# Version: 0.3.5
 
 name=need-priority
-version=0.3.4
+version=0.3.5
 type=hook
 description=Replace pri:H,M,L with pri:1-6 Mazlow's Human Needs, and filter accordingly
 repo=https://github.com/linuxcaffe/tw-need_priority-hook
