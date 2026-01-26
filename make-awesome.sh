@@ -6,7 +6,7 @@ set -euo pipefail
 # Multi-purpose project setup tool for awesome-taskwarrior extensions
 # ============================================================================
 
-SCRIPT_VERSION="2.0.0"
+SCRIPT_VERSION="2.0.1"
 
 # Colors
 RED='\033[0;31m'
