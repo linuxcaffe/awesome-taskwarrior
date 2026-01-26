@@ -82,14 +82,6 @@ install() {
     }
     chmod +x "$HOOKS_DIR/on-modify_need-priority.py"
     debug_msg "Installed hook: $HOOKS_DIR/on-modify_need-priority.py" 2
-    debug_msg "Downloading script: nn" 2
-    curl -fsSL "$BASE_URL/nn" -o "$SCRIPTS_DIR/nn" || {
-        tw_error "Failed to download nn"
-        debug_msg "Download failed: nn" 1
-        return 1
-    }
-    chmod +x "$SCRIPTS_DIR/nn"
-    debug_msg "Installed script: $SCRIPTS_DIR/nn" 2
     debug_msg "Downloading config: need.rc" 2
     curl -fsSL "$BASE_URL/need.rc" -o "$CONFIG_DIR/need.rc" || {
         tw_error "Failed to download need.rc"
@@ -124,8 +116,6 @@ install() {
     debug_msg "Manifest entry: $HOOKS_DIR/on-exit_need-priority.py" 3
     echo "$APPNAME|$VERSION|$HOOKS_DIR/on-modify_need-priority.py||$TIMESTAMP" >> "$MANIFEST_FILE"
     debug_msg "Manifest entry: $HOOKS_DIR/on-modify_need-priority.py" 3
-    echo "$APPNAME|$VERSION|$SCRIPTS_DIR/nn||$TIMESTAMP" >> "$MANIFEST_FILE"
-    debug_msg "Manifest entry: $SCRIPTS_DIR/nn" 3
     echo "$APPNAME|$VERSION|$CONFIG_DIR/need.rc||$TIMESTAMP" >> "$MANIFEST_FILE"
     debug_msg "Manifest entry: $CONFIG_DIR/need.rc" 3
     echo "$APPNAME|$VERSION|$DOCS_DIR/need-priority_README.md||$TIMESTAMP" >> "$MANIFEST_FILE"
@@ -156,8 +146,6 @@ remove() {
     debug_msg "Removed: $HOOKS_DIR/on-exit_need-priority.py" 2
     rm -f "$HOOKS_DIR/on-modify_need-priority.py"
     debug_msg "Removed: $HOOKS_DIR/on-modify_need-priority.py" 2
-    rm -f "$SCRIPTS_DIR/nn"
-    debug_msg "Removed: $SCRIPTS_DIR/nn" 2
     rm -f "$CONFIG_DIR/need.rc"
     debug_msg "Removed: $CONFIG_DIR/need.rc" 2
     rm -f "$DOCS_DIR/need-priority_README.md"
