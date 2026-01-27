@@ -35,6 +35,22 @@ for file in *.py nn; do
     fi
 done
 
+# Also check other Python executables without .py extension
+for file in *; do
+    # Skip if not a file
+    [ -f "$file" ] || continue
+    # Skip if has extension or is a backup/debug file
+    [[ "$file" == *.* ]] && continue
+    [[ "$file" =~ ^debug\. ]] && continue
+    [[ "$file" =~ \.orig$ ]] && continue
+    # Check if it's a Python file with old paths
+    if head -1 "$file" 2>/dev/null | grep -q "python"; then
+        if grep -q "\.task/hooks/priority" "$file" 2>/dev/null; then
+            files_to_fix+=("$file")
+        fi
+    fi
+done
+
 if [ ${#files_to_fix[@]} -eq 0 ]; then
     success "No files found with old directory references"
     exit 0
