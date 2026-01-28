@@ -18,8 +18,8 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 tw_msg() { echo -e "${BLUE}[tw]${NC} $*"; }
-tw_success() { echo -e "${GREEN}[tw] ✓${NC} $*"; }
-tw_error() { echo -e "${RED}[tw] ✗${NC} $*" >&2; }
+tw_success() { echo -e "${GREEN}[tw] âœ“${NC} $*"; }
+tw_error() { echo -e "${RED}[tw] âœ—${NC} $*" >&2; }
 
 # Debug support
 DEBUG_LEVEL="${TW_DEBUG:-0}"
@@ -85,6 +85,24 @@ install() {
     chmod +x "$HOOKS_DIR/on-modify_need-priority.py"
     debug_msg "Installed hook: $HOOKS_DIR/on-modify_need-priority.py" 2
 
+    debug_msg "Downloading script: need-priority.install" 2
+    curl -fsSL "$BASE_URL/need-priority.install" -o "$SCRIPTS_DIR/need-priority.install" || {
+        tw_error "Failed to download need-priority.install"
+        debug_msg "Download failed: need-priority.install" 1
+        return 1
+    }
+    chmod +x "$SCRIPTS_DIR/need-priority.install"
+    debug_msg "Installed script: $SCRIPTS_DIR/need-priority.install" 2
+
+    debug_msg "Downloading script: nn" 2
+    curl -fsSL "$BASE_URL/nn" -o "$SCRIPTS_DIR/nn" || {
+        tw_error "Failed to download nn"
+        debug_msg "Download failed: nn" 1
+        return 1
+    }
+    chmod +x "$SCRIPTS_DIR/nn"
+    debug_msg "Installed script: $SCRIPTS_DIR/nn" 2
+
     debug_msg "Downloading config: need.rc" 2
     curl -fsSL "$BASE_URL/need.rc" -o "$CONFIG_DIR/need.rc" || {
         tw_error "Failed to download need.rc"
@@ -122,6 +140,10 @@ install() {
     debug_msg "Manifest entry: $HOOKS_DIR/on-exit_need-priority.py" 3
     echo "$APPNAME|$VERSION|$HOOKS_DIR/on-modify_need-priority.py||$TIMESTAMP" >> "$MANIFEST_FILE"
     debug_msg "Manifest entry: $HOOKS_DIR/on-modify_need-priority.py" 3
+    echo "$APPNAME|$VERSION|$SCRIPTS_DIR/need-priority.install||$TIMESTAMP" >> "$MANIFEST_FILE"
+    debug_msg "Manifest entry: $SCRIPTS_DIR/need-priority.install" 3
+    echo "$APPNAME|$VERSION|$SCRIPTS_DIR/nn||$TIMESTAMP" >> "$MANIFEST_FILE"
+    debug_msg "Manifest entry: $SCRIPTS_DIR/nn" 3
     echo "$APPNAME|$VERSION|$CONFIG_DIR/need.rc||$TIMESTAMP" >> "$MANIFEST_FILE"
     debug_msg "Manifest entry: $CONFIG_DIR/need.rc" 3
     echo "$APPNAME|$VERSION|$DOCS_DIR/need-priority_README.md||$TIMESTAMP" >> "$MANIFEST_FILE"
