@@ -9,9 +9,9 @@ This tool provides a full workflow from development through deployment:
 - --push: Git commit/push + registry update
 
 Single command pipeline: make-awesome.py "commit message"
-  Runs: debug → test → install → push (each stage gated on previous success)
+  Runs: debug â†’ test â†’ install â†’ push (each stage gated on previous success)
 
-Version: 4.0.0
+Version: 4.2.2
 """
 
 import sys
@@ -24,7 +24,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
 
-VERSION = "4.0.0"
+VERSION = "4.2.2"
 
 # ANSI color codes
 class Colors:
@@ -38,13 +38,13 @@ def msg(text):
     print(f"{Colors.BLUE}[make]{Colors.NC} {text}")
 
 def success(text):
-    print(f"{Colors.GREEN}[make] ✓{Colors.NC} {text}")
+    print(f"{Colors.GREEN}[make] âœ“{Colors.NC} {text}")
 
 def error(text):
-    print(f"{Colors.RED}[make] ✗{Colors.NC} {text}", file=sys.stderr)
+    print(f"{Colors.RED}[make] âœ—{Colors.NC} {text}", file=sys.stderr)
 
 def warn(text):
-    print(f"{Colors.YELLOW}[make] ⚠{Colors.NC} {text}")
+    print(f"{Colors.YELLOW}[make] âš {Colors.NC} {text}")
 
 
 # ============================================================================
@@ -522,6 +522,7 @@ class ProjectInfo:
         self.type = "hook"
         self.description = ""
         self.repo = ""
+        self.branch = "main"  # Default branch
         self.author = ""
         self.license = "MIT"
         self.requires_tw = "2.6.0"
@@ -543,6 +544,7 @@ def detect_project_info() -> ProjectInfo:
     
     msg(f"Version: {info.version}")
     
+    # Detect GitHub repo
     try:
         result = subprocess.run(['git', 'remote', 'get-url', 'origin'],
                               capture_output=True, text=True, check=True)
@@ -554,6 +556,26 @@ def detect_project_info() -> ProjectInfo:
     except:
         pass
     
+    # Detect default branch
+    try:
+        result = subprocess.run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+                              capture_output=True, text=True, check=True)
+        info.branch = result.stdout.strip()
+        msg(f"Branch: {info.branch}")
+    except:
+        # Fallback: try to get from remote
+        try:
+            result = subprocess.run(['git', 'remote', 'show', 'origin'],
+                                  capture_output=True, text=True, check=True)
+            for line in result.stdout.split('\n'):
+                if 'HEAD branch:' in line:
+                    info.branch = line.split(':')[1].strip()
+                    msg(f"Branch: {info.branch}")
+                    break
+        except:
+            info.branch = "main"  # Default fallback
+    
+    # Detect author from git
     try:
         result = subprocess.run(['git', 'config', 'user.name'],
                               capture_output=True, text=True, check=True)
@@ -568,6 +590,7 @@ def detect_files() -> List[Tuple[str, str]]:
     files = []
     msg("Detecting files...")
     
+    # Detect hooks (on-add*, on-exit*, on-modify*)
     for hook in ['on-add', 'on-exit', 'on-modify']:
         for ext in ['py', 'sh']:
             for f in Path('.').glob(f'{hook}*.{ext}'):
@@ -576,22 +599,57 @@ def detect_files() -> List[Tuple[str, str]]:
                         files.append((f.name, 'hook'))
                         msg(f"  Hook: {f.name}")
     
-    for ext in ['py', 'sh']:
-        for f in Path('.').glob(f'*.{ext}'):
-            if f.name.startswith('debug.') or f.name.endswith('.orig'):
-                continue
-            if f.name.startswith('on-') or f.name == 'make-awesome.py':
-                continue
-            if f.is_file() and os.access(f, os.X_OK):
+    # Detect scripts - check ALL files in root directory for executables
+    exclude_patterns = [
+        'debug.',           # debug.* files
+        '.orig',            # backup files
+        'on-add',           # hooks (handled above)
+        'on-modify',        # hooks
+        'on-exit',          # hooks
+        'make-awesome.py',  # this script itself
+        '.git',             # git files
+        '__pycache__',      # python cache
+    ]
+    
+    for f in Path('.').iterdir():
+        # Skip directories
+        if not f.is_file():
+            continue
+        
+        # Skip excluded patterns
+        if any(pattern in f.name for pattern in exclude_patterns):
+            continue
+        
+        # Skip files already added as hooks
+        if any(fname == f.name for fname, _ in files):
+            continue
+        
+        # Check if executable
+        if os.access(f, os.X_OK):
+            # Is it a script? (has shebang or common script extension)
+            try:
+                with open(f, 'rb') as file:
+                    first_bytes = file.read(2)
+                    if first_bytes == b'#!':  # Has shebang
+                        files.append((f.name, 'script'))
+                        msg(f"  Script: {f.name}")
+                        continue
+            except:
+                pass
+            
+            # Or has script extension
+            if f.suffix in ['.py', '.sh', '.bash', '.pl', '.rb']:
                 files.append((f.name, 'script'))
                 msg(f"  Script: {f.name}")
     
+    # Detect configs
     for ext in ['rc', 'conf']:
         for f in Path('.').glob(f'*.{ext}'):
             if f.is_file():
                 files.append((f.name, 'config'))
                 msg(f"  Config: {f.name}")
     
+    # Detect docs
     for doc in ['README.md', 'USAGE.md', 'INSTALL.md']:
         if Path(doc).exists():
             files.append((doc, 'doc'))
@@ -605,20 +663,38 @@ def prompt_for_metadata(info: ProjectInfo) -> bool:
     print()
     
     # Check for existing .meta file to use as defaults
-    meta_file = Path(f"{info.name}.meta")
-    if meta_file.exists():
-        msg("Found existing .meta file, using as defaults")
+    # Look for ANY .meta file in current directory (not just matching dir name)
+    meta_files = list(Path('.').glob('*.meta'))
+    
+    if meta_files:
+        meta_file = meta_files[0]  # Use first .meta file found
+        msg(f"Found existing .meta file: {meta_file.name}")
         try:
             with open(meta_file, 'r') as f:
                 for line in f:
-                    if line.startswith('description='):
+                    if line.startswith('name='):
+                        info.name = line.split('=', 1)[1].strip()
+                    elif line.startswith('version='):
+                        info.version = line.split('=', 1)[1].strip()
+                    elif line.startswith('description='):
                         info.description = line.split('=', 1)[1].strip()
                     elif line.startswith('author='):
                         info.author = line.split('=', 1)[1].strip()
                     elif line.startswith('tags='):
                         info.tags = line.split('=', 1)[1].strip()
-        except:
-            pass
+                    elif line.startswith('license='):
+                        info.license = line.split('=', 1)[1].strip()
+                    elif line.startswith('type='):
+                        info.type = line.split('=', 1)[1].strip()
+                    elif line.startswith('base_url='):
+                        # Extract branch from base_url
+                        url = line.split('=', 1)[1].strip()
+                        # URL format: https://raw.githubusercontent.com/user/repo/BRANCH/
+                        parts = url.split('/')
+                        if len(parts) >= 6:
+                            info.branch = parts[5]
+        except Exception as e:
+            warn(f"Could not read .meta file: {e}")
     
     response = input(f"App name [{info.name}]: ").strip()
     if response:
@@ -655,6 +731,11 @@ def prompt_for_metadata(info: ProjectInfo) -> bool:
     if not info.repo:
         error("GitHub repo required")
         return False
+    
+    # Branch prompt with detected default
+    response = input(f"Branch [{info.branch}]: ").strip()
+    if response:
+        info.branch = response
     
     # Author with default
     if info.author:
@@ -711,7 +792,7 @@ def generate_meta_file(info: ProjectInfo) -> bool:
     
     files_list = ','.join([f"{name}:{ftype}" for name, ftype in info.files])
     checksums_list = ','.join(info.checksums)
-    base_url = f"https://raw.githubusercontent.com/{info.repo}/main/"
+    base_url = f"https://raw.githubusercontent.com/{info.repo}/{info.branch}/"
     repo_url = f"https://github.com/{info.repo}"
     
     try:
@@ -766,8 +847,8 @@ def generate_installer(info: ProjectInfo) -> bool:
             f.write("BLUE='\\033[0;34m'\n")
             f.write("NC='\\033[0m'\n\n")
             f.write('tw_msg() { echo -e "${BLUE}[tw]${NC} $*"; }\n')
-            f.write('tw_success() { echo -e "${GREEN}[tw] ✓${NC} $*"; }\n')
-            f.write('tw_error() { echo -e "${RED}[tw] ✗${NC} $*" >&2; }\n\n')
+            f.write('tw_success() { echo -e "${GREEN}[tw] âœ“${NC} $*"; }\n')
+            f.write('tw_error() { echo -e "${RED}[tw] âœ—${NC} $*" >&2; }\n\n')
             
             # Debug support
             f.write('# Debug support\n')
@@ -1025,14 +1106,26 @@ def check_git_status() -> bool:
         result = subprocess.run(['git', 'status', '--porcelain'],
                               capture_output=True, text=True, check=True)
         if result.stdout.strip():
-            # Check if it's ONLY .install and .meta files (expected from --install stage)
+            # Parse git status format: "XY filename"
+            # X = index status, Y = working tree status
             lines = result.stdout.strip().split('\n')
+            
+            changed_files = []
+            for line in lines:
+                if not line.strip():
+                    continue
+                # Git status format: first 2 chars are status, rest is filename
+                filename = line[3:].strip() if len(line) > 3 else ""
+                if filename:
+                    changed_files.append(filename)
+            
+            # Check if it's ONLY .install and .meta files (expected from --install stage)
             only_registry_files = all(
-                line.strip().endswith('.install') or line.strip().endswith('.meta')
-                for line in lines if line.strip()
+                fname.endswith('.install') or fname.endswith('.meta')
+                for fname in changed_files
             )
             
-            if only_registry_files:
+            if only_registry_files and changed_files:
                 msg("Found new .install and .meta files (expected from --install stage)")
                 return True
             else:
@@ -1048,11 +1141,40 @@ def check_git_status() -> bool:
 
 def git_commit_and_push(commit_msg: str) -> bool:
     try:
-        msg("Git add...")
-        subprocess.run(['git', 'add', '.'], check=True)
+        # Show what will be added
+        msg("Files to be committed:")
+        result = subprocess.run(['git', 'status', '--short'], 
+                              capture_output=True, text=True, check=True)
+        
+        if not result.stdout.strip():
+            msg("Working tree clean, nothing to commit")
+            msg("Skipping git commit (but will update registry)")
+            return True  # Success - proceed to registry update
+        
+        print(result.stdout)
+        
+        # Confirm git add
+        response = input("Run 'git add .'? [Y/n]: ").strip().lower()
+        if response and response != 'y':
+            msg("Skipping git add, using staged files only")
+        else:
+            msg("Git add...")
+            subprocess.run(['git', 'add', '.'], check=True)
         
         msg(f"Commit: {commit_msg}")
-        subprocess.run(['git', 'commit', '-m', commit_msg], check=True)
+        result = subprocess.run(['git', 'commit', '-m', commit_msg], 
+                              capture_output=True, text=True)
+        
+        if result.returncode != 0:
+            # Check if it's "nothing to commit"
+            if 'nothing to commit' in result.stdout or 'nothing to commit' in result.stderr:
+                msg("Nothing to commit, working tree clean")
+                msg("Skipping git push (but will update registry)")
+                return True  # Success - proceed to registry update
+            else:
+                error("Git commit failed")
+                print(result.stderr)
+                return False
         
         msg("Push...")
         subprocess.run(['git', 'push'], check=True)
@@ -1071,11 +1193,16 @@ def update_registry(project_name: str) -> bool:
         error(f"Registry not found: {registry_path}")
         return False
     
-    install_file = Path(f"{project_name}.install")
-    meta_file = Path(f"{project_name}.meta")
+    # Save current directory before changing
+    original_dir = Path.cwd()
+    
+    install_file = original_dir / f"{project_name}.install"
+    meta_file = original_dir / f"{project_name}.meta"
     
     if not install_file.exists() or not meta_file.exists():
         error("Install/meta files not found")
+        error(f"  Looking for: {install_file}")
+        error(f"  Looking for: {meta_file}")
         return False
     
     try:
@@ -1088,19 +1215,46 @@ def update_registry(project_name: str) -> bool:
         msg("Updating registry...")
         os.chdir(registry_path)
         
+        # Add only the specific files we care about
         subprocess.run(['git', 'add',
                        f'installers/{install_file.name}',
                        f'registry.d/{meta_file.name}'], check=True)
         
-        subprocess.run(['git', 'commit', '-m',
-                       f"Updated registry for {project_name}"], check=True)
+        # Commit with --only to ignore other changes in working tree
+        result = subprocess.run(['git', 'commit', '--only', '-m',
+                               f"Updated registry for {project_name}",
+                               f'installers/{install_file.name}',
+                               f'registry.d/{meta_file.name}'],
+                              capture_output=True, text=True)
+        
+        if result.returncode != 0:
+            # Check if it's "nothing to commit" (files unchanged)
+            if 'nothing to commit' in result.stdout or 'nothing to commit' in result.stderr:
+                msg("Registry files unchanged, nothing to commit")
+                msg("Skipping registry push")
+                os.chdir(original_dir)
+                return True  # Success - files already in registry
+            else:
+                error("Registry commit failed")
+                print(result.stderr)
+                os.chdir(original_dir)
+                return False
         
         subprocess.run(['git', 'push'], check=True)
         
         success("Registry updated")
+        
+        # Return to original directory
+        os.chdir(original_dir)
         return True
+        
     except Exception as e:
         error(f"Registry update failed: {e}")
+        # Make sure we return to original directory even on error
+        try:
+            os.chdir(original_dir)
+        except:
+            pass
         return False
 
 
@@ -1110,7 +1264,16 @@ def cmd_push(args, commit_msg: str) -> int:
     msg("=" * 70)
     print()
     
-    project_name = Path.cwd().name
+    # Get project name from .meta file, not directory name
+    # (directory might be "tw-need_priority-hook" but app is "need-priority")
+    meta_files = list(Path('.').glob('*.meta'))
+    if not meta_files:
+        error("No .meta file found. Run --install first.")
+        return 1
+    
+    meta_file = meta_files[0]
+    project_name = meta_file.stem  # e.g., "need-priority" from "need-priority.meta"
+    msg(f"Project: {project_name}")
     
     if not check_git_status():
         return 1
