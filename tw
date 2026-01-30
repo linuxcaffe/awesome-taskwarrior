@@ -18,6 +18,20 @@ Architecture Changes in v2.0.0:
 - Added docs_dir for README files
 - Self-contained installers that work with or without tw
 
+Updates in v2.2.0:
+- Added: @ as alias for 'context' command
+- Added: @+ to add context to current cmx set (context multiplexing)
+- Added: @- to remove context from current cmx set
+- Feature: Combine multiple contexts simultaneously with @+
+- Compatible with standalone cmx.sh script
+
+Updates in v2.1.7:
+- Fixed: -p/--pager now works correctly with all reports
+- Fixed: Proper handling of empty args for default report
+- Enhanced: Comprehensive limit/lines overrides for all report types
+- Enhanced: Debug output shows exact shell command when TW_DEBUG_WRAPPER=1
+- Improved: Simplified pager implementation using direct shell pipe
+
 Updates in v2.1.6:
 - Fixed: -A/--attach now correctly receives task ID argument
 - Fixed: -p/--pager now preserves colors with rc._forcecolor=on
@@ -65,7 +79,7 @@ import tempfile
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 
-VERSION = "2.1.6"
+VERSION = "2.2.0"
 
 # GitHub configuration
 GITHUB_REPO = "linuxcaffe/awesome-taskwarrior"
@@ -1447,6 +1461,203 @@ def validate_first_arg_flag(args):
     
     return (False, None)
 
+def handle_context_command(args):
+    """Handle @ context commands - alias for 'context' with @+/- extensions"""
+    if not args:
+        # tw @ with no args → show current context
+        # First check if cmx is active
+        current_cmx = get_cmx_contexts()
+        if current_cmx:
+            print(f"Context multiplexing active: {current_cmx}")
+            combined_read = subprocess.run(
+                ['task', '_get', 'rc.context.cmx.read'],
+                capture_output=True, text=True, check=False
+            ).stdout.strip()
+            if combined_read:
+                print(f"Combined filter: {combined_read}")
+            return 0
+        else:
+            # No cmx, show regular context
+            return subprocess.run(['task', 'context'], check=False).returncode
+    
+    first_arg = args[0]
+    
+    # Check for @+ (add context)
+    if first_arg.startswith('+'):
+        context_name = first_arg[1:]
+        return add_context_to_cmx(context_name)
+    
+    # Check for @- (remove context)
+    if first_arg.startswith('-'):
+        context_name = first_arg[1:]
+        return remove_context_from_cmx(context_name)
+    
+    # Otherwise, pass through to task context
+    # tw @ list → task context list
+    # tw @ work → task context work
+    return subprocess.run(['task', 'context'] + args, check=False).returncode
+
+def get_cmx_contexts():
+    """Get current cmx.contexts value from taskrc"""
+    try:
+        result = subprocess.run(
+            ['task', '_get', 'rc.cmx.contexts'],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        return result.stdout.strip() if result.returncode == 0 else ""
+    except:
+        return ""
+
+def is_context_defined(context_name):
+    """Check if a context is defined in taskwarrior"""
+    try:
+        result = subprocess.run(
+            ['task', '_get', f'rc.context.{context_name}.read'],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        # If it returns successfully and has output, context exists
+        return result.returncode == 0 and result.stdout.strip()
+    except:
+        return False
+
+def get_context_filter(context_name, filter_type='read'):
+    """Get the read or write filter for a context"""
+    try:
+        result = subprocess.run(
+            ['task', '_get', f'rc.context.{context_name}.{filter_type}'],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        return result.stdout.strip() if result.returncode == 0 else ""
+    except:
+        return ""
+
+def build_combined_filter(contexts_str, filter_type='read'):
+    """Build combined filter from comma-separated contexts"""
+    if not contexts_str:
+        return ""
+    
+    contexts = [c.strip() for c in contexts_str.split(',')]
+    combined_parts = []
+    
+    for ctx in contexts:
+        if not ctx:
+            continue
+        filter_str = get_context_filter(ctx, filter_type)
+        if filter_str:
+            combined_parts.append(f"( {filter_str} )")
+    
+    return " and ".join(combined_parts) if combined_parts else ""
+
+def set_cmx_context(contexts_str):
+    """Set the cmx context with combined filters"""
+    try:
+        if not contexts_str:
+            # Clear everything
+            subprocess.run(['task', 'config', 'cmx.contexts', ''], 
+                         input='yes\n', text=True, check=False, 
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(['task', 'config', 'context.cmx.read', ''], 
+                         input='yes\n', text=True, check=False,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(['task', 'config', 'context.cmx.write', ''], 
+                         input='yes\n', text=True, check=False,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(['task', 'config', 'context', ''], 
+                         input='yes\n', text=True, check=False,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            print("Cleared all contexts")
+            return 0
+        
+        # Validate all contexts exist
+        contexts = [c.strip() for c in contexts_str.split(',')]
+        for ctx in contexts:
+            if not is_context_defined(ctx):
+                print(f"[tw] Error: Context '{ctx}' is not defined")
+                print(f"[tw] Use 'task context define {ctx} <filter>' to define it first")
+                return 1
+        
+        # Build combined filters
+        combined_read = build_combined_filter(contexts_str, 'read')
+        combined_write = build_combined_filter(contexts_str, 'write')
+        
+        # Set cmx.contexts
+        subprocess.run(['task', 'config', 'cmx.contexts', contexts_str],
+                     input='yes\n', text=True, check=False,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        # Set context.cmx.read
+        if combined_read:
+            subprocess.run(['task', 'config', 'context.cmx.read', combined_read],
+                         input='yes\n', text=True, check=False,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        # Set context.cmx.write if exists
+        if combined_write:
+            subprocess.run(['task', 'config', 'context.cmx.write', combined_write],
+                         input='yes\n', text=True, check=False,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        # Activate cmx context
+        subprocess.run(['task', 'config', 'context', 'cmx'],
+                     input='yes\n', text=True, check=False,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        print(f"Activated contexts: {contexts_str}")
+        if combined_read:
+            print(f"Combined filter: {combined_read}")
+        return 0
+        
+    except Exception as e:
+        print(f"[tw] Error setting context: {e}", file=sys.stderr)
+        return 1
+
+def add_context_to_cmx(context_name):
+    """Add a context to the current cmx set"""
+    if not is_context_defined(context_name):
+        print(f"[tw] Error: Context '{context_name}' is not defined")
+        print(f"[tw] Use 'task context define {context_name} <filter>' to define it first")
+        return 1
+    
+    current = get_cmx_contexts()
+    
+    # Check if already in the list
+    if current:
+        current_list = [c.strip() for c in current.split(',')]
+        if context_name in current_list:
+            print(f"Context '{context_name}' is already active")
+            return 0
+        new_contexts = f"{current},{context_name}"
+    else:
+        new_contexts = context_name
+    
+    return set_cmx_context(new_contexts)
+
+def remove_context_from_cmx(context_name):
+    """Remove a context from the current cmx set"""
+    current = get_cmx_contexts()
+    
+    if not current:
+        print("No contexts are currently active")
+        return 0
+    
+    current_list = [c.strip() for c in current.split(',')]
+    
+    if context_name not in current_list:
+        print(f"Context '{context_name}' is not in the active set")
+        return 0
+    
+    # Remove the context
+    new_list = [c for c in current_list if c != context_name]
+    new_contexts = ','.join(new_list) if new_list else ''
+    
+    return set_cmx_context(new_contexts)
+
 def attach_file_to_task(task_id):
     """Attach a file to a task using ranger file browser"""
     try:
@@ -1621,6 +1832,37 @@ def main():
             print(f"[tw-debug] No arguments, showing help", file=sys.stderr)
         pass
     else:
+        # Check for @ context command (special case - not a flag)
+        if sys.argv[1].startswith('@'):
+            if debug_wrapper:
+                print(f"[tw-debug] Context command detected: {sys.argv[1]}", file=sys.stderr)
+            
+            # Handle different @ formats:
+            # tw @ list       → sys.argv = ['tw', '@', 'list']  → args = ['list']
+            # tw @+ work      → sys.argv = ['tw', '@+', 'work'] → args = ['+work']
+            # tw @- morning   → sys.argv = ['tw', '@-', 'morning'] → args = ['-morning']
+            
+            if sys.argv[1] == '@':
+                # Simple @ - pass remaining args as-is
+                return handle_context_command(sys.argv[2:])
+            elif sys.argv[1] == '@+':
+                # @+ with space - combine with next arg
+                if len(sys.argv) > 2:
+                    return handle_context_command(['+' + sys.argv[2]] + sys.argv[3:])
+                else:
+                    print("[tw] Error: @+ requires a context name")
+                    return 1
+            elif sys.argv[1] == '@-':
+                # @- with space - combine with next arg
+                if len(sys.argv) > 2:
+                    return handle_context_command(['-' + sys.argv[2]] + sys.argv[3:])
+                else:
+                    print("[tw] Error: @- requires a context name")
+                    return 1
+            else:
+                # @+context or @-context (no space)
+                return handle_context_command([sys.argv[1][1:]] + sys.argv[2:])
+        
         # Validate first argument if it looks like a flag
         is_valid, error_msg = validate_first_arg_flag(sys.argv[1:])
         
@@ -1792,6 +2034,13 @@ def main():
         print("  tw --pager next +work      Page through next work tasks")
         print("  tw -A 42                   Attach file to task 42 using ranger")
         print("  tw --attach 42             Same as -A 42")
+        print("\nContext Multiplexing:")
+        print("  tw @                       Show current context (alias for 'task context')")
+        print("  tw @ list                  List all defined contexts")
+        print("  tw @ work                  Switch to work context")
+        print("  tw @+ personal             Add personal context to current set")
+        print("  tw @- work                 Remove work context from current set")
+        print("  tw @ none                  Clear all contexts")
         print("\nTag Filtering:")
         print("  Use +tag to include, -tag to exclude")
         print("  Applies to: --list, --info")
