@@ -1,0 +1,1935 @@
+#!/usr/bin/env python3
+"""
+tw - awesome-taskwarrior package manager and wrapper
+Version: 2.1.5
+
+A unified wrapper for Taskwarrior that provides:
+- Transparent pass-through to task command
+- Package management for Taskwarrior extensions (hooks, wrappers, configs)
+- Curl-based installation (no git clones)
+- Per-file manifest tracking
+- Checksum verification
+- Dev mode indicator for local development
+
+Architecture Changes in v2.0.0:
+- Removed git-based operations
+- Direct file placement via curl
+- Per-file manifest tracking (app|version|file|checksum|date)
+- Added docs_dir for README files
+- Self-contained installers that work with or without tw
+
+Updates in v2.1.6:
+- Fixed: -A/--attach now correctly receives task ID argument
+- Fixed: -p/--pager now preserves colors with rc._forcecolor=on
+- Fixed: -p/--pager sets proper width with rc.defaultwidth
+- Fixed: Less uses -R flag for better ANSI color handling
+- Fixed: Flags with arguments properly included in argparse processing
+
+Updates in v2.1.5:
+- Added: -p/--pager flag for automatic paging of long task output
+- Added: -A/--attach flag for attaching files to tasks via ranger
+- Added: Shell exec/! commands for executing shell commands from interactive shell
+- Added: !! command to repeat last shell command
+
+Updates in v2.1.4:
+- Fixed: Flags with = syntax now recognized (e.g., --debug=2)
+- Fixed: Validation now handles --flag=value format properly
+- Fixed: argparse limited to consecutive flags only
+
+Updates in v2.1.3:
+- Fixed: Flags must be first argument only (prevents false positives)
+- Fixed: Flags must have trailing space (prevents partial matches)
+- Fixed: Unknown flags now throw errors
+- Enhanced: --version shows taskwarrior version and all installed extensions
+- Added: TW_DEBUG_WRAPPER environment variable for argument parsing debug
+- Renamed: All references from tw.py to tw
+
+Updates in v2.1.2:
+- Dev mode indicator shows when using local registry
+- All unicode symbols replaced with ASCII equivalents
+- Added PathManager.registry_dir property
+"""
+
+import sys
+import os
+import subprocess
+import argparse
+from pathlib import Path
+from datetime import datetime
+import hashlib
+import shutil
+import shlex
+import readline
+import json
+import tempfile
+from urllib.request import urlopen, Request
+from urllib.error import URLError, HTTPError
+
+VERSION = "2.1.6"
+
+# GitHub configuration
+GITHUB_REPO = "linuxcaffe/awesome-taskwarrior"
+GITHUB_BRANCH = "main"
+GITHUB_API_BASE = f"https://api.github.com/repos/{GITHUB_REPO}"
+GITHUB_RAW_BASE = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}"
+
+# Shell configuration
+SHELL_NAME = "tw"
+SHELL_HISTFILE = os.path.expanduser("~/.tw_shell_history")
+
+# Global debug logger instance
+debug_logger = None
+
+def debug(message, level=1):
+    """Log debug message if debug is enabled"""
+    if debug_logger and debug_logger.level >= level:
+        debug_logger.log(message, level)
+
+class DebugLogger:
+    """Manages debug output and logging"""
+    
+    def __init__(self, level=0, log_dir=None):
+        self.level = level
+        self.session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Set up log directory
+        if log_dir:
+            self.log_dir = Path(log_dir)
+        else:
+            self.log_dir = Path.home() / ".task" / "logs" / "debug"
+        
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create session log file
+        if self.level > 0:
+            self.log_file = self.log_dir / f"tw_debug_{self.session_id}.log"
+            self._init_log()
+            self._cleanup_old_logs()
+        else:
+            self.log_file = None
+    
+    def _init_log(self):
+        """Initialize log file with header"""
+        with open(self.log_file, 'w') as f:
+            f.write(f"{'='*70}\n")
+            f.write(f"tw Debug Session - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Debug Level: {self.level}\n")
+            f.write(f"Session ID: {self.session_id}\n")
+            f.write(f"{'='*70}\n\n")
+    
+    def _cleanup_old_logs(self, keep_last=10):
+        """Keep only the last N debug session logs"""
+        if not self.log_dir.exists():
+            return
+        
+        log_files = sorted(self.log_dir.glob("tw_debug_*.log"))
+        if len(log_files) > keep_last:
+            for old_log in log_files[:-keep_last]:
+                old_log.unlink()
+    
+    def log(self, message, level=1):
+        """Log a debug message"""
+        if level > self.level:
+            return
+        
+        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        prefix = f"[DEBUG-{level}]"
+        
+        # Write to file
+        if self.log_file:
+            with open(self.log_file, 'a') as f:
+                f.write(f"{timestamp} {prefix} {message}\n")
+        
+        # Write to stderr with color
+        colored_prefix = f"\033[34m{prefix}\033[0m"  # Blue
+        print(f"{colored_prefix} {message}", file=sys.stderr)
+    
+    def set_environment(self):
+        """Set TW_DEBUG environment variable for child processes"""
+        os.environ['TW_DEBUG'] = str(self.level)
+        debug(f"Set TW_DEBUG={self.level}", 1)
+
+class TagFilter:
+    """Parse and apply tag filters (+tag to include, -tag to exclude)"""
+    
+    def __init__(self, filter_args):
+        """Parse filter arguments like ['+python', '-deprecated', '+hook']"""
+        self.include_tags = []
+        self.exclude_tags = []
+        
+        for arg in filter_args:
+            if arg.startswith('+'):
+                self.include_tags.append(arg[1:])
+            elif arg.startswith('-'):
+                self.exclude_tags.append(arg[1:])
+    
+    def matches(self, tags):
+        """Check if a list of tags matches this filter
+        
+        Args:
+            tags: List of tags (strings)
+        
+        Returns:
+            True if matches filter, False otherwise
+        """
+        if not tags:
+            tags = []
+        
+        # Must have all included tags
+        for include_tag in self.include_tags:
+            if include_tag not in tags:
+                return False
+        
+        # Must not have any excluded tags
+        for exclude_tag in self.exclude_tags:
+            if exclude_tag in tags:
+                return False
+        
+        return True
+    
+    def has_filters(self):
+        """Check if any filters are set"""
+        return bool(self.include_tags or self.exclude_tags)
+    
+    def __str__(self):
+        """String representation for display"""
+        parts = []
+        for tag in self.include_tags:
+            parts.append(f"+{tag}")
+        for tag in self.exclude_tags:
+            parts.append(f"-{tag}")
+        return " ".join(parts) if parts else "(no filters)"
+
+class PathManager:
+    """Manages all filesystem paths for awesome-taskwarrior"""
+    
+    def __init__(self):
+        self.home = Path.home()
+        self.task_dir = self.home / ".task"
+        self.hooks_dir = self.task_dir / "hooks"
+        self.scripts_dir = self.task_dir / "scripts"
+        self.config_dir = self.task_dir / "config"
+        self.docs_dir = self.task_dir / "docs"
+        self.logs_dir = self.task_dir / "logs"
+        self.taskrc = self.home / ".taskrc"
+        
+        # Check if we're in a local repo (dev mode)
+        self.tw_root = Path(__file__).parent.absolute()
+        debug(f"PathManager: __file__ = {__file__}", 2)
+        debug(f"PathManager: tw_root = {self.tw_root}", 2)
+        
+        self.local_registry = self.tw_root / "registry.d"
+        self.local_installers = self.tw_root / "installers"
+        self.lib_dir = self.tw_root / "lib"
+        self.installed_dir = self.tw_root / "installed"
+        self.manifest_file = self.config_dir / ".tw_manifest"
+        
+        # Determine mode: local (dev) or remote (production)
+        self.is_dev_mode = self.local_registry.exists() and self.local_installers.exists()
+        debug(f"Dev mode: {self.is_dev_mode}", 1)
+        
+        # Set registry_dir based on mode (for compatibility)
+        self.registry_dir = self.local_registry if self.is_dev_mode else None
+        
+    def init_directories(self):
+        """Create all required directories"""
+        for dir_path in [
+            self.hooks_dir, self.scripts_dir, self.config_dir,
+            self.docs_dir, self.logs_dir, self.installed_dir
+        ]:
+            dir_path.mkdir(parents=True, exist_ok=True)
+        
+        # Only create registry and installers dirs in dev mode
+        if self.is_dev_mode:
+            self.local_registry.mkdir(parents=True, exist_ok=True)
+            self.local_installers.mkdir(parents=True, exist_ok=True)
+
+class RegistryManager:
+    """Manages registry access - local files or GitHub API"""
+    
+    def __init__(self, paths):
+        self.paths = paths
+        self.is_dev_mode = paths.is_dev_mode
+    
+    def list_apps(self):
+        """List all available applications from registry"""
+        if self.is_dev_mode:
+            return self._list_local_apps()
+        else:
+            return self._list_github_apps()
+    
+    def _list_local_apps(self):
+        """List apps from local registry.d/ directory"""
+        debug("Listing apps from local registry", 2)
+        apps = []
+        for meta_path in self.paths.local_registry.glob("*.meta"):
+            apps.append(meta_path.stem)
+        return sorted(apps)
+    
+    def _list_github_apps(self):
+        """List apps from GitHub registry.d/ via API"""
+        debug("Fetching apps from GitHub registry", 2)
+        try:
+            url = f"{GITHUB_API_BASE}/contents/registry.d"
+            req = Request(url)
+            req.add_header('Accept', 'application/vnd.github.v3+json')
+            
+            with urlopen(req, timeout=10) as response:
+                data = json.loads(response.read().decode())
+            
+            apps = [item['name'][:-5] for item in data if item['name'].endswith('.meta')]
+            debug(f"Found {len(apps)} apps on GitHub", 2)
+            return sorted(apps)
+        
+        except (URLError, HTTPError) as e:
+            print(f"[tw] Ã¢Å“â€” Failed to fetch registry from GitHub: {e}")
+            return []
+    
+    def get_meta(self, app_name):
+        """Get MetaFile object for an app"""
+        if self.is_dev_mode:
+            meta_path = self.paths.local_registry / f"{app_name}.meta"
+            if meta_path.exists():
+                return MetaFile(meta_path)
+        else:
+            # Fetch .meta from GitHub
+            url = f"{GITHUB_RAW_BASE}/registry.d/{app_name}.meta"
+            try:
+                debug(f"Fetching {app_name}.meta from GitHub", 2)
+                with urlopen(url, timeout=10) as response:
+                    content = response.read().decode()
+                
+                # Create temporary file
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.meta', delete=False) as f:
+                    f.write(content)
+                    temp_path = f.name
+                
+                meta = MetaFile(temp_path)
+                os.unlink(temp_path)
+                return meta
+            
+            except (URLError, HTTPError) as e:
+                debug(f"Failed to fetch {app_name}.meta: {e}", 1)
+                return None
+        
+        return None
+    
+    def get_installer(self, app_name):
+        """Get path to installer script (local or downloaded temp file)"""
+        if self.is_dev_mode:
+            installer_path = self.paths.local_installers / f"{app_name}.install"
+            return installer_path if installer_path.exists() else None
+        else:
+            # Download installer from GitHub
+            url = f"{GITHUB_RAW_BASE}/installers/{app_name}.install"
+            try:
+                debug(f"Downloading {app_name}.install from GitHub", 2)
+                with urlopen(url, timeout=10) as response:
+                    content = response.read().decode()
+                
+                # Create temporary file
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.install', delete=False) as f:
+                    f.write(content)
+                    temp_path = f.name
+                
+                # Make executable
+                os.chmod(temp_path, 0o755)
+                return Path(temp_path)
+            
+            except (URLError, HTTPError) as e:
+                debug(f"Failed to download {app_name}.install: {e}", 1)
+                return None
+
+class MetaFile:
+    """Parses and manages .meta files for applications"""
+    
+    def __init__(self, meta_path):
+        self.meta_path = Path(meta_path)
+        self.data = {}
+        self._parse()
+    
+    def _parse(self):
+        """Parse the .meta file"""
+        if not self.meta_path.exists():
+            return
+        
+        with open(self.meta_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                if '=' in line:
+                    key, value = line.split('=', 1)
+                    self.data[key.strip()] = value.strip()
+    
+    def get(self, key, default=None):
+        """Get a value from the meta file"""
+        return self.data.get(key, default)
+    
+    def get_files(self):
+        """Parse files= field into list of (filename, type) tuples
+        
+        Format: files=file1.py:hook,file2.sh:script,config.rc:config
+        Returns: [('file1.py', 'hook'), ('file2.sh', 'script'), ...]
+        """
+        files_str = self.get('files', '')
+        if not files_str:
+            return []
+        
+        result = []
+        for item in files_str.split(','):
+            item = item.strip()
+            if ':' in item:
+                filename, file_type = item.split(':', 1)
+                result.append((filename.strip(), file_type.strip()))
+            else:
+                # Default to 'file' type if not specified
+                result.append((item, 'file'))
+        
+        return result
+    
+    def get_base_url(self):
+        """Get base URL for file downloads"""
+        return self.get('base_url', '')
+    
+    def get_checksums(self):
+        """Parse checksums= field into list of checksums
+        
+        Format: checksums=hash1,hash2,hash3
+        Returns: ['hash1', 'hash2', 'hash3']
+        """
+        checksums_str = self.get('checksums', '')
+        if not checksums_str:
+            return []
+        
+        return [c.strip() for c in checksums_str.split(',') if c.strip()]
+    
+    def get_tags(self):
+        """Parse tags= field into list of tags
+        
+        Format: tags=python,hook,stable
+        Returns: ['python', 'hook', 'stable']
+        """
+        tags_str = self.get('tags', '')
+        if not tags_str:
+            return []
+        
+        return [t.strip() for t in tags_str.split(',') if t.strip()]
+
+class Manifest:
+    """Manages the installation manifest"""
+    
+    def __init__(self, manifest_path):
+        self.manifest_path = Path(manifest_path)
+        self.entries = []
+        self._load()
+    
+    def _load(self):
+        """Load manifest from file"""
+        if not self.manifest_path.exists():
+            return
+        
+        with open(self.manifest_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                parts = line.split('|')
+                if len(parts) >= 5:
+                    self.entries.append({
+                        'app': parts[0],
+                        'version': parts[1],
+                        'file': parts[2],
+                        'checksum': parts[3],
+                        'date': parts[4]
+                    })
+    
+    def add(self, app, version, file_path, checksum=''):
+        """Add an entry to the manifest"""
+        # Remove any existing entry for this file
+        self.entries = [e for e in self.entries 
+                       if not (e['app'] == app and e['file'] == file_path)]
+        
+        # Add new entry
+        entry = {
+            'app': app,
+            'version': version,
+            'file': file_path,
+            'checksum': checksum,
+            'date': datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+        }
+        self.entries.append(entry)
+        self._save()
+    
+    def remove_app(self, app):
+        """Remove all entries for an app"""
+        self.entries = [e for e in self.entries if e['app'] != app]
+        self._save()
+    
+    def get_files(self, app):
+        """Get list of files for an app"""
+        return [e['file'] for e in self.entries if e['app'] == app]
+    
+    def is_installed(self, app):
+        """Check if an app is installed"""
+        return any(e['app'] == app for e in self.entries)
+    
+    def get_version(self, app):
+        """Get installed version of an app"""
+        for e in self.entries:
+            if e['app'] == app:
+                return e['version']
+        return None
+    
+    def _save(self):
+        """Save manifest to file"""
+        self.manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.manifest_path, 'w') as f:
+            for entry in self.entries:
+                line = '|'.join([
+                    entry['app'],
+                    entry['version'],
+                    entry['file'],
+                    entry['checksum'],
+                    entry['date']
+                ])
+                f.write(line + '\n')
+
+class AppManager:
+    """Manages application installation, removal, and updates"""
+    
+    def __init__(self, paths):
+        self.paths = paths
+        self.manifest = Manifest(paths.manifest_file)
+        self.registry = RegistryManager(paths)
+    
+    def install(self, app_name, dry_run=False):
+        """Install an application using its installer script"""
+        debug(f"AppManager.install: Getting installer for {app_name}", 2)
+        installer_path = self.registry.get_installer(app_name)
+        is_temp_file = not self.paths.is_dev_mode
+        
+        if not installer_path:
+            print(f"[tw] [X] Installer not found: {app_name}")
+            return False
+        
+        debug(f"AppManager.install: Installer path: {installer_path}", 2)
+        
+        # Set environment variables for the installer
+        env = os.environ.copy()
+        env.update({
+            'INSTALL_DIR': str(self.paths.task_dir),
+            'HOOKS_DIR': str(self.paths.hooks_dir),
+            'SCRIPTS_DIR': str(self.paths.scripts_dir),
+            'CONFIG_DIR': str(self.paths.config_dir),
+            'DOCS_DIR': str(self.paths.docs_dir),
+            'LOGS_DIR': str(self.paths.logs_dir),
+            'TASKRC': str(self.paths.taskrc),
+            'TW_COMMON': str(self.paths.lib_dir / 'tw-common.sh')
+        })
+        
+        if dry_run:
+            env['TW_DRY_RUN'] = '1'
+            print(f"[tw] DRY RUN: Would execute: bash {installer_path} install")
+            
+            # Show what would be installed
+            meta = self.registry.get_meta(app_name)
+            if meta:
+                files = meta.get_files()
+                if files:
+                    print(f"[tw] Would install {len(files)} file(s):")
+                    for filename, file_type in files:
+                        target_dir = self._get_target_dir(file_type)
+                        print(f"[tw]   {filename} -> {target_dir}/")
+            
+            # Clean up temp file if needed
+            if is_temp_file and installer_path:
+                os.unlink(installer_path)
+            return True
+        
+        # Execute installer
+        try:
+            result = subprocess.run(
+                ['bash', str(installer_path), 'install'],
+                env=env,
+                capture_output=False,
+                text=True
+            )
+            
+            # Clean up temp file if needed
+            if is_temp_file and installer_path:
+                os.unlink(installer_path)
+            
+            if result.returncode == 0:
+                print(f"[tw] [+] Installed: {app_name}")
+                return True
+            else:
+                print(f"[tw] [X] Installation failed: {app_name}")
+                return False
+                
+        except Exception as e:
+            # Clean up temp file if needed
+            if is_temp_file and installer_path:
+                try:
+                    os.unlink(installer_path)
+                except:
+                    pass
+            print(f"[tw] [X] Error running installer: {e}")
+            return False
+    
+    def remove(self, app_name):
+        """Remove an application using its installer script"""
+        if not self.manifest.is_installed(app_name):
+            print(f"[tw] [!] Not installed: {app_name}")
+            return False
+        
+        debug(f"AppManager.remove: Getting installer for {app_name}", 2)
+        installer_path = self.registry.get_installer(app_name)
+        is_temp_file = not self.paths.is_dev_mode
+        
+        if installer_path:
+            # Use installer's remove function
+            env = os.environ.copy()
+            env.update({
+                'INSTALL_DIR': str(self.paths.task_dir),
+                'HOOKS_DIR': str(self.paths.hooks_dir),
+                'SCRIPTS_DIR': str(self.paths.scripts_dir),
+                'CONFIG_DIR': str(self.paths.config_dir),
+                'DOCS_DIR': str(self.paths.docs_dir),
+                'LOGS_DIR': str(self.paths.logs_dir),
+                'TASKRC': str(self.paths.taskrc),
+                'TW_COMMON': str(self.paths.lib_dir / 'tw-common.sh')
+            })
+            
+            try:
+                result = subprocess.run(
+                    ['bash', str(installer_path), 'remove'],
+                    env=env,
+                    capture_output=False
+                )
+                
+                # Clean up temp file if needed
+                if is_temp_file and installer_path:
+                    os.unlink(installer_path)
+                
+                if result.returncode == 0:
+                    self.manifest.remove_app(app_name)
+                    print(f"[tw] [+] Removed: {app_name}")
+                    return True
+                else:
+                    print(f"[tw] [X] Removal failed: {app_name}")
+                    return False
+                    
+            except Exception as e:
+                # Clean up temp file if needed
+                if is_temp_file and installer_path:
+                    try:
+                        os.unlink(installer_path)
+                    except:
+                        pass
+                print(f"[tw] [X] Error running installer: {e}")
+                return False
+        else:
+            # Fallback: use manifest to remove files
+            print(f"[tw] Installer not found, using manifest for removal")
+            files = self.manifest.get_files(app_name)
+            for file_path in files:
+                path = Path(file_path)
+                if path.exists():
+                    path.unlink()
+                    print(f"[tw]   Removed: {file_path}")
+            
+            self.manifest.remove_app(app_name)
+            print(f"[tw] [+] Removed: {app_name}")
+            return True
+    
+    def update(self, app_name):
+        """Update an application (reinstall)"""
+        print(f"[tw] Updating {app_name}...")
+        if self.manifest.is_installed(app_name):
+            self.remove(app_name)
+        return self.install(app_name)
+    
+    def list_installed(self, tag_filter=None):
+        """List all installed applications with optional tag filtering"""
+        apps = {}
+        for entry in self.manifest.entries:
+            app = entry['app']
+            if app not in apps:
+                apps[app] = entry['version']
+        
+        if not apps:
+            print("[tw] No applications installed")
+            return
+        
+        # Apply tag filter if provided
+        if tag_filter and tag_filter.has_filters():
+            filtered_apps = {}
+            for app, version in apps.items():
+                meta = self.registry.get_meta(app)
+
+                if meta:
+                    tags = meta.get_tags()
+                    if tag_filter.matches(tags):
+                        filtered_apps[app] = version
+            
+            if not filtered_apps:
+                print(f"[tw] No applications match filter: {tag_filter}")
+                return
+            
+            print(f"[tw] Installed applications (filtered by {tag_filter}):")
+            apps = filtered_apps
+        else:
+            print("[tw] Installed applications:")
+        
+        for app, version in sorted(apps.items()):
+            # Get tags for display
+            meta = self.registry.get_meta(app)
+            tags_str = ""
+            if meta:
+                tags = meta.get_tags()
+                if tags:
+                    tags_str = f" [{', '.join(tags)}]"
+            
+            print(f"[tw]   {app} (v{version}){tags_str}")
+    
+    def list_tags(self, app_names=None):
+        """List all available tags from registry, optionally filtered by app names
+        
+        Args:
+            app_names: List of app names to filter by, or None for all apps
+        """
+        tag_counts = {}
+        
+        # Scan all apps in registry
+        apps = self.registry.list_apps()
+        for app_name in apps:
+            # Filter by app names if provided
+            if app_names and app_name not in app_names:
+                continue
+            
+            meta = self.registry.get_meta(app_name)
+            if not meta:
+                continue
+            tags = meta.get_tags()
+            
+            for tag in tags:
+                tag_counts[tag] = tag_counts.get(tag, 0) + 1
+        
+        if not tag_counts:
+            if app_names:
+                print(f"[tw] No tags found for: {', '.join(app_names)}")
+            else:
+                print("[tw] No tags found in registry")
+            return
+        
+        # Display tags
+        if app_names:
+            print(f"[tw] Tags for {', '.join(app_names)}:")
+        else:
+            print("[tw] Available tags:")
+        
+        for tag, count in sorted(tag_counts.items()):
+            print(f"[tw]   {tag} ({count} app{'s' if count != 1 else ''})")
+    
+    def show_info_all(self, tag_filter=None):
+        """Show info for all available applications (installed or not)
+        
+        Args:
+            tag_filter: Optional TagFilter to filter apps by tags
+        """
+        debug(f"show_info_all called, dev_mode={self.paths.is_dev_mode}", 2)
+        
+        # Get all apps from registry
+        all_apps = []
+        apps = self.registry.list_apps()
+        debug(f"Found {len(apps)} apps in registry", 2)
+        
+        for app_name in apps:
+            debug(f"Processing {app_name}", 3)
+            
+            # Apply tag filter if provided
+            if tag_filter and tag_filter.has_filters():
+                meta = self.registry.get_meta(app_name)
+                if not meta:
+                    continue
+                tags = meta.get_tags()
+                debug(f"App {app_name} has tags: {tags}", 3)
+                if not tag_filter.matches(tags):
+                    debug(f"App {app_name} filtered out by tag filter", 3)
+                    continue
+            
+            all_apps.append(app_name)
+        
+        debug(f"Final app list: {all_apps}", 2)
+        
+        if not all_apps:
+            if tag_filter and tag_filter.has_filters():
+                print(f"[tw] No applications match filter: {tag_filter}")
+            else:
+                print(f"[tw] No applications found in registry")
+            return False
+        
+        # Show info for each app
+        if tag_filter and tag_filter.has_filters():
+            print(f"[tw] Applications matching {tag_filter}:\n")
+        else:
+            print(f"[tw] All available applications:\n")
+        
+        for i, app_name in enumerate(sorted(all_apps)):
+            if i > 0:
+                print()  # Blank line between apps
+            self.show_info(app_name)
+        
+        return True
+
+    
+    def show_info(self, app_name):
+        """Show information about an application"""
+        meta = self.registry.get_meta(app_name)
+        
+        if not meta:
+            print(f"[tw] [X] Application not found: {app_name}")
+            return False
+        
+        print(f"[tw] Application: {app_name}")
+        print(f"[tw]   Name: {meta.get('name', 'N/A')}")
+        print(f"[tw]   Version: {meta.get('version', 'N/A')}")
+        print(f"[tw]   Type: {meta.get('type', 'N/A')}")
+        print(f"[tw]   Description: {meta.get('description', 'N/A')}")
+        print(f"[tw]   Repository: {meta.get('repo', 'N/A')}")
+        print(f"[tw]   Base URL: {meta.get('base_url', 'N/A')}")
+        
+        # Show files
+        files = meta.get_files()
+        if files:
+            print(f"[tw]   Files ({len(files)}):")
+            for filename, file_type in files:
+                print(f"[tw]     {filename} ({file_type})")
+        
+        # Show installation status
+        if self.manifest.is_installed(app_name):
+            installed_version = self.manifest.get_version(app_name)
+            print(f"[tw]   Status: Installed (v{installed_version})")
+            
+            # Show README location if it exists
+            readme_path = self.paths.docs_dir / f"{app_name}_README.md"
+            if readme_path.exists():
+                print(f"[tw]   README: {readme_path}")
+        else:
+            print(f"[tw]   Status: Not installed")
+        
+        return True
+    
+    def verify(self, app_name):
+        """Verify checksums of installed files"""
+        if not self.manifest.is_installed(app_name):
+            print(f"[tw] ÃƒÂ¢Ã…â€œÃ¢â‚¬â€� Not installed: {app_name}")
+            return False
+        
+        meta = self.registry.get_meta(app_name)
+        if not meta:
+            print(f"[tw] [!] Meta file not found for: {app_name}")
+            return False
+        checksums = meta.get_checksums()
+        files = meta.get_files()
+        
+        if not checksums:
+            print(f"[tw] ÃƒÂ¢Ã…Â¡Ã‚Â  No checksums available for {app_name}")
+            return True
+        
+        print(f"[tw] Verifying {app_name}...")
+        all_valid = True
+        
+        for i, (filename, file_type) in enumerate(files):
+            if i >= len(checksums):
+                break
+            
+            expected_checksum = checksums[i]
+            if not expected_checksum:
+                continue
+            
+            # Find file path
+            target_dir = self._get_target_dir(file_type)
+            file_path = target_dir / filename
+            
+            if not file_path.exists():
+                print(f"[tw] ÃƒÂ¢Ã…â€œÃ¢â‚¬â€� File not found: {file_path}")
+                all_valid = False
+                continue
+            
+            # Calculate checksum
+            actual_checksum = self._calculate_checksum(file_path)
+            
+            if actual_checksum == expected_checksum:
+                print(f"[tw] ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ {filename}")
+            else:
+                print(f"[tw] ÃƒÂ¢Ã…â€œÃ¢â‚¬â€� {filename} (checksum mismatch)")
+                all_valid = False
+        
+        if all_valid:
+            print(f"[tw] ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ All files verified")
+        else:
+            print(f"[tw] ÃƒÂ¢Ã…â€œÃ¢â‚¬â€� Verification failed")
+        
+        return all_valid
+    
+    def _get_target_dir(self, file_type):
+        """Get target directory for a file type"""
+        type_map = {
+            'hook': self.paths.hooks_dir,
+            'script': self.paths.scripts_dir,
+            'config': self.paths.config_dir,
+            'doc': self.paths.docs_dir
+        }
+        return type_map.get(file_type, self.paths.task_dir)
+    
+    def _calculate_checksum(self, file_path):
+        """Calculate SHA256 checksum of a file"""
+        sha256_hash = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+        return sha256_hash.hexdigest()
+
+class TaskShell:
+    """Interactive shell for Taskwarrior with persistent modifiers
+    
+    Integrated into tw wrapper - uses "tw" as shell name instead of "task"
+    """
+    
+    def __init__(self, initial_head=None, initial_prefix=None):
+        self.head = initial_head if initial_head else []
+        self.prefix_stack = initial_prefix if initial_prefix else []
+        self.templates = {
+            "meeting": ["proj:meetings", "+work", "pri:M"],
+            "bug": ["proj:bugs", "+work", "pri:H"],
+        }
+        self._init_history()
+    
+    def _init_history(self):
+        """Initialize readline history"""
+        try:
+            readline.read_history_file(SHELL_HISTFILE)
+        except FileNotFoundError:
+            pass
+    
+    def _save_history(self):
+        """Save readline history"""
+        readline.write_history_file(SHELL_HISTFILE)
+    
+    def _format_prompt(self):
+        """Build prompt showing current state"""
+        if self.head:
+            parts = [SHELL_NAME] + self.head + self.prefix_stack
+        else:
+            if self.prefix_stack:
+                parts = [SHELL_NAME] + self.prefix_stack
+            else:
+                parts = [SHELL_NAME]
+        return " ".join(parts) + "> "
+    
+    def _run_task(self, args):
+        """Execute task command with full passthrough of stdout/stderr"""
+        subprocess.run(["task"] + args, check=False)
+    
+    def _get_context(self, name):
+        """Activate context and return its filter definition"""
+        # Activate the context
+        subprocess.run(["task", "context", name], check=False)
+        # Fetch its definition
+        p = subprocess.run(
+            ["task", "_get", f"rc.context.{name}"],
+            capture_output=True,
+            text=True,
+        )
+        return shlex.split(p.stdout.strip())
+    
+    def _show_help(self, detailed=False):
+        """Show shell help"""
+        if detailed:
+            # Show detailed help (same as tw --help shell)
+            print("""
+Interactive Shell (tw --shell)
+==============================
+
+The interactive shell provides a stateful environment for running Taskwarrior
+commands with persistent modifiers and command heads.
+
+Starting the Shell:
+  tw --shell                    Start with empty state
+  tw --shell add                Start in 'add' mode
+  tw --shell add +work          Start in 'add' mode with +work modifier
+  tw --shell +work proj:foo     Start with modifiers (no command)
+
+Shell Commands:
+  :head <cmd>        Set command head (e.g., :head add, :head modify)
+  :head              Clear command head (return to base prompt)
+  :push <mods...>    Add persistent modifiers (e.g., :push +work proj:foo)
+  :pop               Remove last modifier from stack
+  :clear             Clear all modifiers
+  :reset             Clear both head and modifiers
+  :context <n>    Apply Taskwarrior context filters to modifier stack
+  :tpl <n>        Apply a template (predefined modifier sets)
+  :show              Display current HEAD and PREFIX_STACK state
+  :help              Show this quick reference
+  :help shell        Show detailed shell documentation
+  :q, :quit, :exit   Exit shell
+
+Shell Execution:
+  exec <cmd>         Execute any shell command
+  !<cmd>             Same as exec (e.g., !ls -la)
+  !!                 Repeat last shell command
+
+How it Works:
+  Every command you type is prepended with HEAD + PREFIX_STACK
+  Empty input (just pressing Enter) runs the default report
+  
+  Example session:
+    tw> :push +work proj:meetings
+    tw +work proj:meetings> :head add
+    tw add +work proj:meetings> Schedule standup for Friday
+    # Executes: task add +work proj:meetings Schedule standup for Friday
+    
+    tw add +work proj:meetings> :head
+    tw +work proj:meetings> list
+    # Executes: task +work proj:meetings list
+    
+    tw +work proj:meetings> 
+    # Executes: task +work proj:meetings (default report)
+    
+    tw +work proj:meetings> :pop
+    tw +work> 5 modify +urgent
+    # Executes: task +work 5 modify +urgent
+
+Templates:
+  Built-in templates provide quick modifier sets:
+  - meeting: proj:meetings +work pri:M
+  - bug: proj:bugs +work pri:H
+  
+  Usage: :tpl meeting
+
+History:
+  Command history is saved to ~/.tw_shell_history
+  Use arrow keys to navigate previous commands
+""")
+        else:
+            # Show quick reference
+            print("""
+Commands:
+  :head <args...>       set command head (e.g., :head add, :head modify)
+  :head                 clear command head (return to base prompt)
+  :push <mods...>       push persistent modifiers onto stack
+  :pop                  pop last modifier from stack
+  :clear                clear all modifiers from stack
+  :context <n>       apply task context filters to stack
+  :tpl <n>           apply a template to stack
+  :show                 show current HEAD and PREFIX_STACK state
+  :reset                reset both head and modifiers to empty
+  :help                 show this quick reference
+  :help shell           show detailed shell documentation
+  :q | :quit | :exit    exit shell
+
+Examples:
+  :push +work proj:meetings
+  :head add
+  Schedule the standup
+  # Runs: task add +work proj:meetings Schedule the standup
+
+  :head
+  list
+  # Runs: task +work proj:meetings list
+  
+  (press Enter on empty line)
+  # Runs: task +work proj:meetings (default report)
+""".strip())
+    
+    def _handle_meta_command(self, cmd):
+        """Handle meta-commands (commands starting with :)
+        
+        Returns True if shell should continue, False if it should exit
+        """
+        if not cmd:
+            return True
+        
+        if cmd[0] in ("q", "quit", "exit"):
+            return False
+        
+        elif cmd[0] == "help":
+            # :help shell shows detailed help, :help shows quick reference
+            detailed = len(cmd) > 1 and cmd[1] == "shell"
+            self._show_help(detailed=detailed)
+        
+        elif cmd[0] == "head":
+            # :head with no args clears HEAD to []
+            self.head = cmd[1:] if len(cmd) > 1 else []
+        
+        elif cmd[0] == "push":
+            self.prefix_stack.extend(cmd[1:])
+        
+        elif cmd[0] == "pop":
+            if self.prefix_stack:
+                self.prefix_stack.pop()
+            else:
+                print("PREFIX_STACK is empty")
+        
+        elif cmd[0] == "clear":
+            self.prefix_stack.clear()
+        
+        elif cmd[0] == "reset":
+            self.head = []
+            self.prefix_stack.clear()
+        
+        elif cmd[0] == "show":
+            print("HEAD:", self.head if self.head else "(empty)")
+            print("PREFIX_STACK:", self.prefix_stack if self.prefix_stack else "(empty)")
+        
+        elif cmd[0] == "context":
+            if len(cmd) > 1:
+                context_filters = self._get_context(cmd[1])
+                self.prefix_stack.extend(context_filters)
+            else:
+                print("Usage: :context <n>")
+        
+        elif cmd[0] == "tpl":
+            if len(cmd) > 1:
+                template = self.templates.get(cmd[1])
+                if template:
+                    self.prefix_stack.extend(template)
+                else:
+                    print(f"Unknown template: {cmd[1]}")
+                    print(f"Available templates: {', '.join(self.templates.keys())}")
+            else:
+                print("Usage: :tpl <n>")
+                print(f"Available templates: {', '.join(self.templates.keys())}")
+        
+        else:
+            print(f"Unknown command: {cmd[0]}")
+            print("Type :help for available commands")
+        
+        return True
+    
+    def run(self):
+        """Run the interactive shell"""
+        try:
+            while True:
+                line = input(self._format_prompt()).strip()
+                
+                # Empty input: run default report with current state
+                if not line:
+                    args = self.head + self.prefix_stack
+                    if args:  # Only run if we have some state
+                        self._run_task(args)
+                    else:  # Completely empty - run bare 'task'
+                        self._run_task([])
+                    continue
+                
+                # Handle shell command execution (exec or !)
+                if line.startswith('exec '):
+                    shell_cmd = line[5:].strip()
+                    if shell_cmd:
+                        subprocess.run(shell_cmd, shell=True, check=False)
+                    continue
+                
+                if line.startswith('!'):
+                    if len(line) > 1 and line[1] == '!':
+                        # !! - repeat last command (from history)
+                        history_len = readline.get_current_history_length()
+                        if history_len > 1:
+                            # Get the command before the current one
+                            last_cmd = readline.get_history_item(history_len - 1)
+                            if last_cmd and not last_cmd.startswith('!'):
+                                print(f"[tw-shell] Repeating: {last_cmd}")
+                                subprocess.run(last_cmd, shell=True, check=False)
+                            else:
+                                print("[tw-shell] No previous command to repeat")
+                        else:
+                            print("[tw-shell] No command history")
+                    else:
+                        # Single ! - execute shell command
+                        shell_cmd = line[1:].strip()
+                        if shell_cmd:
+                            subprocess.run(shell_cmd, shell=True, check=False)
+                    continue
+                
+                # Handle meta-commands
+                if line.startswith(":"):
+                    cmd = shlex.split(line[1:])
+                    if not self._handle_meta_command(cmd):
+                        break  # Exit shell
+                    continue
+                
+                # Build and execute task command
+                # HEAD + PREFIX_STACK are always prepended to user input
+                args = self.head + self.prefix_stack + shlex.split(line)
+                self._run_task(args)
+        
+        except (EOFError, KeyboardInterrupt):
+            print()
+        finally:
+            self._save_history()
+
+def show_help_topic(topic):
+    """Show detailed help for a specific topic"""
+    topics = {
+        'shell': """
+Interactive Shell (tw --shell)
+==============================
+
+The interactive shell provides a stateful environment for running Taskwarrior
+commands with persistent modifiers and command heads.
+
+Starting the Shell:
+  tw --shell                    Start with empty state
+  tw --shell add                Start in 'add' mode
+  tw --shell add +work          Start in 'add' mode with +work modifier
+  tw --shell +work proj:foo     Start with modifiers (no command)
+
+Shell Commands:
+  :head <cmd>        Set command head (e.g., :head add, :head modify)
+  :head              Clear command head (return to base prompt)
+  :push <mods...>    Add persistent modifiers (e.g., :push +work proj:foo)
+  :pop               Remove last modifier from stack
+  :clear             Clear all modifiers
+  :reset             Clear both head and modifiers
+  :context <name>    Apply Taskwarrior context filters to modifier stack
+  :tpl <name>        Apply a template (predefined modifier sets)
+  :show              Display current HEAD and PREFIX_STACK state
+  :help              Show shell help
+  :q, :quit, :exit   Exit shell
+
+Shell Execution:
+  exec <cmd>         Execute any shell command
+  !<cmd>             Same as exec (e.g., !ls -la, !cat file.txt)
+  !!                 Repeat last shell command
+  
+  Examples:
+    tw> exec ls -la
+    tw> !grep "bug" notes.txt
+    tw> !!
+
+How it Works:
+  Every command you type is prepended with HEAD + PREFIX_STACK
+  
+  Example session:
+    tw> :push +work proj:meetings
+    tw +work proj:meetings> :head add
+    tw add +work proj:meetings> Schedule standup for Friday
+    # Executes: task add +work proj:meetings Schedule standup for Friday
+    
+    tw add +work proj:meetings> :head
+    tw +work proj:meetings> list
+    # Executes: task +work proj:meetings list
+    
+    tw +work proj:meetings> :pop
+    tw +work> 5 modify +urgent
+    # Executes: task +work 5 modify +urgent
+
+Templates:
+  Built-in templates provide quick modifier sets:
+  - meeting: proj:meetings +work pri:M
+  - bug: proj:bugs +work pri:H
+  
+  Usage: :tpl meeting
+
+History:
+  Command history is saved to ~/.tw_shell_history
+  Use arrow keys to navigate previous commands
+""",
+        'install': """
+Package Installation (tw --install)
+===================================
+
+Install Taskwarrior extensions from the awesome-taskwarrior registry.
+
+Usage:
+  tw --install <app>        Install an application
+  tw --install --dry-run <app>   Preview installation without changes
+
+How it Works:
+  1. Reads metadata from registry.d/<app>.meta
+  2. Downloads files via curl from specified base_url
+  3. Places files in appropriate directories (hooks/, scripts/, config/)
+  4. Tracks installation in ~/.task/.tw_manifest
+  5. Copies README to ~/.task/docs/
+
+File Placement:
+  - hook files  Ã¢â€ â€™ ~/.task/hooks/
+  - script files Ã¢â€ â€™ ~/.task/scripts/
+  - config files Ã¢â€ â€™ ~/.task/config/
+  - doc files    Ã¢â€ â€™ ~/.task/docs/
+
+Example:
+  tw --install tw-recurrence-hooks
+  tw --install --dry-run tw-need_priority
+""",
+        'remove': """
+Package Removal (tw --remove)
+==============================
+
+Remove installed Taskwarrior extensions.
+
+Usage:
+  tw --remove <app>         Remove an application
+
+How it Works:
+  1. Runs the application's installer with --remove flag (if available)
+  2. Falls back to manifest-based removal if installer not found
+  3. Removes all tracked files
+  4. Updates manifest
+
+Safety:
+  - Only removes files tracked in the manifest
+  - Preserves user data and task database
+  - Installer's --remove can perform custom cleanup
+
+Example:
+  tw --remove tw-recurrence-hooks
+""",
+        'verify': """
+Package Verification (tw --verify)
+===================================
+
+Verify checksums of installed application files.
+
+Usage:
+  tw --verify <app>         Verify all files for an application
+
+How it Works:
+  1. Reads expected checksums from registry.d/<app>.meta
+  2. Calculates SHA256 checksums of installed files
+  3. Compares expected vs actual
+  4. Reports any mismatches
+
+Use Cases:
+  - Verify installation integrity
+  - Detect file modifications
+  - Troubleshoot issues
+
+Example:
+  tw --verify tw-recurrence-hooks
+""",
+        'list': """
+List Installed Packages (tw --list)
+====================================
+
+Show all installed applications and their versions.
+
+Usage:
+  tw --list                 List all installed packages
+
+Output Format:
+  [tw] Installed applications:
+  [tw]   app-name (vX.Y.Z)
+  [tw]   another-app (vA.B.C)
+
+Example:
+  tw --list
+""",
+        'info': """
+Package Information (tw --info)
+================================
+
+Show detailed information about an application.
+
+Usage:
+  tw --info <app>           Show package details
+
+Information Shown:
+  - Name and description
+  - Version
+  - Type (hooks, script, etc.)
+  - Repository URL
+  - Base download URL
+  - Files and their types
+  - Installation status
+  - README location (if installed)
+
+Example:
+  tw --info tw-recurrence-hooks
+""",
+    }
+    
+    if topic in topics:
+        print(topics[topic])
+        return True
+    else:
+        # Show available topics
+        print(f"Unknown help topic: {topic}\n")
+        print("Available help topics:")
+        for t in sorted(topics.keys()):
+            print(f"  {t}")
+        print("\nUsage: tw --help <topic>")
+        return False
+
+def get_taskwarrior_version():
+    """Get taskwarrior version"""
+    try:
+        result = subprocess.run(['task', '--version'], 
+                              capture_output=True, text=True, check=True)
+        # Output is like "2.6.2\n"
+        return result.stdout.strip()
+    except:
+        return "unknown"
+
+def get_installed_extensions(paths):
+    """Get list of installed extensions with versions from manifest"""
+    extensions = {}
+    manifest_file = paths.config_dir / ".tw_manifest"
+    
+    if not manifest_file.exists():
+        return extensions
+    
+    try:
+        with open(manifest_file, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                # Format: appname|version|filepath|checksum|timestamp
+                parts = line.split('|')
+                if len(parts) >= 2:
+                    app_name = parts[0]
+                    version = parts[1]
+                    # Store unique apps (manifest has one line per file)
+                    if app_name not in extensions:
+                        extensions[app_name] = version
+    except:
+        pass
+    
+    return extensions
+
+def validate_first_arg_flag(args):
+    """
+    Validate that flags are only recognized when:
+    1. They are the first argument
+    2. They have a trailing space (not part of another word)
+    3. They are known flags
+    
+    Returns: (is_valid_flag, error_message)
+    """
+    if not args or len(args) == 0:
+        return (False, None)
+    
+    first_arg = args[0]
+    
+    # If first arg doesn't start with -, it's not a flag
+    if not first_arg.startswith('-'):
+        return (False, None)
+    
+    # Known tw flags
+    known_short = ['-I', '-r', '-u', '-l', '-i', '-v', '-h', '-s', '-p', '-A']
+    known_long = ['--install', '--remove', '--update', '--list', '--info', 
+                  '--verify', '--tags', '--dry-run', '--debug', 
+                  '--version', '--help', '--shell', '--pager', '--attach']
+    
+    # Check if it's a known flag (exact match)
+    if first_arg in known_short or first_arg in known_long:
+        return (True, None)
+    
+    # Check for flags with = syntax (e.g., --debug=2)
+    if '=' in first_arg:
+        flag_part = first_arg.split('=')[0]
+        if flag_part in known_long:
+            return (True, None)
+    
+    # Check if it starts with a known flag but has no space (e.g., -lena)
+    # This should NOT match - flags must be standalone
+    for flag in known_short:
+        if first_arg.startswith(flag) and len(first_arg) > len(flag):
+            # This is something like "-lena" which should not match "-l"
+            # Treat as unknown flag
+            return (False, f"Unknown flag: {first_arg}")
+    
+    # Unknown flag starting with - or --
+    if first_arg.startswith('-'):
+        return (False, f"Unknown flag: {first_arg}")
+    
+    return (False, None)
+
+def attach_file_to_task(task_id):
+    """Attach a file to a task using ranger file browser"""
+    try:
+        # Check if ranger is installed
+        ranger_bin = shutil.which('ranger')
+        if not ranger_bin:
+            print("[tw] Error: ranger is not installed")
+            print("[tw] Install ranger to use file attachment feature")
+            print("[tw] Debian/Ubuntu: sudo apt install ranger")
+            print("[tw] Arch: sudo pacman -S ranger")
+            print("[tw] macOS: brew install ranger")
+            return 1
+        
+        # Find task executable
+        task_bin = shutil.which('task')
+        if not task_bin:
+            print("[tw] Task executable not found")
+            return 1
+        
+        # Get task description
+        result = subprocess.run(
+            [task_bin, task_id, 'info'],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        
+        if result.returncode != 0:
+            print(f"[tw] Error: Could not find task {task_id}")
+            return 1
+        
+        # Extract description from info output
+        desc = ""
+        for line in result.stdout.split('\n'):
+            if line.startswith('Description'):
+                # Extract everything after "Description"
+                desc = line.split(None, 1)[1] if len(line.split(None, 1)) > 1 else ""
+                break
+        
+        print(f"[tw] Attaching to task {task_id}: '{desc}'")
+        
+        # Prompt for label
+        print("[tw] Type a label (or press Enter for none): ", end='', flush=True)
+        label = input().strip()
+        
+        # Create temp file for ranger output
+        temp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.ranger')
+        temp_filename = temp_file.name
+        temp_file.close()
+        
+        # Launch ranger
+        print("[tw] Launching ranger... (press 'q' to cancel)")
+        ranger_result = subprocess.run(
+            [ranger_bin, f'--choosefile={temp_filename}'],
+            check=False
+        )
+        
+        # Read selected file
+        try:
+            with open(temp_filename, 'r') as f:
+                selected_file = f.read().strip()
+        except:
+            selected_file = ""
+        finally:
+            os.unlink(temp_filename)
+        
+        if not selected_file:
+            print("[tw] No file selected, attachment cancelled")
+            return 0
+        
+        # Build annotation
+        annotation = f"{label}: {selected_file}" if label else selected_file
+        
+        # Add annotation to task
+        result = subprocess.run(
+            [task_bin, task_id, 'annotate', '--', annotation],
+            check=False
+        )
+        
+        if result.returncode == 0:
+            print(f"[tw] ✓ Attached: {annotation}")
+        
+        return result.returncode
+        
+    except KeyboardInterrupt:
+        print("\n[tw] Attachment cancelled")
+        return 1
+    except Exception as e:
+        print(f"[tw] Error attaching file: {e}", file=sys.stderr)
+        return 1
+
+def run_with_pager(task_args):
+    """Run task command with pager - simple pipe like tless"""
+    try:
+        # Get terminal width
+        cols = os.popen('tput cols', 'r').read().strip()
+        
+        # Find task executable
+        task_bin = shutil.which('task')
+        if not task_bin:
+            print("[tw] Task executable not found")
+            return 1
+        
+        # Find pager
+        pager = shutil.which('less') or shutil.which('more')
+        if not pager:
+            # No pager, just run task normally
+            return pass_through_to_task(task_args)
+        
+        # Build shell command - try to override ALL possible limits
+        args_str = ' '.join(shlex.quote(arg) for arg in task_args) if task_args else ''
+        
+        # Override multiple limit/lines settings to catch all reports
+        # Some reports use 'limit', some use 'lines'
+        overrides = (
+            f"rc._forcecolor=on "
+            f"rc.defaultwidth={cols} "
+            f"rc.limit=0 "
+            f"rc.report.next.limit=0 "
+            f"rc.report.next.lines=0 "  # next uses 'lines' not 'limit'!
+            f"rc.report.list.limit=0 "
+            f"rc.report.all.limit=0 "
+            f"rc.report.ls.limit=0"
+        )
+        
+        shell_cmd = f"{task_bin} {args_str} {overrides} 2>/dev/null | {pager} -R -X"
+        
+        # Debug
+        if os.environ.get('TW_DEBUG_WRAPPER', '0') != '0':
+            print(f"[tw-debug] Pager shell command:", file=sys.stderr)
+            print(f"[tw-debug]   {shell_cmd}", file=sys.stderr)
+        
+        # Execute the pipeline
+        result = subprocess.run(shell_cmd, shell=True, check=False)
+        return result.returncode
+        
+    except Exception as e:
+        print(f"[tw] Error using pager: {e}", file=sys.stderr)
+        # Fall back to normal execution
+        return pass_through_to_task(task_args)
+
+def pass_through_to_task(args):
+    """Pass command through to task"""
+    try:
+        # Find task executable
+        task_bin = shutil.which('task')
+        if not task_bin:
+            print("[tw] ÃƒÂ¢Ã…â€œÃ¢â‚¬â€� task executable not found")
+            return 1
+        
+        # Execute task with arguments
+        result = subprocess.run([task_bin] + args, check=False)
+        return result.returncode
+        
+    except Exception as e:
+        print(f"[tw] ÃƒÂ¢Ã…â€œÃ¢â‚¬â€� Error executing task: {e}")
+        return 1
+
+def main():
+    """Main entry point"""
+    # Debug support via TW_DEBUG_WRAPPER environment variable
+    # Set TW_DEBUG_WRAPPER=1 to see argument parsing flow
+    debug_wrapper = os.environ.get('TW_DEBUG_WRAPPER', '0') != '0'
+    
+    if debug_wrapper:
+        print(f"[tw-debug] sys.argv = {sys.argv}", file=sys.stderr)
+    
+    # Check if we have any arguments
+    if len(sys.argv) < 2:
+        # No arguments, pass empty to argparse to show help
+        if debug_wrapper:
+            print(f"[tw-debug] No arguments, showing help", file=sys.stderr)
+        pass
+    else:
+        # Validate first argument if it looks like a flag
+        is_valid, error_msg = validate_first_arg_flag(sys.argv[1:])
+        
+        if debug_wrapper:
+            print(f"[tw-debug] first_arg = '{sys.argv[1]}'", file=sys.stderr)
+            print(f"[tw-debug] is_valid = {is_valid}, error_msg = {error_msg}", file=sys.stderr)
+        
+        if error_msg:
+            # Unknown flag error
+            print(f"[tw] Error: {error_msg}")
+            print("[tw] Use 'tw --help' for usage information")
+            return 1
+        
+        if not is_valid and sys.argv[1].startswith('-'):
+            # First arg looks like a flag but isn't valid - already handled above
+            if debug_wrapper:
+                print(f"[tw-debug] Flag-like but invalid, continuing", file=sys.stderr)
+            pass
+        elif not is_valid:
+            # First arg is not a flag at all - pass through to task immediately
+            if debug_wrapper:
+                print(f"[tw-debug] First arg not a tw flag, passing through to task", file=sys.stderr)
+                print(f"[tw-debug] Executing: task {' '.join(sys.argv[1:])}", file=sys.stderr)
+            return pass_through_to_task(sys.argv[1:])
+    
+    # If we get here, either no args or first arg is a valid tw flag
+    if debug_wrapper:
+        print(f"[tw-debug] First arg is valid tw flag, processing with argparse", file=sys.stderr)
+    
+    # CRITICAL: Only let argparse see consecutive flags from the start
+    # Once we hit a non-flag argument, everything after should pass through
+    # Special handling: flags that take arguments need their arg included
+    flags_with_args = ['-I', '-r', '-u', '-i', '-A', '--install', '--remove', 
+                      '--update', '--info', '--attach', '--verify']
+    
+    args_for_parser = []
+    remaining_args = []
+    found_non_flag = False
+    expect_flag_arg = False  # True if previous flag expects an argument
+    
+    for arg in sys.argv[1:]:
+        if found_non_flag:
+            # Already found a non-flag, rest goes to remaining
+            remaining_args.append(arg)
+        elif expect_flag_arg:
+            # This is the argument for the previous flag
+            args_for_parser.append(arg)
+            expect_flag_arg = False
+        elif arg.startswith('-'):
+            # This is a flag-like argument
+            args_for_parser.append(arg)
+            # Check if this flag expects an argument
+            flag_base = arg.split('=')[0]  # Handle --flag=value
+            if flag_base in flags_with_args and '=' not in arg:
+                # Flag expects separate argument
+                expect_flag_arg = True
+        else:
+            # First non-flag argument (and not expected by a flag)
+            found_non_flag = True
+            remaining_args.append(arg)
+    
+    if debug_wrapper:
+        print(f"[tw-debug] args_for_parser = {args_for_parser}", file=sys.stderr)
+        print(f"[tw-debug] remaining_args = {remaining_args}", file=sys.stderr)
+    
+    parser = argparse.ArgumentParser(
+        description='awesome-taskwarrior package manager and wrapper',
+        add_help=False
+    )
+    
+    # Package management commands
+    parser.add_argument('-I', '--install', metavar='APP', help='Install an application')
+    parser.add_argument('-r', '--remove', metavar='APP', help='Remove an application')
+    parser.add_argument('-u', '--update', metavar='APP', help='Update an application')
+    parser.add_argument('-l', '--list', action='store_true', help='List installed applications')
+    parser.add_argument('-i', '--info', nargs='?', const='', metavar='APP', help='Show application info (all apps if no name given)')
+    parser.add_argument('--verify', metavar='APP', help='Verify application checksums')
+    parser.add_argument('--tags', action='store_true', help='List all available tags (optional: filter by app names)')
+    parser.add_argument('--dry-run', action='store_true', help='Show what would be done')
+    parser.add_argument('--debug', nargs='?', const='1', metavar='LEVEL', help='Enable debug output (1-3, default: 1)')
+    
+    # Utility commands
+    parser.add_argument('-v', '--version', action='store_true', help='Show tw version')
+    parser.add_argument('-h', '--help', action='store_true', help='Show this help')
+    parser.add_argument('-s', '--shell', action='store_true', help='Start interactive shell (optional: command and modifiers)')
+    parser.add_argument('-p', '--pager', action='store_true', help='Use pager for task output')
+    parser.add_argument('-A', '--attach', metavar='TASKID', help='Attach file to task using ranger')
+    
+    # Parse ONLY the consecutive flags from the beginning
+    # Use our pre-split args_for_parser instead of letting argparse scan everything
+    args, extra = parser.parse_known_args(args_for_parser)
+    
+    # Combine any unparsed flags with our remaining_args
+    remaining = extra + remaining_args
+    
+    if debug_wrapper:
+        print(f"[tw-debug] Parsed args: {vars(args)}", file=sys.stderr)
+        print(f"[tw-debug] Final remaining: {remaining}", file=sys.stderr)
+    
+    # Initialize paths
+    paths = PathManager()
+    paths.init_directories()
+    
+    # Initialize debug logger if requested
+    global debug_logger
+    if args.debug:
+        try:
+            level = int(args.debug)
+            if level < 1 or level > 3:
+                print("[tw] Debug level must be 1-3, using 1")
+                level = 1
+        except ValueError:
+            print(f"[tw] Invalid debug level '{args.debug}', using 1")
+            level = 1
+        
+        debug_logger = DebugLogger(level=level)
+        debug_logger.set_environment()
+        debug(f"tw v{VERSION} debug session started", 1)
+        debug(f"Debug log: {debug_logger.log_file}", 1)
+    
+    # Handle tw commands
+    if args.version:
+        # Show taskwarrior version
+        tw_version = get_taskwarrior_version()
+        print(f"taskwarrior {tw_version}")
+        print(f"tw v{VERSION}")
+        
+        # Show installed extensions
+        extensions = get_installed_extensions(paths)
+        if extensions:
+            print("\nInstalled extensions:")
+            for app_name in sorted(extensions.keys()):
+                print(f"  {app_name} v{extensions[app_name]}")
+        
+        return 0
+    
+    if args.help:
+        # Check if there are trailing args for topic help
+        if remaining and remaining[0] not in ['--help', '--version']:
+            # Topic-specific help
+            return 0 if show_help_topic(remaining[0]) else 1
+        
+        # General help
+        parser.print_help()
+        print("\nInteractive Shell:")
+        print("  tw --shell                 Start interactive shell")
+        print("  tw --shell add +work       Start shell with command and modifiers")
+        print("  tw --shell +work proj:foo  Start shell with modifiers")
+        print("\nFor detailed help on specific features:")
+        print("  tw --help shell            Interactive shell guide")
+        print("  tw --help install          Package installation")
+        print("  tw --help remove           Package removal")
+        print("  tw --help verify           Package verification")
+        print("  tw --help list             List installed packages")
+        print("  tw --help info             Package information")
+        print("\nDebug and Tags:")
+        print("  tw --debug[=LEVEL]         Enable debug output (1-3)")
+        print("  tw --tags [app ...]        List all tags (optional: for specific apps)")
+        print("  tw --list +tag -tag        List installed apps with tag filter")
+        print("  tw --info                  Show info for all available apps")
+        print("  tw --info app1 app2        Show info for specific apps")
+        print("  tw --info +python          Show info for apps matching tag filter")
+        print("\nWrapper Debug:")
+        print("  TW_DEBUG_WRAPPER=1 tw ...  Show argument parsing flow")
+        print("  Example: TW_DEBUG_WRAPPER=1 tw add test --shell")
+        print("\nPager and Attach:")
+        print("  tw -p                      Page default report")
+        print("  tw -p list                 Use pager for long output")
+        print("  tw --pager next +work      Page through next work tasks")
+        print("  tw -A 42                   Attach file to task 42 using ranger")
+        print("  tw --attach 42             Same as -A 42")
+        print("\nTag Filtering:")
+        print("  Use +tag to include, -tag to exclude")
+        print("  Applies to: --list, --info")
+        print("\nFor Taskwarrior help: tw help")
+        return 0
+    
+    # Handle attach before other commands
+    if args.attach:
+        return attach_file_to_task(args.attach)
+    
+    # Handle pager - if set, use pager for remaining task command
+    if args.pager:
+        if remaining:
+            return run_with_pager(remaining)
+        else:
+            # No command given - use default report
+            return run_with_pager([])
+    
+    if args.shell:
+        # Parse trailing arguments after --shell
+        # Separate command (first arg) from modifiers
+        shell_args = remaining if remaining else []
+        
+        initial_head = []
+        initial_prefix = []
+        
+        if shell_args:
+            # First arg is the command (e.g., "add", "modify", "list")
+            # Commands are single words without : or + or =
+            if shell_args[0] and not any(c in shell_args[0] for c in ['+', ':', '=']):
+                initial_head = [shell_args[0]]
+                initial_prefix = shell_args[1:]
+            else:
+                # Everything is modifiers
+                initial_prefix = shell_args
+        
+        shell = TaskShell(initial_head=initial_head, initial_prefix=initial_prefix)
+        shell.run()
+        return 0
+    
+    # Package management commands
+    app_manager = AppManager(paths)
+    
+    # Show dev mode indicator if in dev mode and using package management
+    def show_dev_mode_if_needed():
+        """Show dev mode indicator for package management commands"""
+        if paths.is_dev_mode:
+            print(f"[tw] DEV MODE - using local registry: {paths.local_registry}")
+    
+    # Parse tag filters from remaining args (look for +/- tags)
+    tag_filter = None
+    tag_args = [arg for arg in remaining if arg.startswith(('+', '-'))]
+    app_names = [arg for arg in remaining if not arg.startswith(('+', '-', '--'))]
+    
+    if tag_args:
+        tag_filter = TagFilter(tag_args)
+        debug(f"Tag filter created: {tag_filter}", 2)
+    
+    # Handle --tags command (list tags)
+    if args.tags:
+        show_dev_mode_if_needed()
+        # Use app_names from remaining args if provided
+        app_manager.list_tags(app_names if app_names else None)
+        return 0
+    
+    if args.install:
+        show_dev_mode_if_needed()
+        # Tag filter applies to install
+        if tag_filter:
+            print(f"[tw] Note: Tag filtering not implemented for --install yet")
+        return 0 if app_manager.install(args.install, dry_run=args.dry_run) else 1
+    
+    if args.remove:
+        show_dev_mode_if_needed()
+        # Tag filter applies to remove
+        if tag_filter:
+            print(f"[tw] Note: Tag filtering not implemented for --remove yet")
+        return 0 if app_manager.remove(args.remove) else 1
+    
+    if args.update:
+        show_dev_mode_if_needed()
+        # Tag filter applies to update
+        if tag_filter:
+            print(f"[tw] Note: Tag filtering not implemented for --update yet")
+        return 0 if app_manager.update(args.update) else 1
+    
+    if args.list:
+        show_dev_mode_if_needed()
+        # Tag filter applies to list
+        app_manager.list_installed(tag_filter)
+        return 0
+    
+    if args.info is not None:
+        show_dev_mode_if_needed()
+        # args.info will be '' if just --info with no immediate argument
+        # or will be the app name if provided like --info myapp
+        
+        if args.info:
+            # Single app specified directly: --info myapp
+            if tag_filter:
+                # Check if this app matches the filter
+                meta_path = paths.registry_dir / f"{args.info}.meta"
+                if meta_path.exists():
+                    meta = MetaFile(meta_path)
+                    tags = meta.get_tags()
+                    if not tag_filter.matches(tags):
+                        print(f"[tw] Application '{args.info}' does not match filter: {tag_filter}")
+                        return 1
+            return 0 if app_manager.show_info(args.info) else 1
+        
+        elif app_names:
+            # Multiple apps from remaining args: --info app1 app2
+            for app_name in app_names:
+                if tag_filter:
+                    # Check if this app matches the filter
+                    meta_path = paths.registry_dir / f"{app_name}.meta"
+                    if meta_path.exists():
+                        meta = MetaFile(meta_path)
+                        tags = meta.get_tags()
+                        if not tag_filter.matches(tags):
+                            continue  # Skip apps that don't match
+                app_manager.show_info(app_name)
+                print()  # Blank line between apps
+            return 0
+        
+        else:
+            # No app specified: --info (show all, optionally filtered by tags)
+            return 0 if app_manager.show_info_all(tag_filter) else 1
+    
+    if args.verify:
+        show_dev_mode_if_needed()
+        return 0 if app_manager.verify(args.verify) else 1
+    
+    # If no tw commands, pass through to task
+    if remaining or (not any(vars(args).values())):
+        return pass_through_to_task(remaining if remaining else sys.argv[1:])
+    
+    return 0
+
+if __name__ == '__main__':
+    sys.exit(main())

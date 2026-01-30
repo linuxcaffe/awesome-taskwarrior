@@ -1,0 +1,6 @@
+tw must look only to arg $1+ for flags, no flags after mod
+djp  yoga  …/tw-need_priority-hook  main  tw 7 mod -lena -djp +LC +DP
+usage: tw [-I APP] [-r APP] [-u APP] [-l] [-i [APP]] [--verify APP] [--tags] [--dry-run] [--debug [LEVEL]] [-v] [-h] [-s]
+tw: error: argument -l/--list: ignored explicit argument 'ena'
+
+

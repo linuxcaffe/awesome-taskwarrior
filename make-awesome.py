@@ -9,9 +9,9 @@ This tool provides a full workflow from development through deployment:
 - --push: Git commit/push + registry update
 
 Single command pipeline: make-awesome.py "commit message"
-  Runs: debug â†’ test â†’ install â†’ push (each stage gated on previous success)
+  Runs: debug Ã¢â€ â€™ test Ã¢â€ â€™ install Ã¢â€ â€™ push (each stage gated on previous success)
 
-Version: 4.2.2
+Version: 4.2.3
 """
 
 import sys
@@ -24,7 +24,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
 
-VERSION = "4.2.2"
+VERSION = "4.2.3"
 
 # ANSI color codes
 class Colors:
@@ -38,13 +38,13 @@ def msg(text):
     print(f"{Colors.BLUE}[make]{Colors.NC} {text}")
 
 def success(text):
-    print(f"{Colors.GREEN}[make] âœ“{Colors.NC} {text}")
+    print(f"{Colors.GREEN}[make] Ã¢Å“â€œ{Colors.NC} {text}")
 
 def error(text):
-    print(f"{Colors.RED}[make] âœ—{Colors.NC} {text}", file=sys.stderr)
+    print(f"{Colors.RED}[make] Ã¢Å“â€”{Colors.NC} {text}", file=sys.stderr)
 
 def warn(text):
-    print(f"{Colors.YELLOW}[make] âš {Colors.NC} {text}")
+    print(f"{Colors.YELLOW}[make] Ã¢Å¡Â {Colors.NC} {text}")
 
 
 # ============================================================================
@@ -427,15 +427,22 @@ def process_python_file(filepath: str) -> bool:
         msg("Adding new debug...")
         enhanced_lines = DebugEnhancer.add_new_debug(parsed)
     
-    output_path = Path(filepath).parent / f"debug.{Path(filepath).name}"
+    # Backup original to .orig
+    orig_path = Path(filepath).with_suffix(Path(filepath).suffix + '.orig')
+    msg(f"Backing up to: {orig_path}")
     
-    with open(output_path, 'w') as f:
+    # Rename original to .orig
+    Path(filepath).rename(orig_path)
+    
+    # Write enhanced version to original filename
+    with open(filepath, 'w') as f:
         f.writelines(enhanced_lines)
     
-    if os.access(filepath, os.X_OK):
-        os.chmod(output_path, os.stat(filepath).st_mode)
+    # Copy executable permissions from .orig
+    if os.access(orig_path, os.X_OK):
+        os.chmod(filepath, os.stat(orig_path).st_mode)
     
-    success(f"Created: {output_path}")
+    success(f"Enhanced: {filepath} (original saved as {orig_path.name})")
     return True
 
 
@@ -838,7 +845,7 @@ def generate_installer(info: ProjectInfo) -> bool:
             f.write('# ============================================================================\n\n')
             f.write(f'VERSION="{info.version}"\n')
             f.write(f'APPNAME="{info.name}"\n')
-            f.write(f'BASE_URL="https://raw.githubusercontent.com/{info.repo}/main/"\n\n')
+            f.write(f'BASE_URL="https://raw.githubusercontent.com/{info.repo}/{info.branch}/"\n\n')
             
             # Colors and helper functions
             f.write("# Colors\n")
@@ -847,8 +854,8 @@ def generate_installer(info: ProjectInfo) -> bool:
             f.write("BLUE='\\033[0;34m'\n")
             f.write("NC='\\033[0m'\n\n")
             f.write('tw_msg() { echo -e "${BLUE}[tw]${NC} $*"; }\n')
-            f.write('tw_success() { echo -e "${GREEN}[tw] âœ“${NC} $*"; }\n')
-            f.write('tw_error() { echo -e "${RED}[tw] âœ—${NC} $*" >&2; }\n\n')
+            f.write('tw_success() { echo -e "${GREEN}[tw] Ã¢Å“â€œ${NC} $*"; }\n')
+            f.write('tw_error() { echo -e "${RED}[tw] Ã¢Å“â€”${NC} $*" >&2; }\n\n')
             
             # Debug support
             f.write('# Debug support\n')
