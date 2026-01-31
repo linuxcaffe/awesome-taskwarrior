@@ -1,0 +1,176 @@
+=============================================================================
+tw - awesome-taskwarrior package manager
+CHANGES for version 2.2.0
+=============================================================================
+
+COMPLETION SUPPORT
+------------------
+
+Added: Shell completion generation and installation for bash, zsh, and fish
+
+tw now includes built-in completion script generation AND automatic installation,
+following the pattern established by taskwarrior itself. This provides tab 
+completion for:
+
+  - tw-specific flags and commands
+  - App names from registry (for --install, --info)
+  - Installed app names (for --remove, --update, --verify)
+  - Help topics (for --help <topic>)
+  - Pass-through to task's native completion for task commands
+  - Tag completion for filtering
+  - Task ID completion for --attach
+
+New Commands:
+  tw --install-completion {bash|zsh|fish}   (RECOMMENDED)
+  tw --generate-completion {bash|zsh|fish}  (manual)
+
+The --install-completion command does everything for you:
+  - Creates necessary directories
+  - Writes completion script to standard location
+  - Shows you what to add to your shell config
+  - Provides immediate activation instructions
+
+Installation Instructions:
+
+  Easy Way (Recommended):
+    tw --install-completion bash
+    tw --install-completion zsh
+    tw --install-completion fish
+    
+    Follow the on-screen instructions to:
+    - Add source line to your shell config (if needed)
+    - Activate completions immediately
+
+  Manual Way:
+    Bash:
+      tw --generate-completion bash > ~/.bash_completion.d/tw.sh
+      source ~/.bash_completion.d/tw.sh
+      # Add to ~/.bashrc: source ~/.bash_completion.d/tw.sh
+
+    Zsh:
+      tw --generate-completion zsh > ~/.zsh/completion/_tw
+      # Add to ~/.zshrc:
+      # fpath=(~/.zsh/completion $fpath)
+      # autoload -Uz compinit && compinit
+
+    Fish:
+      tw --generate-completion fish > ~/.config/fish/completions/tw.fish
+
+Features:
+  - Standalone completion scripts (no runtime dependency on tw)
+  - Dynamic app name completion from registry/manifest
+  - Seamless integration with task's native completion
+  - Support for all three major shells (bash, zsh, fish)
+  - Environment-aware registry detection (TW_REGISTRY_DIR, dev mode)
+
+Implementation Notes:
+  - Completion scripts are generated on-the-fly by tw itself
+  - Scripts can be regenerated anytime tw is updated
+  - Follows "Way of the Taskwarrior" - same pattern as task.sh, _task, task.fish
+  - Registry location detection matches tw's own logic
+  - Manifest parsing for installed app completion
+
+Examples of Completion in Action:
+
+  tw --i<TAB>          → completes to --install or --info
+  tw --install <TAB>   → shows available apps from registry
+  tw --remove <TAB>    → shows installed apps
+  tw --help <TAB>      → shows help topics (shell, install, remove, etc.)
+  tw add +<TAB>        → passes through to task tag completion
+  tw <TAB>             → shows both tw flags and task commands
+
+CONTEXT MULTIPLEXING IMPROVEMENTS
+----------------------------------
+
+No changes to @ / @+ / @- functionality in this release.
+Features from v2.1.7 remain:
+  - @ as alias for 'context' command
+  - @+ to add context to current cmx set
+  - @- to remove context from current cmx set
+
+OTHER FEATURES
+--------------
+
+All features from previous versions (2.1.x) remain:
+  - Pager support (-p / --pager)
+  - File attachment (-A / --attach)
+  - Interactive shell (-s / --shell)
+  - Debug logging (--debug)
+  - Tag filtering (--list +tag -tag)
+  - Package management (install/remove/update/verify)
+  - Dev mode support
+  - Curl-based architecture
+
+TECHNICAL CHANGES
+-----------------
+
+Code Changes:
+  - Added generate_bash_completion() function
+  - Added generate_zsh_completion() function  
+  - Added generate_fish_completion() function
+  - Added install_completion() function (NEW)
+  - Added --generate-completion to argparse
+  - Added --install-completion to argparse (NEW)
+  - Updated validate_first_arg_flag() to include both flags
+  - Updated flags_with_args list to include both flags
+  - Enhanced --help output with completion section
+
+Lines Added: ~500 (completion script generators + installation logic)
+No Breaking Changes
+
+COMPATIBILITY
+-------------
+
+  - Taskwarrior: 2.6.2 (tested)
+  - Python: 3.6+
+  - Shells: bash 4.0+, zsh 5.0+, fish 3.0+
+  - No changes to package management compatibility
+  - No changes to tw-common.sh interface
+
+TESTING NOTES
+-------------
+
+Tested:
+  ✓ tw --generate-completion bash (outputs valid bash script)
+  ✓ tw --generate-completion zsh (outputs valid zsh script)
+  ✓ tw --generate-completion fish (outputs valid fish script)
+  ✓ Error handling for invalid shell types
+  ✓ Help text updated with completion instructions
+  ✓ Python syntax validation passes
+
+Manual Testing Required:
+  - Bash completion in live shell environment
+  - Zsh completion in live shell environment
+  - Fish completion in live shell environment
+  - Completion of app names from actual registry
+  - Pass-through to task completion
+  - Tag completion with +/- prefixes
+
+DOCUMENTATION UPDATES
+---------------------
+
+Updated:
+  - --help output includes completion section
+  - Inline documentation in completion scripts
+  - Installation instructions in each generated script
+
+TODO for Documentation:
+  - Update main README.md with completion section
+  - Add completion examples to QUICKSTART.md
+  - Consider adding completion testing to test suite
+
+FUTURE ENHANCEMENTS
+-------------------
+
+Potential improvements for future versions:
+  - Completion for context names in @ commands
+  - Completion for config file paths
+  - Completion for UDA names
+  - Dynamic detection of task reports for completion
+  - Installation script that auto-detects shell and installs completion
+
+=============================================================================
+Version: 2.2.0
+Date: January 31, 2026
+Author: David (linuxcaffe) + Claude (Anthropic)
+=============================================================================
