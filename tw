@@ -91,7 +91,7 @@ GITHUB_RAW_BASE = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRAN
 
 # Shell configuration
 SHELL_NAME = "tw"
-SHELL_HISTFILE = os.path.expanduser("~/.tw_shell_history")
+SHELL_HISTFILE = os.path.expanduser("~/.task/config/.tw_shell_history")
 
 # Global debug logger instance
 debug_logger = None
@@ -667,47 +667,69 @@ class AppManager:
         return self.install(app_name)
     
     def list_installed(self, tag_filter=None):
-        """List all installed applications with optional tag filtering"""
-        apps = {}
+        """List all installed and available applications with optional tag filtering"""
+        # Get installed apps from manifest
+        installed = {}
         for entry in self.manifest.entries:
             app = entry['app']
-            if app not in apps:
-                apps[app] = entry['version']
+            if app not in installed:
+                installed[app] = entry['version']
         
-        if not apps:
-            print("[tw] No applications installed")
-            return
+        # Get all available apps from registry
+        available = self.registry.list_apps()
+        
+        # Build combined list with status
+        all_apps = {}
+        for app in available:
+            meta = self.registry.get_meta(app)
+            if meta:
+                version = meta.data.get('version', '?')
+                tags = meta.get_tags()
+                is_installed = app in installed
+                all_apps[app] = {
+                    'version': version,
+                    'installed_version': installed.get(app, None),
+                    'is_installed': is_installed,
+                    'tags': tags
+                }
         
         # Apply tag filter if provided
         if tag_filter and tag_filter.has_filters():
             filtered_apps = {}
-            for app, version in apps.items():
-                meta = self.registry.get_meta(app)
-
-                if meta:
-                    tags = meta.get_tags()
-                    if tag_filter.matches(tags):
-                        filtered_apps[app] = version
+            for app, info in all_apps.items():
+                if tag_filter.matches(info['tags']):
+                    filtered_apps[app] = info
             
             if not filtered_apps:
                 print(f"[tw] No applications match filter: {tag_filter}")
                 return
             
-            print(f"[tw] Installed applications (filtered by {tag_filter}):")
-            apps = filtered_apps
+            all_apps = filtered_apps
+            print(f"[tw] Applications (filtered by {tag_filter}):")
         else:
-            print("[tw] Installed applications:")
+            print("[tw] Available applications:")
         
-        for app, version in sorted(apps.items()):
-            # Get tags for display
-            meta = self.registry.get_meta(app)
-            tags_str = ""
-            if meta:
-                tags = meta.get_tags()
-                if tags:
-                    tags_str = f" [{', '.join(tags)}]"
+        if not all_apps:
+            print("[tw] No applications in registry")
+            return
+        
+        # Display apps with status indicators
+        for app, info in sorted(all_apps.items()):
+            if info['is_installed']:
+                status = "[*] "
+                version_str = f"v{info['installed_version']}"
+            else:
+                status = "[ ] "
+                version_str = f"v{info['version']}"
             
-            print(f"[tw]   {app} (v{version}){tags_str}")
+            tags_str = ""
+            if info['tags']:
+                tags_str = f" [{', '.join(info['tags'])}]"
+            
+            print(f"[tw] {status}{app} ({version_str}){tags_str}")
+        
+        # Show legend
+        print(f"\n[tw] Legend: [*] = installed, [ ] = available")
     
     def list_tags(self, app_names=None):
         """List all available tags from registry, optionally filtered by app names

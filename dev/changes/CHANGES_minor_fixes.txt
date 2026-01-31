@@ -1,0 +1,123 @@
+=============================================================================
+tw - Quick Fixes for v2.2.0
+=============================================================================
+
+CHANGE 1: Shell History Location
+---------------------------------
+
+Moved: .tw_shell_history → ~/.task/config/.tw_shell_history
+
+BEFORE: Shell history was stored in home directory root (~/.tw_shell_history)
+AFTER:  Shell history now stored with other tw config files
+
+Benefits:
+  - Better organization (keeps ~/.task/ as central location for all tw data)
+  - Consistent with other config files
+  - Cleaner home directory
+
+Technical:
+  - Changed SHELL_HISTFILE constant from "~/.tw_shell_history" to "~/.task/config/.tw_shell_history"
+  - No migration needed - history starts fresh (minimal data loss)
+  - Config directory already exists (created by PathManager.init_directories())
+
+
+CHANGE 2: Enhanced --list Command
+----------------------------------
+
+Enhanced: tw --list now shows ALL applications (installed + available)
+
+BEFORE: Only showed installed applications
+AFTER:  Shows all applications from registry with status indicators
+
+Example Output:
+
+  $ tw --list
+  [tw] Available applications:
+  [tw] [*] cmx (v1.0.0) [context, multiplexing]
+  [tw] [ ] example-app (v0.1.0) [python, example]
+  [tw] [*] tw-recurrence (v2.0.0) [hooks, recurrence]
+
+  [tw] Legend: [*] = installed, [ ] = available
+
+Features:
+  - Status indicator: [*] for installed, [ ] for available
+  - Shows version numbers for all apps
+  - Shows tags if present
+  - Works with tag filtering: tw --list +python
+  - Legend at bottom explains status indicators
+
+Benefits:
+  - Users can see what's available without --info
+  - Easy to spot which apps are installed at a glance
+  - Consistent with how package managers work (apt list, brew list --all)
+  - Still supports all existing filters and options
+
+Technical Changes:
+  - Renamed function internally (still called list_installed for API compat)
+  - Queries both manifest AND registry
+  - Builds unified list with installation status
+  - ASCII status indicators ([*] and [ ]) - works on all terminals
+
+
+NO UTF-8 CHANGES
+-----------------
+
+Decision: Keep ASCII output for maximum compatibility
+
+Originally explored adding UTF-8 symbols (✓, ✗, →, etc.) with ASCII fallback,
+but decided against it to avoid encoding complexity and ensure tw works
+perfectly on all terminals without detection/fallback logic.
+
+ASCII equivalents are clean and universal:
+  - [*] for installed (instead of ✓)
+  - [ ] for not installed (instead of ○)  
+  - Simple brackets and symbols
+
+This keeps the codebase simple and portable.
+
+
+TESTING
+-------
+
+Both changes tested:
+
+1. Shell history location:
+   - Verified ~/.task/config/.tw_shell_history is created
+   - History persists across shell sessions
+   - No errors on first run (creates file if needed)
+
+2. Enhanced --list:
+   - Shows installed apps with [*]
+   - Shows available apps with [ ]
+   - Tags display correctly
+   - Tag filtering works: tw --list +python
+   - Legend displays at bottom
+
+
+COMPATIBILITY
+-------------
+
+  - No breaking changes
+  - Existing scripts using tw --list continue to work
+  - Output format slightly different (but better)
+  - All existing functionality preserved
+
+
+FILES CHANGED
+-------------
+
+  tw (2 changes):
+    - Line ~92: SHELL_HISTFILE path updated
+    - Lines ~669-730: list_installed() function rewritten
+
+
+VERSION
+-------
+
+Still v2.2.0 (minor enhancements, not worth version bump)
+
+
+=============================================================================
+Date: January 31, 2026
+Changes by: David (linuxcaffe) + Claude (Anthropic)
+=============================================================================
