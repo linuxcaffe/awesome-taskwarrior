@@ -9,7 +9,7 @@ This tool provides a full workflow from development through deployment:
 - --push: Git commit/push + registry update
 
 Single command pipeline: make-awesome.py "commit message"
-  Runs: debug ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ test ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ install ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ push (each stage gated on previous success)
+  Runs: debug ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ test ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ install ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ push (each stage gated on previous success)
 
 Version: 4.2.3
 """
@@ -24,7 +24,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
 
-VERSION = "4.2.3"
+VERSION = "4.3.0"
 
 # ANSI color codes
 class Colors:
@@ -38,13 +38,13 @@ def msg(text):
     print(f"{Colors.BLUE}[make]{Colors.NC} {text}")
 
 def success(text):
-    print(f"{Colors.GREEN}[make] ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“{Colors.NC} {text}")
+    print(f"{Colors.GREEN}[make] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ{Colors.NC} {text}")
 
 def error(text):
-    print(f"{Colors.RED}[make] ÃƒÂ¢Ã…â€œÃ¢â‚¬â€�{Colors.NC} {text}", file=sys.stderr)
+    print(f"{Colors.RED}[make] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ï¿½{Colors.NC} {text}", file=sys.stderr)
 
 def warn(text):
-    print(f"{Colors.YELLOW}[make] ÃƒÂ¢Ã…Â¡Ã‚Â {Colors.NC} {text}")
+    print(f"{Colors.YELLOW}[make] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â {Colors.NC} {text}")
 
 
 # ============================================================================
@@ -888,8 +888,8 @@ def generate_installer(info: ProjectInfo) -> bool:
             f.write("BLUE='\\033[0;34m'\n")
             f.write("NC='\\033[0m'\n\n")
             f.write('tw_msg() { echo -e "${BLUE}[tw]${NC} $*"; }\n')
-            f.write('tw_success() { echo -e "${GREEN}[tw] ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“${NC} $*"; }\n')
-            f.write('tw_error() { echo -e "${RED}[tw] ÃƒÂ¢Ã…â€œÃ¢â‚¬â€�${NC} $*" >&2; }\n\n')
+            f.write('tw_success() { echo -e "${GREEN}[tw] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ${NC} $*"; }\n')
+            f.write('tw_error() { echo -e "${RED}[tw] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ï¿½${NC} $*" >&2; }\n\n')
             
             # Debug support
             f.write('# Debug support\n')
@@ -935,10 +935,10 @@ def generate_installer(info: ProjectInfo) -> bool:
             
             # Download hooks
             for filename, _ in hooks:
-                # Strip type marker for installation (e.g., common.hook.py -> common.py)
-                install_name = strip_type_marker(filename)
-                # Check if we need executable permission (not for .py library modules)
-                is_executable = not filename.endswith('.hook.py')
+                # Strip -x suffix for installation (e.g., common_hook-x.py -> common_hook.py)
+                install_name = filename.replace('-x.py', '.py') if filename.endswith('-x.py') else filename
+                # Check if we need executable permission (not for -x.py files)
+                is_executable = not filename.endswith('-x.py')
                 
                 f.write(f'    debug_msg "Downloading hook: {filename}" 2\n')
                 f.write(f'    curl -fsSL "$BASE_URL/{filename}" -o "$HOOKS_DIR/{install_name}" || {{\n')
@@ -952,8 +952,9 @@ def generate_installer(info: ProjectInfo) -> bool:
             
             # Download scripts
             for filename, _ in scripts:
-                # Strip type marker for installation
-                install_name = strip_type_marker(filename)
+                # Strip -x suffix for installation
+                install_name = filename.replace('-x.sh', '.sh') if filename.endswith('-x.sh') else filename
+                install_name = install_name.replace('-x.py', '.py') if install_name.endswith('-x.py') else install_name
                 
                 f.write(f'    debug_msg "Downloading script: {filename}" 2\n')
                 f.write(f'    curl -fsSL "$BASE_URL/{filename}" -o "$SCRIPTS_DIR/{install_name}" || {{\n')
@@ -966,8 +967,8 @@ def generate_installer(info: ProjectInfo) -> bool:
             
             # Download configs
             for filename, _ in configs:
-                # Strip type marker for installation
-                install_name = strip_type_marker(filename)
+                # Strip -x suffix for installation
+                install_name = filename.replace('-x.rc', '.rc') if filename.endswith('-x.rc') else filename
                 
                 f.write(f'    debug_msg "Downloading config: {filename}" 2\n')
                 f.write(f'    curl -fsSL "$BASE_URL/{filename}" -o "$CONFIG_DIR/{install_name}" || {{\n')
@@ -980,8 +981,8 @@ def generate_installer(info: ProjectInfo) -> bool:
             # Add config to .taskrc if needed
             if configs:
                 first_config = configs[0][0]
-                # Strip type marker for config filename
-                install_config_name = strip_type_marker(first_config)
+                # Strip -x suffix for config filename
+                install_config_name = first_config.replace('-x.rc', '.rc') if first_config.endswith('-x.rc') else first_config
                 f.write('    # Add config to .taskrc\n')
                 f.write('    tw_msg "Adding configuration to .taskrc..."\n')
                 f.write(f'    local config_line="include $CONFIG_DIR/{install_config_name}"\n\n')
@@ -1010,8 +1011,8 @@ def generate_installer(info: ProjectInfo) -> bool:
             
             # Add manifest entries for each file
             for filename, ftype in info.files:
-                # Strip type marker for actual installed filename
-                install_name = strip_type_marker(filename)
+                # Strip -x suffix for actual installed filename
+                install_name = filename.replace('-x.py', '.py') if filename.endswith('-x.py') else filename
                 
                 if ftype == 'hook':
                     dir_var = '$HOOKS_DIR'
