@@ -1,0 +1,258 @@
+=============================================================================
+make-awesome.py - New Feature: Explicit Type Markers
+Version: 4.2.4
+Date: 2026-01-31
+=============================================================================
+
+FEATURE: Explicit File Type Markers
+------------------------------------
+
+You can now explicitly specify where a file should be installed using a
+special naming convention: basename.TYPE.extension
+
+Examples:
+  - recurrence_common.hook.py  → installed to hooks/ as recurrence_common.py
+  - utils.script.sh            → installed to scripts/ as utils.sh
+  - settings.config.rc          → installed to config/ as settings.rc
+
+
+WHY THIS IS USEFUL
+------------------
+
+Sometimes files don't fit the normal detection patterns:
+
+1. **Python library modules for hooks**
+   - recurrence_common.py looks like a script
+   - But hooks need to import it
+   - Solution: name it recurrence_common.hook.py
+   - It installs to hooks/ where imports work!
+
+2. **Config files with unusual extensions**
+   - myapp.conf might not be detected as config
+   - Solution: name it myapp.config.conf
+   - Explicitly marks it as a config file
+
+3. **Scripts that should go in specific directories**
+   - helper.py might be detected wrong
+   - Solution: helper.script.py or helper.hook.py
+   - You control the destination
+
+
+HOW IT WORKS
+------------
+
+1. **File Detection** (make-awesome.py --install)
+   
+   Scans for patterns like:
+   - *.hook.py
+   - *.hook.sh
+   - *.script.py
+   - *.script.sh
+   - *.config.rc
+   - *.config.conf
+   
+   When found, extracts the type from the filename.
+
+2. **Meta File Generation**
+   
+   Stores the ORIGINAL filename in .meta:
+   files=recurrence_common.hook.py:hook,on-add_recurrence.py:hook
+   
+   This preserves the source filename in your repo.
+
+3. **Installer Generation**
+   
+   The installer STRIPS the type marker during installation:
+   
+   Source:     recurrence_common.hook.py
+   Downloads:  recurrence_common.hook.py from GitHub
+   Installs:   recurrence_common.py in ~/.task/hooks/
+   
+   Python imports work: from recurrence_common import ...
+
+4. **Executable Permission**
+   
+   Smart handling:
+   - Files ending in .hook.py are NOT made executable (library modules)
+   - All other hooks/scripts ARE made executable
+   
+   This prevents accidentally making library modules executable.
+
+
+EXAMPLES
+--------
+
+**Example 1: Python Library for Hooks**
+
+Your project:
+  on-add_recurrence.py
+  on-exit_recurrence.py
+  recurrence_common.hook.py  ← The special one
+
+Run: make-awesome.py --install
+
+Generates .meta:
+  files=on-add_recurrence.py:hook,on-exit_recurrence.py:hook,recurrence_common.hook.py:hook
+
+Generates .install that:
+  - Downloads recurrence_common.hook.py from GitHub
+  - Installs as ~/.task/hooks/recurrence_common.py
+  - Does NOT chmod +x (it's a library)
+  
+Your hooks can now:
+  from recurrence_common import parse_date
+
+
+**Example 2: Multiple File Types**
+
+Your project:
+  on-add_myhook.py
+  helper_functions.hook.py     ← Library module
+  myscript.script.sh            ← Utility script  
+  settings.config.rc            ← Config file
+
+All automatically detected and installed to correct locations!
+
+
+**Example 3: Forcing a Type**
+
+Maybe Python detects your .py file as a script but you want it in hooks:
+
+Wrong name:  myutil.py         → detected as script → goes to scripts/
+Right name:  myutil.hook.py    → explicit hook → goes to hooks/
+
+
+BACKWARD COMPATIBILITY
+----------------------
+
+✓ All existing projects still work
+✓ Normal files still detected normally
+✓ Only files with .TYPE. pattern are special
+✓ No changes needed to existing code
+
+
+IMPLEMENTATION DETAILS
+----------------------
+
+### New Functions Added:
+
+1. strip_type_marker(filename: str) -> str
+   - Removes .TYPE. from filenames
+   - Used during installation
+   
+2. get_explicit_type(filename: str) -> Optional[str]
+   - Detects .TYPE. pattern in detect_files()
+   - Returns the explicit type or None
+
+### Modified Functions:
+
+1. detect_files()
+   - Now scans for *.TYPE.extension patterns
+   - Marks files with explicit types
+
+2. generate_installer()
+   - Uses strip_type_marker() for all file operations
+   - Downloads source filename
+   - Installs with stripped filename
+   - Smart chmod logic for .hook.py files
+
+3. Manifest tracking
+   - Uses stripped filenames in manifest
+   - Ensures removal works correctly
+
+4. Config .taskrc updates
+   - Uses stripped config filename
+   - Include statements reference correct file
+
+
+TESTING
+-------
+
+To test the feature:
+
+1. Create a test project:
+   mkdir test-explicit-types
+   cd test-explicit-types
+   
+2. Create test files:
+   echo '#!/usr/bin/env python3' > on-add_test.py
+   echo 'def helper(): pass' > common.hook.py
+   echo 'VERSION="1.0.0"' > VERSION
+   
+3. Run make-awesome:
+   make-awesome.py --install
+   
+4. Check generated .meta:
+   Should show: files=on-add_test.py:hook,common.hook.py:hook
+   
+5. Check generated .install:
+   Should download common.hook.py but install as common.py
+   Should NOT chmod +x common.py
+
+
+TROUBLESHOOTING
+---------------
+
+**Q: My .hook.py file isn't being detected**
+A: Make sure you're running the updated make-awesome.py v4.2.4+
+
+**Q: The installer fails to download**
+A: Check that the filename in GitHub matches exactly (including .hook.py)
+
+**Q: Import fails: ModuleNotFoundError**
+A: Check that:
+   - File was installed as .py (without .hook)
+   - File is in the same directory as your hook
+   - Your hook adds the directory to sys.path
+
+**Q: File got executable permission when it shouldn't**
+A: Only .hook.py files are non-executable
+   Other patterns (.hook.sh) still get +x
+
+
+MIGRATION GUIDE
+---------------
+
+If you have existing projects with Python library modules:
+
+1. Rename your library files:
+   mv recurrence_common.py recurrence_common.hook.py
+   
+2. Update imports in your code:
+   NO CHANGES NEEDED - still import recurrence_common
+   
+3. Regenerate installers:
+   make-awesome.py --install
+   
+4. Commit and push:
+   git add recurrence_common.hook.py .meta .install
+   git commit -m "Add explicit type marker for library module"
+   git push
+
+Done! Users who install will get the file in the right place.
+
+
+VERSION HISTORY
+---------------
+
+v4.2.4 (2026-01-31):
+  - Added explicit type marker support (.TYPE.extension)
+  - Added strip_type_marker() helper function
+  - Updated detect_files() for pattern detection
+  - Updated installer generation to strip markers
+  - Smart chmod logic for .hook.py files
+  - VERSION file reading (was already implemented)
+
+
+RELATED FILES
+-------------
+
+This feature is used by:
+  - recurrence-overhaul project (recurrence_common.hook.py)
+  - Any future projects with Python library modules
+  - Projects needing explicit type control
+
+
+=============================================================================
+Smart coding for reliable products - now with explicit type markers!
+=============================================================================

@@ -9,7 +9,7 @@ This tool provides a full workflow from development through deployment:
 - --push: Git commit/push + registry update
 
 Single command pipeline: make-awesome.py "commit message"
-  Runs: debug Ã¢â€ â€™ test Ã¢â€ â€™ install Ã¢â€ â€™ push (each stage gated on previous success)
+  Runs: debug ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ test ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ install ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ push (each stage gated on previous success)
 
 Version: 4.2.3
 """
@@ -38,13 +38,13 @@ def msg(text):
     print(f"{Colors.BLUE}[make]{Colors.NC} {text}")
 
 def success(text):
-    print(f"{Colors.GREEN}[make] Ã¢Å“â€œ{Colors.NC} {text}")
+    print(f"{Colors.GREEN}[make] ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“{Colors.NC} {text}")
 
 def error(text):
-    print(f"{Colors.RED}[make] Ã¢Å“â€”{Colors.NC} {text}", file=sys.stderr)
+    print(f"{Colors.RED}[make] ÃƒÂ¢Ã…â€œÃ¢â‚¬â€�{Colors.NC} {text}", file=sys.stderr)
 
 def warn(text):
-    print(f"{Colors.YELLOW}[make] Ã¢Å¡Â {Colors.NC} {text}")
+    print(f"{Colors.YELLOW}[make] ÃƒÂ¢Ã…Â¡Ã‚Â {Colors.NC} {text}")
 
 
 # ============================================================================
@@ -597,6 +597,16 @@ def detect_files() -> List[Tuple[str, str]]:
     files = []
     msg("Detecting files...")
     
+    # Helper function to detect explicit type markers in filename
+    # Pattern: basename.TYPE.extension (e.g., recurrence_common.hook.py)
+    def get_explicit_type(filename: str) -> Optional[str]:
+        """Check if filename has explicit type marker like .hook.py or .script.sh"""
+        match = re.match(r'^(.+)\.(hook|script|config|doc)\.(\w+)$', filename)
+        if match:
+            basename, file_type, extension = match.groups()
+            return file_type
+        return None
+    
     # Detect hooks (on-add*, on-exit*, on-modify*)
     for hook in ['on-add', 'on-exit', 'on-modify']:
         for ext in ['py', 'sh']:
@@ -605,6 +615,15 @@ def detect_files() -> List[Tuple[str, str]]:
                     if f.is_file():
                         files.append((f.name, 'hook'))
                         msg(f"  Hook: {f.name}")
+    
+    # Detect files with explicit type markers (e.g., recurrence_common.hook.py)
+    for pattern in ['*.hook.py', '*.hook.sh', '*.script.py', '*.script.sh', '*.config.rc', '*.config.conf']:
+        for f in Path('.').glob(pattern):
+            if f.is_file() and not any(fname == f.name for fname, _ in files):
+                explicit_type = get_explicit_type(f.name)
+                if explicit_type:
+                    files.append((f.name, explicit_type))
+                    msg(f"  {explicit_type.capitalize()} (explicit): {f.name}")
     
     # Detect scripts - check ALL files in root directory for executables
     exclude_patterns = [
@@ -793,6 +812,21 @@ def calculate_checksums(files: List[Tuple[str, str]]) -> List[str]:
     return checksums
 
 
+def strip_type_marker(filename: str) -> str:
+    """Strip explicit type marker from filename for installation
+    
+    Examples:
+        recurrence_common.hook.py -> recurrence_common.py
+        utils.script.sh -> utils.sh
+        config.config.rc -> config.rc
+    """
+    match = re.match(r'^(.+)\.(hook|script|config|doc)\.(\w+)$', filename)
+    if match:
+        basename, type_marker, extension = match.groups()
+        return f"{basename}.{extension}"
+    return filename
+
+
 def generate_meta_file(info: ProjectInfo) -> bool:
     meta_file = f"{info.name}.meta"
     msg(f"Generating {meta_file}...")
@@ -854,8 +888,8 @@ def generate_installer(info: ProjectInfo) -> bool:
             f.write("BLUE='\\033[0;34m'\n")
             f.write("NC='\\033[0m'\n\n")
             f.write('tw_msg() { echo -e "${BLUE}[tw]${NC} $*"; }\n')
-            f.write('tw_success() { echo -e "${GREEN}[tw] Ã¢Å“â€œ${NC} $*"; }\n')
-            f.write('tw_error() { echo -e "${RED}[tw] Ã¢Å“â€”${NC} $*" >&2; }\n\n')
+            f.write('tw_success() { echo -e "${GREEN}[tw] ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“${NC} $*"; }\n')
+            f.write('tw_error() { echo -e "${RED}[tw] ÃƒÂ¢Ã…â€œÃ¢â‚¬â€�${NC} $*" >&2; }\n\n')
             
             # Debug support
             f.write('# Debug support\n')
@@ -901,42 +935,56 @@ def generate_installer(info: ProjectInfo) -> bool:
             
             # Download hooks
             for filename, _ in hooks:
+                # Strip type marker for installation (e.g., common.hook.py -> common.py)
+                install_name = strip_type_marker(filename)
+                # Check if we need executable permission (not for .py library modules)
+                is_executable = not filename.endswith('.hook.py')
+                
                 f.write(f'    debug_msg "Downloading hook: {filename}" 2\n')
-                f.write(f'    curl -fsSL "$BASE_URL/{filename}" -o "$HOOKS_DIR/{filename}" || {{\n')
+                f.write(f'    curl -fsSL "$BASE_URL/{filename}" -o "$HOOKS_DIR/{install_name}" || {{\n')
                 f.write(f'        tw_error "Failed to download {filename}"\n')
                 f.write(f'        debug_msg "Download failed: {filename}" 1\n')
                 f.write('        return 1\n')
                 f.write('    }\n')
-                f.write(f'    chmod +x "$HOOKS_DIR/{filename}"\n')
-                f.write(f'    debug_msg "Installed hook: $HOOKS_DIR/{filename}" 2\n\n')
+                if is_executable:
+                    f.write(f'    chmod +x "$HOOKS_DIR/{install_name}"\n')
+                f.write(f'    debug_msg "Installed hook: $HOOKS_DIR/{install_name}" 2\n\n')
             
             # Download scripts
             for filename, _ in scripts:
+                # Strip type marker for installation
+                install_name = strip_type_marker(filename)
+                
                 f.write(f'    debug_msg "Downloading script: {filename}" 2\n')
-                f.write(f'    curl -fsSL "$BASE_URL/{filename}" -o "$SCRIPTS_DIR/{filename}" || {{\n')
+                f.write(f'    curl -fsSL "$BASE_URL/{filename}" -o "$SCRIPTS_DIR/{install_name}" || {{\n')
                 f.write(f'        tw_error "Failed to download {filename}"\n')
                 f.write(f'        debug_msg "Download failed: {filename}" 1\n')
                 f.write('        return 1\n')
                 f.write('    }\n')
-                f.write(f'    chmod +x "$SCRIPTS_DIR/{filename}"\n')
-                f.write(f'    debug_msg "Installed script: $SCRIPTS_DIR/{filename}" 2\n\n')
+                f.write(f'    chmod +x "$SCRIPTS_DIR/{install_name}"\n')
+                f.write(f'    debug_msg "Installed script: $SCRIPTS_DIR/{install_name}" 2\n\n')
             
             # Download configs
             for filename, _ in configs:
+                # Strip type marker for installation
+                install_name = strip_type_marker(filename)
+                
                 f.write(f'    debug_msg "Downloading config: {filename}" 2\n')
-                f.write(f'    curl -fsSL "$BASE_URL/{filename}" -o "$CONFIG_DIR/{filename}" || {{\n')
+                f.write(f'    curl -fsSL "$BASE_URL/{filename}" -o "$CONFIG_DIR/{install_name}" || {{\n')
                 f.write(f'        tw_error "Failed to download {filename}"\n')
                 f.write(f'        debug_msg "Download failed: {filename}" 1\n')
                 f.write('        return 1\n')
                 f.write('    }\n')
-                f.write(f'    debug_msg "Installed config: $CONFIG_DIR/{filename}" 2\n\n')
+                f.write(f'    debug_msg "Installed config: $CONFIG_DIR/{install_name}" 2\n\n')
             
             # Add config to .taskrc if needed
             if configs:
                 first_config = configs[0][0]
+                # Strip type marker for config filename
+                install_config_name = strip_type_marker(first_config)
                 f.write('    # Add config to .taskrc\n')
                 f.write('    tw_msg "Adding configuration to .taskrc..."\n')
-                f.write(f'    local config_line="include $CONFIG_DIR/{first_config}"\n\n')
+                f.write(f'    local config_line="include $CONFIG_DIR/{install_config_name}"\n\n')
                 f.write('    if ! grep -qF "$config_line" "$TASKRC" 2>/dev/null; then\n')
                 f.write('        echo "$config_line" >> "$TASKRC"\n')
                 f.write('        tw_msg "Added config include to .taskrc"\n')
@@ -962,6 +1010,9 @@ def generate_installer(info: ProjectInfo) -> bool:
             
             # Add manifest entries for each file
             for filename, ftype in info.files:
+                # Strip type marker for actual installed filename
+                install_name = strip_type_marker(filename)
+                
                 if ftype == 'hook':
                     dir_var = '$HOOKS_DIR'
                 elif ftype == 'script':
@@ -970,10 +1021,10 @@ def generate_installer(info: ProjectInfo) -> bool:
                     dir_var = '$CONFIG_DIR'
                 elif ftype == 'doc':
                     dir_var = '$DOCS_DIR'
-                    filename = f"{info.name}_{filename}"
+                    install_name = f"{info.name}_{install_name}"
                 
-                f.write(f'    echo "$APPNAME|$VERSION|{dir_var}/{filename}||$TIMESTAMP" >> "$MANIFEST_FILE"\n')
-                f.write(f'    debug_msg "Manifest entry: {dir_var}/{filename}" 3\n')
+                f.write(f'    echo "$APPNAME|$VERSION|{dir_var}/{install_name}||$TIMESTAMP" >> "$MANIFEST_FILE"\n')
+                f.write(f'    debug_msg "Manifest entry: {dir_var}/{install_name}" 3\n')
             
             # Finish install function
             f.write('\n')
