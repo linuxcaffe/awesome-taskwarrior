@@ -1,0 +1,17 @@
+# urgency-tweaker.meta
+# ncurses app to help you understand and tweak your urgency coefficients
+
+name=urgency-tweaker
+version=1.0.0
+type=script
+description=ncurses app to help you understand and tweak your urgency coefficients
+repo=https://github.com/linuxcaffe/urgency-tweaker
+base_url=https://raw.githubusercontent.com/linuxcaffe/urgency-tweaker/main/
+files=urgency-tweaker:script,urgency.rc:config,README.md:doc
+tags=urgency,tweak,core,projects,tags,udas,scripts
+
+checksums=b0b33d5bcb809f73fd0438b58840ebb939ce99c05426ed06a23ebab548c6b1f6,d9006277a7af3770dbc193b8496950f01bf63f123aa41f208378c7c7767c264b,e279b5d953a7887f764e569c5d510bbb1d6a9608eb66d386e01ac3d0e0dcd102
+
+author=Designed by linuxcaffe, coded by ChatGPT
+license=MIT
+requires_taskwarrior=2.6.0
