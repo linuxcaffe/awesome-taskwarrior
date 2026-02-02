@@ -1,0 +1,71 @@
+# ============================================================================
+# make-awesome.py - CHANGES
+# ============================================================================
+
+## v4.4.0 - 2026-02-02
+### CRITICAL FIX: NO NAME CHANGES Implementation
+
+**Problem:**
+Previous versions (v4.2.3-v4.3.0) stripped suffixes during installation:
+- recurrence_common_hook-x.py → recurrence_common_hook.py (stripped -x)
+- Created a FOOT-GUN where manual installation failed due to unexpected filename changes
+- Files had different names in repo vs installed location
+- Manual installation instructions were broken
+
+**Solution:**
+Files now keep their EXACT names throughout installation:
+- NO filename changes at any point
+- recurrence_common_hook-x.py stays recurrence_common_hook-x.py everywhere
+- on-add_recurrence.py stays on-add_recurrence.py everywhere
+
+**Changes:**
+
+1. **File Detection (detect_files function):**
+   - Changed from .hook.py pattern to _hook pattern (Python import compatible)
+   - Changed from .script.sh pattern to _script pattern
+   - Updated patterns: *_hook*, *_script*, *_config*, *_doc*
+   - Path marker suffixes (_hook, _script, _config, _doc) determine directory only
+
+2. **Hook Installation:**
+   - Removed: install_name = filename.replace('-x.py', '.py')
+   - Now: Downloads and installs with EXACT same filename
+   - -x suffix used ONLY for chmod logic (skip chmod +x if -x present)
+
+3. **Script Installation:**
+   - Removed: All suffix stripping logic
+   - Now: Installs with exact filename
+   - -x suffix used ONLY for chmod logic
+
+4. **Config Installation:**
+   - Removed: Suffix stripping
+   - Now: Installs with exact filename
+   - .taskrc include statements use actual filename
+
+5. **Manifest Tracking:**
+   - Changed to use actual installed filename (no suffix stripping)
+   - Ensures removal function can find files correctly
+
+6. **Removal Function:**
+   - Uses actual config filename in .taskrc references
+   - Matches manifest entries correctly
+
+**Suffix System:**
+- Path markers: _hook, _script, _config, _doc (determine destination directory)
+- Non-exec marker: -x (determines chmod behavior only)
+- Combined: recurrence_common_hook-x.py (goes to hooks/, NOT executable)
+
+**Impact:**
+- Manual installation now safe and predictable
+- No surprises about filename transformations
+- Import statements work correctly (no dots in module names)
+- Generated installers match manual installation behavior
+
+**Testing:**
+- Verify: recurrence_common_hook-x.py installs to ~/.task/hooks/recurrence_common_hook-x.py
+- Verify: on-add_recurrence.py installs to ~/.task/hooks/on-add_recurrence.py
+- Verify: No chmod +x on files with -x suffix
+- Verify: Normal chmod +x on files without -x suffix
+
+**Note:**
+The --debug function still creates *.orig backups (this is intentional).
+The NO NAME CHANGES rule applies to --install function only.
