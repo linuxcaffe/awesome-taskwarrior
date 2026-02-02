@@ -9,9 +9,9 @@ This tool provides a full workflow from development through deployment:
 - --push: Git commit/push + registry update
 
 Single command pipeline: make-awesome.py "commit message"
-  Runs: debug ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ test ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ install ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ push (each stage gated on previous success)
+  Runs: debug ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ test ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ install ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ push (each stage gated on previous success)
 
-Version: 4.2.3
+Version: 4.4.0
 """
 
 import sys
@@ -24,7 +24,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
 
-VERSION = "4.3.0"
+VERSION = "4.4.0"
 
 # ANSI color codes
 class Colors:
@@ -38,13 +38,13 @@ def msg(text):
     print(f"{Colors.BLUE}[make]{Colors.NC} {text}")
 
 def success(text):
-    print(f"{Colors.GREEN}[make] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ{Colors.NC} {text}")
+    print(f"{Colors.GREEN}[make] ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“{Colors.NC} {text}")
 
 def error(text):
-    print(f"{Colors.RED}[make] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ï¿½{Colors.NC} {text}", file=sys.stderr)
+    print(f"{Colors.RED}[make] ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã¯Â¿Â½{Colors.NC} {text}", file=sys.stderr)
 
 def warn(text):
-    print(f"{Colors.YELLOW}[make] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â {Colors.NC} {text}")
+    print(f"{Colors.YELLOW}[make] ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â {Colors.NC} {text}")
 
 
 # ============================================================================
@@ -597,17 +597,18 @@ def detect_files() -> List[Tuple[str, str]]:
     files = []
     msg("Detecting files...")
     
-    # Helper function to detect explicit type markers in filename
-    # Pattern: basename.TYPE.extension (e.g., recurrence_common.hook.py)
-    def get_explicit_type(filename: str) -> Optional[str]:
-        """Check if filename has explicit type marker like .hook.py or .script.sh"""
-        match = re.match(r'^(.+)\.(hook|script|config|doc)\.(\w+)$', filename)
+    # Helper function to detect path marker suffixes
+    # Pattern: basename_TYPE.extension or basename_TYPE-x.extension
+    # Examples: recurrence_common_hook-x.py, utils_script.sh, README_doc.md
+    def get_path_marker_type(filename: str) -> Optional[str]:
+        """Check if filename has path marker suffix like _hook, _script, _config, _doc"""
+        # Match: basename_TYPE[-x].extension
+        match = re.match(r'^.+_(hook|script|config|doc)(-x)?\.\w+$', filename)
         if match:
-            basename, file_type, extension = match.groups()
-            return file_type
+            return match.group(1)
         return None
     
-    # Detect hooks (on-add*, on-exit*, on-modify*)
+    # Detect standard hooks (on-add*, on-exit*, on-modify*)
     for hook in ['on-add', 'on-exit', 'on-modify']:
         for ext in ['py', 'sh']:
             for f in Path('.').glob(f'{hook}*.{ext}'):
@@ -616,14 +617,15 @@ def detect_files() -> List[Tuple[str, str]]:
                         files.append((f.name, 'hook'))
                         msg(f"  Hook: {f.name}")
     
-    # Detect files with explicit type markers (e.g., recurrence_common.hook.py)
-    for pattern in ['*.hook.py', '*.hook.sh', '*.script.py', '*.script.sh', '*.config.rc', '*.config.conf']:
+    # Detect files with path marker suffixes
+    # These are files that go to non-standard locations (e.g., library in hooks dir)
+    for pattern in ['*_hook*.py', '*_hook*.sh', '*_script*.py', '*_script*.sh', '*_config*.rc', '*_config*.conf', '*_doc*.md']:
         for f in Path('.').glob(pattern):
             if f.is_file() and not any(fname == f.name for fname, _ in files):
-                explicit_type = get_explicit_type(f.name)
-                if explicit_type:
-                    files.append((f.name, explicit_type))
-                    msg(f"  {explicit_type.capitalize()} (explicit): {f.name}")
+                path_marker_type = get_path_marker_type(f.name)
+                if path_marker_type:
+                    files.append((f.name, path_marker_type))
+                    msg(f"  {path_marker_type.capitalize()} (path marker): {f.name}")
     
     # Detect scripts - check ALL files in root directory for executables
     exclude_patterns = [
@@ -888,8 +890,8 @@ def generate_installer(info: ProjectInfo) -> bool:
             f.write("BLUE='\\033[0;34m'\n")
             f.write("NC='\\033[0m'\n\n")
             f.write('tw_msg() { echo -e "${BLUE}[tw]${NC} $*"; }\n')
-            f.write('tw_success() { echo -e "${GREEN}[tw] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ${NC} $*"; }\n')
-            f.write('tw_error() { echo -e "${RED}[tw] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ï¿½${NC} $*" >&2; }\n\n')
+            f.write('tw_success() { echo -e "${GREEN}[tw] ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“${NC} $*"; }\n')
+            f.write('tw_error() { echo -e "${RED}[tw] ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã¯Â¿Â½${NC} $*" >&2; }\n\n')
             
             # Debug support
             f.write('# Debug support\n')
@@ -935,57 +937,55 @@ def generate_installer(info: ProjectInfo) -> bool:
             
             # Download hooks
             for filename, _ in hooks:
-                # Strip -x suffix for installation (e.g., common_hook-x.py -> common_hook.py)
-                install_name = filename.replace('-x.py', '.py') if filename.endswith('-x.py') else filename
-                # Check if we need executable permission (not for -x.py files)
-                is_executable = not filename.endswith('-x.py')
+                # NO NAME CHANGES! File keeps exact same name in installation
+                # Use -x suffix ONLY to determine if we skip chmod +x
+                is_executable = not (filename.endswith('-x.py') or filename.endswith('-x.sh'))
                 
                 f.write(f'    debug_msg "Downloading hook: {filename}" 2\n')
-                f.write(f'    curl -fsSL "$BASE_URL/{filename}" -o "$HOOKS_DIR/{install_name}" || {{\n')
+                f.write(f'    curl -fsSL "$BASE_URL/{filename}" -o "$HOOKS_DIR/{filename}" || {{\n')
                 f.write(f'        tw_error "Failed to download {filename}"\n')
                 f.write(f'        debug_msg "Download failed: {filename}" 1\n')
                 f.write('        return 1\n')
                 f.write('    }\n')
                 if is_executable:
-                    f.write(f'    chmod +x "$HOOKS_DIR/{install_name}"\n')
-                f.write(f'    debug_msg "Installed hook: $HOOKS_DIR/{install_name}" 2\n\n')
+                    f.write(f'    chmod +x "$HOOKS_DIR/{filename}"\n')
+                f.write(f'    debug_msg "Installed hook: $HOOKS_DIR/{filename}" 2\n\n')
             
             # Download scripts
             for filename, _ in scripts:
-                # Strip -x suffix for installation
-                install_name = filename.replace('-x.sh', '.sh') if filename.endswith('-x.sh') else filename
-                install_name = install_name.replace('-x.py', '.py') if install_name.endswith('-x.py') else install_name
+                # NO NAME CHANGES! File keeps exact same name in installation
+                # Scripts are normally executable unless they have -x suffix
+                is_executable = not (filename.endswith('-x.sh') or filename.endswith('-x.py'))
                 
                 f.write(f'    debug_msg "Downloading script: {filename}" 2\n')
-                f.write(f'    curl -fsSL "$BASE_URL/{filename}" -o "$SCRIPTS_DIR/{install_name}" || {{\n')
+                f.write(f'    curl -fsSL "$BASE_URL/{filename}" -o "$SCRIPTS_DIR/{filename}" || {{\n')
                 f.write(f'        tw_error "Failed to download {filename}"\n')
                 f.write(f'        debug_msg "Download failed: {filename}" 1\n')
                 f.write('        return 1\n')
                 f.write('    }\n')
-                f.write(f'    chmod +x "$SCRIPTS_DIR/{install_name}"\n')
-                f.write(f'    debug_msg "Installed script: $SCRIPTS_DIR/{install_name}" 2\n\n')
+                if is_executable:
+                    f.write(f'    chmod +x "$SCRIPTS_DIR/{filename}"\n')
+                f.write(f'    debug_msg "Installed script: $SCRIPTS_DIR/{filename}" 2\n\n')
             
             # Download configs
             for filename, _ in configs:
-                # Strip -x suffix for installation
-                install_name = filename.replace('-x.rc', '.rc') if filename.endswith('-x.rc') else filename
+                # NO NAME CHANGES! File keeps exact same name in installation
                 
                 f.write(f'    debug_msg "Downloading config: {filename}" 2\n')
-                f.write(f'    curl -fsSL "$BASE_URL/{filename}" -o "$CONFIG_DIR/{install_name}" || {{\n')
+                f.write(f'    curl -fsSL "$BASE_URL/{filename}" -o "$CONFIG_DIR/{filename}" || {{\n')
                 f.write(f'        tw_error "Failed to download {filename}"\n')
                 f.write(f'        debug_msg "Download failed: {filename}" 1\n')
                 f.write('        return 1\n')
                 f.write('    }\n')
-                f.write(f'    debug_msg "Installed config: $CONFIG_DIR/{install_name}" 2\n\n')
+                f.write(f'    debug_msg "Installed config: $CONFIG_DIR/{filename}" 2\n\n')
             
             # Add config to .taskrc if needed
             if configs:
                 first_config = configs[0][0]
-                # Strip -x suffix for config filename
-                install_config_name = first_config.replace('-x.rc', '.rc') if first_config.endswith('-x.rc') else first_config
+                # NO NAME CHANGES! Use actual filename
                 f.write('    # Add config to .taskrc\n')
                 f.write('    tw_msg "Adding configuration to .taskrc..."\n')
-                f.write(f'    local config_line="include $CONFIG_DIR/{install_config_name}"\n\n')
+                f.write(f'    local config_line="include $CONFIG_DIR/{first_config}"\n\n')
                 f.write('    if ! grep -qF "$config_line" "$TASKRC" 2>/dev/null; then\n')
                 f.write('        echo "$config_line" >> "$TASKRC"\n')
                 f.write('        tw_msg "Added config include to .taskrc"\n')
@@ -1011,8 +1011,7 @@ def generate_installer(info: ProjectInfo) -> bool:
             
             # Add manifest entries for each file
             for filename, ftype in info.files:
-                # Strip -x suffix for actual installed filename
-                install_name = filename.replace('-x.py', '.py') if filename.endswith('-x.py') else filename
+                # NO NAME CHANGES! Use actual filename in manifest
                 
                 if ftype == 'hook':
                     dir_var = '$HOOKS_DIR'
@@ -1022,10 +1021,10 @@ def generate_installer(info: ProjectInfo) -> bool:
                     dir_var = '$CONFIG_DIR'
                 elif ftype == 'doc':
                     dir_var = '$DOCS_DIR'
-                    install_name = f"{info.name}_{install_name}"
+                    filename = f"{info.name}_{filename}"  # Only docs get project name prefix
                 
-                f.write(f'    echo "$APPNAME|$VERSION|{dir_var}/{install_name}||$TIMESTAMP" >> "$MANIFEST_FILE"\n')
-                f.write(f'    debug_msg "Manifest entry: {dir_var}/{install_name}" 3\n')
+                f.write(f'    echo "$APPNAME|$VERSION|{dir_var}/{filename}||$TIMESTAMP" >> "$MANIFEST_FILE"\n')
+                f.write(f'    debug_msg "Manifest entry: {dir_var}/{filename}" 3\n')
             
             # Finish install function
             f.write('\n')
@@ -1068,6 +1067,7 @@ def generate_installer(info: ProjectInfo) -> bool:
             # Remove config from .taskrc if present
             if configs:
                 first_config = configs[0][0]
+                # NO NAME CHANGES! Use actual filename
                 f.write('    # Remove config from .taskrc\n')
                 f.write(f'    local config_line="include $CONFIG_DIR/{first_config}"\n')
                 f.write('    if grep -qF "$config_line" "$TASKRC" 2>/dev/null; then\n')
