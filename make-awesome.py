@@ -925,8 +925,14 @@ def generate_installer(info: ProjectInfo) -> bool:
             # Download hooks
             for filename, _ in hooks:
                 # NO NAME CHANGES! File keeps exact same name in installation
-                # Use -x suffix ONLY to determine if we skip chmod +x
-                is_executable = not (filename.endswith('-x.py') or filename.endswith('-x.sh'))
+                # Use -x suffix OR _hook path marker to determine if we skip chmod +x
+                # - Files ending in -x.py or -x.sh are explicitly marked non-executable
+                # - Files with _hook path marker (like recurrence_common_hook.py) are libraries
+                is_executable = not (
+                    filename.endswith('-x.py') or 
+                    filename.endswith('-x.sh') or
+                    ('_hook' in filename and not filename.startswith('on-'))
+                )
                 
                 f.write(f'    debug_msg "Downloading hook: {filename}" 2\n')
                 f.write(f'    curl -fsSL "$BASE_URL/{filename}" -o "$HOOKS_DIR/{filename}" || {{\n')
