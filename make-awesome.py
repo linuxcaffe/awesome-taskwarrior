@@ -635,6 +635,8 @@ def detect_files() -> List[Tuple[str, str]]:
         'on-modify',        # hooks
         'on-exit',          # hooks
         'make-awesome.py',  # this script itself
+        '.install',         # installer files (output, not input)
+        '.meta',            # metadata files (output, not input)
         '.git',             # git files
         '__pycache__',      # python cache
     ]
