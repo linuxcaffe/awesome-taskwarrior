@@ -85,13 +85,14 @@ install() {
     chmod +x "$HOOKS_DIR/on-modify_recurrence.py"
     debug_msg "Installed hook: $HOOKS_DIR/on-modify_recurrence.py" 2
 
-    debug_msg "Downloading hook: recurrence_common_hook-x.py" 2
-    curl -fsSL "$BASE_URL/recurrence_common_hook-x.py" -o "$HOOKS_DIR/recurrence_common_hook-x.py" || {
-        tw_error "Failed to download recurrence_common_hook-x.py"
-        debug_msg "Download failed: recurrence_common_hook-x.py" 1
+    debug_msg "Downloading hook: recurrence_common_hook.py" 2
+    curl -fsSL "$BASE_URL/recurrence_common_hook.py" -o "$HOOKS_DIR/recurrence_common_hook.py" || {
+        tw_error "Failed to download recurrence_common_hook.py"
+        debug_msg "Download failed: recurrence_common_hook.py" 1
         return 1
     }
-    debug_msg "Installed hook: $HOOKS_DIR/recurrence_common_hook-x.py" 2
+    chmod +x "$HOOKS_DIR/recurrence_common_hook.py"
+    debug_msg "Installed hook: $HOOKS_DIR/recurrence_common_hook.py" 2
 
     debug_msg "Downloading script: rr" 2
     curl -fsSL "$BASE_URL/rr" -o "$SCRIPTS_DIR/rr" || {
@@ -139,8 +140,8 @@ install() {
     debug_msg "Manifest entry: $HOOKS_DIR/on-exit_recurrence.py" 3
     echo "$APPNAME|$VERSION|$HOOKS_DIR/on-modify_recurrence.py||$TIMESTAMP" >> "$MANIFEST_FILE"
     debug_msg "Manifest entry: $HOOKS_DIR/on-modify_recurrence.py" 3
-    echo "$APPNAME|$VERSION|$HOOKS_DIR/recurrence_common_hook-x.py||$TIMESTAMP" >> "$MANIFEST_FILE"
-    debug_msg "Manifest entry: $HOOKS_DIR/recurrence_common_hook-x.py" 3
+    echo "$APPNAME|$VERSION|$HOOKS_DIR/recurrence_common_hook.py||$TIMESTAMP" >> "$MANIFEST_FILE"
+    debug_msg "Manifest entry: $HOOKS_DIR/recurrence_common_hook.py" 3
     echo "$APPNAME|$VERSION|$SCRIPTS_DIR/rr||$TIMESTAMP" >> "$MANIFEST_FILE"
     debug_msg "Manifest entry: $SCRIPTS_DIR/rr" 3
     echo "$APPNAME|$VERSION|$CONFIG_DIR/recurrence.rc||$TIMESTAMP" >> "$MANIFEST_FILE"
