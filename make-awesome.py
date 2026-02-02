@@ -9,7 +9,7 @@ This tool provides a full workflow from development through deployment:
 - --push: Git commit/push + registry update
 
 Single command pipeline: make-awesome.py "commit message"
-  Runs: debug ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ test ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ install ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ push (each stage gated on previous success)
+  Runs: debug -> test -> install -> push (each stage gated on previous success)
 
 Version: 4.4.0
 """
@@ -38,13 +38,13 @@ def msg(text):
     print(f"{Colors.BLUE}[make]{Colors.NC} {text}")
 
 def success(text):
-    print(f"{Colors.GREEN}[make] ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“{Colors.NC} {text}")
+    print(f"{Colors.GREEN}[make] [OK]{Colors.NC} {text}")
 
 def error(text):
-    print(f"{Colors.RED}[make] ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã¯Â¿Â½{Colors.NC} {text}", file=sys.stderr)
+    print(f"{Colors.RED}[make] [FAIL]{Colors.NC} {text}", file=sys.stderr)
 
 def warn(text):
-    print(f"{Colors.YELLOW}[make] ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â {Colors.NC} {text}")
+    print(f"{Colors.YELLOW}[make] [WARN]{Colors.NC} {text}")
 
 
 # ============================================================================
@@ -814,21 +814,6 @@ def calculate_checksums(files: List[Tuple[str, str]]) -> List[str]:
     return checksums
 
 
-def strip_type_marker(filename: str) -> str:
-    """Strip explicit type marker from filename for installation
-    
-    Examples:
-        recurrence_common.hook.py -> recurrence_common.py
-        utils.script.sh -> utils.sh
-        config.config.rc -> config.rc
-    """
-    match = re.match(r'^(.+)\.(hook|script|config|doc)\.(\w+)$', filename)
-    if match:
-        basename, type_marker, extension = match.groups()
-        return f"{basename}.{extension}"
-    return filename
-
-
 def generate_meta_file(info: ProjectInfo) -> bool:
     meta_file = f"{info.name}.meta"
     msg(f"Generating {meta_file}...")
@@ -890,8 +875,8 @@ def generate_installer(info: ProjectInfo) -> bool:
             f.write("BLUE='\\033[0;34m'\n")
             f.write("NC='\\033[0m'\n\n")
             f.write('tw_msg() { echo -e "${BLUE}[tw]${NC} $*"; }\n')
-            f.write('tw_success() { echo -e "${GREEN}[tw] ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“${NC} $*"; }\n')
-            f.write('tw_error() { echo -e "${RED}[tw] ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã¯Â¿Â½${NC} $*" >&2; }\n\n')
+            f.write('tw_success() { echo -e "${GREEN}[tw] [OK]${NC} $*"; }\n')
+            f.write('tw_error() { echo -e "${RED}[tw] [FAIL]${NC} $*" >&2; }\n\n')
             
             # Debug support
             f.write('# Debug support\n')

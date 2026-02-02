@@ -1,0 +1,75 @@
+# make-awesome.py v4.4.0 - Cleanup Summary
+# Date: 2026-02-02
+
+## Issues Fixed:
+
+### 1. Unicode Corruption ✓
+**Problem:** Garbled UTF-8 characters throughout the code
+**Lines Affected:** 12, 41, 44, 47 (make-awesome.py) + lines 893, 894 (installer template)
+**Was:** ÃƒÆ'Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ'Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬... (corrupted multi-byte sequences)
+**Now:** Simple ASCII: [OK], [FAIL], [WARN], ->
+
+**Changed:**
+- Line 12: "debug -> test -> install -> push"
+- Line 41: print(f"{Colors.GREEN}[make] [OK]{Colors.NC} {text}")
+- Line 44: print(f"{Colors.RED}[make] [FAIL]{Colors.NC} {text}")
+- Line 47: print(f"{Colors.YELLOW}[make] [WARN]{Colors.NC} {text}")
+- Line 893: f.write('tw_success() { echo -e "${GREEN}[tw] [OK]${NC} $*"; }\n')
+- Line 894: f.write('tw_error() { echo -e "${RED}[tw] [FAIL]${NC} $*" >&2; }\n\n')
+
+### 2. Obsolete Function Removed ✓
+**Problem:** strip_type_marker() function violated NO NAME CHANGES principle
+**Location:** Lines 817-829
+**Function:** Stripped .hook., .script., .config. from filenames (OLD naming system)
+**Action:** DELETED ENTIRELY
+
+This function was from the OLD naming architecture where:
+- recurrence_common.hook.py → recurrence_common.py (NAME CHANGE!)
+- utils.script.sh → utils.sh (NAME CHANGE!)
+
+New architecture says: NO NAME CHANGES EVER
+
+### 3. Function Usage Verified ✓
+**Checked:** grep for all calls to strip_type_marker()
+**Result:** Function was defined but NEVER called (dead code)
+**Action:** Safe to delete without any side effects
+
+## Remaining Issues (Identified but not fixed yet):
+
+### 4. Old .install File ❌
+**File:** recurrence-overhaul.install
+**Problem:** Still using OLD naming system with name changes
+
+Line 79-85:
+```bash
+curl "$BASE_URL/recurrence_common.hook.py" -o "$HOOKS_DIR/recurrence_common.py"
+```
+
+Should be:
+```bash
+curl "$BASE_URL/recurrence_common_hook-x.py" -o "$HOOKS_DIR/recurrence_common_hook-x.py"
+```
+
+**Status:** Waiting for documentation upload before regenerating
+
+### 5. Missing File Detection
+**Problem:** recurrence_common_hook-x.py not detected by detect_files()
+**Possible Causes:**
+- File doesn't exist in current directory
+- File pattern *_hook-x.py not matching correctly
+- File not executable so skipped
+
+**Status:** Needs investigation after documentation upload
+
+## Files Modified:
+- /mnt/project/make-awesome.py (cleaned and ready)
+
+## Files Needing Regeneration:
+- recurrence-overhaul.install (needs new make-awesome.py --install run)
+- Any other .install files in the project
+
+## Next Steps:
+1. Upload additional documentation (as planned)
+2. Investigate missing recurrence_common_hook-x.py detection
+3. Regenerate .install files with clean make-awesome.py
+4. Verify NO NAME CHANGES throughout entire pipeline
