@@ -2,7 +2,7 @@
 # Replaces task recurrence, supporting due, sched, wait and until dates, with period and chain type recurrences
 
 name=recurrence-overhaul
-version=2.4.7
+version=2.4.8
 type=hook
 description=Replaces task recurrence, supporting due, sched, wait and until dates, with period and chain type recurrences
 repo=https://github.com/linuxcaffe/tw-recurrence_overhaul-hook
@@ -10,7 +10,7 @@ base_url=https://raw.githubusercontent.com/linuxcaffe/tw-recurrence_overhaul-hoo
 files=on-add_recurrence.py:hook,on-exit_recurrence.py:hook,on-modify_recurrence.py:hook,recurrence_common_hook.py:hook,rr:script,recurrence.rc:config,README.md:doc
 tags=recur,period,chain,time,hook
 
-checksums=527f8bdf5f17c52e5689991bece38b0f3f705b71a2acf3b14e4a3f0a88951828,2520efafd62142d54cb351b16ec85ed2a40aeca9d3b1e3ec99a89287a2654d77,527f8bdf5f17c52e5689991bece38b0f3f705b71a2acf3b14e4a3f0a88951828,e9dfd1bf17b7b50d8b5226ed828c35c713f4cd10b0315fc790eb711461d29222,eb02b11e1e6d0791d69378b681d9b0bacd485d5290ce571381c1da2f2187f6dd,ee0cad5e9bf54abbc00155e1c297fce8b9446c462d67593696fa51bac178662c,2ef9b50ffd02e64530ec0b84ddbd0f90e1f5a08a892e046abce3d3d3c40d1851
+checksums=b27ab8659873a9fc5b8942f59cba951c0dfbc6d483048aac60084397e39f26d4,2520efafd62142d54cb351b16ec85ed2a40aeca9d3b1e3ec99a89287a2654d77,b27ab8659873a9fc5b8942f59cba951c0dfbc6d483048aac60084397e39f26d4,e9dfd1bf17b7b50d8b5226ed828c35c713f4cd10b0315fc790eb711461d29222,eb02b11e1e6d0791d69378b681d9b0bacd485d5290ce571381c1da2f2187f6dd,ee0cad5e9bf54abbc00155e1c297fce8b9446c462d67593696fa51bac178662c,2ef9b50ffd02e64530ec0b84ddbd0f90e1f5a08a892e046abce3d3d3c40d1851
 
 author=Designed by linuxcaffe, based on Taskwarrior plans, implemented by Claude Sonnet 4.5
 license=MIT
