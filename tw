@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 tw - awesome-taskwarrior package manager and wrapper
-Version: 2.2.2
+Version: 2.2.0
 
 A unified wrapper for Taskwarrior that provides:
 - Transparent pass-through to task command
@@ -17,6 +17,14 @@ Architecture Changes in v2.0.0:
 - Per-file manifest tracking (app|version|file|checksum|date)
 - Added docs_dir for README files
 - Self-contained installers that work with or without tw
+
+Updates in v2.2.1:
+- Fixed: Removed duplicated function definitions (generate_*_completion, main)
+- Fixed: Safe update (tw -u) - preflight staging prevents data loss on failed updates
+- Added: @0 shortcut for context none
+- Added: @: contextname for one-shot context override (rc.context:name)
+- Added: @_ for one-shot no-context override (rc.context:none)
+- Added: @? shortcut for context show
 
 Updates in v2.2.0:
 - Added: @ as alias for 'context' command
@@ -2529,13 +2537,51 @@ def main():
                 print(f"[tw-debug] Context command detected: {sys.argv[1]}", file=sys.stderr)
             
             # Handle different @ formats:
-            # tw @ list       Ã¢â€ â€™ sys.argv = ['tw', '@', 'list']  Ã¢â€ â€™ args = ['list']
-            # tw @+ work      Ã¢â€ â€™ sys.argv = ['tw', '@+', 'work'] Ã¢â€ â€™ args = ['+work']
-            # tw @- morning   Ã¢â€ â€™ sys.argv = ['tw', '@-', 'morning'] Ã¢â€ â€™ args = ['-morning']
+            # tw @            show current context
+            # tw @ list       pass through to task context
+            # tw @+ work      add context to cmx set
+            # tw @- morning   remove context from cmx set
+            # tw @0           context none
+            # tw @: ctxname   one-shot context override (rc.context:name)
+            # tw @_ [args]    one-shot no-context (rc.context:none)
+            # tw @?           context show
             
             if sys.argv[1] == '@':
                 # Simple @ - pass remaining args as-is
                 return handle_context_command(sys.argv[2:])
+            
+            elif sys.argv[1] == '@0':
+                # @0 = context none
+                if debug_wrapper:
+                    print(f"[tw-debug] @0 -> task context none", file=sys.stderr)
+                return subprocess.run(['task', 'context', 'none'], check=False).returncode
+            
+            elif sys.argv[1] == '@?':
+                # @? = context show
+                if debug_wrapper:
+                    print(f"[tw-debug] @? -> task context show", file=sys.stderr)
+                return subprocess.run(['task', 'context', 'show'], check=False).returncode
+            
+            elif sys.argv[1] == '@:':
+                # @: contextname [args] = one-shot context override
+                if len(sys.argv) > 2:
+                    ctx_name = sys.argv[2]
+                    rest = sys.argv[3:]
+                    if debug_wrapper:
+                        print(f"[tw-debug] @: -> task rc.context:{ctx_name} {rest}", file=sys.stderr)
+                    return subprocess.run(['task', f'rc.context:{ctx_name}'] + rest, check=False).returncode
+                else:
+                    print("[tw] Error: @: requires a context name")
+                    print("[tw] Usage: tw @: contextname [task args]")
+                    return 1
+            
+            elif sys.argv[1] == '@_':
+                # @_ [args] = one-shot no-context override
+                rest = sys.argv[2:]
+                if debug_wrapper:
+                    print(f"[tw-debug] @_ -> task rc.context:none {rest}", file=sys.stderr)
+                return subprocess.run(['task', 'rc.context:none'] + rest, check=False).returncode
+            
             elif sys.argv[1] == '@+':
                 # @+ with space - combine with next arg
                 if len(sys.argv) > 2:
@@ -2734,6 +2780,11 @@ def main():
         print("  tw @+ personal             Add personal context to current set")
         print("  tw @- work                 Remove work context from current set")
         print("  tw @ none                  Clear all contexts")
+        print("\nContext Shortcuts:")
+        print("  tw @0                      Context none (clear active context)")
+        print("  tw @: ctxname [args]       One-shot context override")
+        print("  tw @_ [args]               One-shot no-context override")
+        print("  tw @?                      Show active context details")
         print("\nTag Filtering:")
         print("  Use +tag to include, -tag to exclude")
         print("  Applies to: --list, --info")
