@@ -11,7 +11,7 @@ This tool provides a full workflow from development through deployment:
 Single command pipeline: make-awesome.py "commit message"
   Runs: debug -> test -> install -> push (each stage gated on previous success)
 
-Version: 4.4.0
+Version: 4.4.1
 """
 
 import sys
@@ -24,7 +24,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
 
-VERSION = "4.4.0"
+VERSION = "4.4.1"
 
 # ANSI color codes
 class Colors:
@@ -767,6 +767,44 @@ def prompt_for_metadata(info: ProjectInfo) -> bool:
     if response:
         info.branch = response
     
+    # Validate branch exists on GitHub by testing a known URL
+    if info.repo:
+        test_url = f"https://raw.githubusercontent.com/{info.repo}/{info.branch}/README.md"
+        msg(f"Verifying branch '{info.branch}' on GitHub...")
+        try:
+            result = subprocess.run(
+                ['curl', '-sI', '-o', '/dev/null', '-w', '%{http_code}', test_url],
+                capture_output=True, text=True, timeout=10
+            )
+            http_code = result.stdout.strip()
+            if http_code == '200':
+                success(f"Branch '{info.branch}' verified")
+            elif http_code in ('404', '000'):
+                warn(f"Branch '{info.branch}' returned {http_code} - might not exist!")
+                # Suggest alternatives
+                alternatives = ['main', 'master'] if info.branch not in ('main', 'master') else ['master' if info.branch == 'main' else 'main']
+                for alt in alternatives:
+                    alt_url = f"https://raw.githubusercontent.com/{info.repo}/{alt}/README.md"
+                    alt_result = subprocess.run(
+                        ['curl', '-sI', '-o', '/dev/null', '-w', '%{http_code}', alt_url],
+                        capture_output=True, text=True, timeout=10
+                    )
+                    if alt_result.stdout.strip() == '200':
+                        response = input(f"  Branch '{alt}' exists. Use it instead? [Y/n]: ").strip().lower()
+                        if response != 'n':
+                            info.branch = alt
+                            success(f"Switched to branch '{alt}'")
+                        break
+                else:
+                    warn("Could not verify any branch. Continuing with current setting.")
+                    response = input(f"  Continue with '{info.branch}'? [Y/n]: ").strip().lower()
+                    if response == 'n':
+                        info.branch = input("  Enter branch name: ").strip() or info.branch
+            else:
+                warn(f"Got HTTP {http_code} testing branch (might be fine for private repos)")
+        except (subprocess.TimeoutExpired, Exception) as e:
+            warn(f"Could not verify branch (network issue: {e}). Continuing.")
+    
     # Author with default
     if info.author:
         response = input(f"Author [{info.author}]: ").strip()
@@ -822,7 +860,7 @@ def generate_meta_file(info: ProjectInfo) -> bool:
     
     files_list = ','.join([f"{name}:{ftype}" for name, ftype in info.files])
     checksums_list = ','.join(info.checksums)
-    base_url = f"https://raw.githubusercontent.com/{info.repo}/{info.branch}/"
+    base_url = f"https://raw.githubusercontent.com/{info.repo}/{info.branch}"
     repo_url = f"https://github.com/{info.repo}"
     
     try:
@@ -868,7 +906,7 @@ def generate_installer(info: ProjectInfo) -> bool:
             f.write('# ============================================================================\n\n')
             f.write(f'VERSION="{info.version}"\n')
             f.write(f'APPNAME="{info.name}"\n')
-            f.write(f'BASE_URL="https://raw.githubusercontent.com/{info.repo}/{info.branch}/"\n\n')
+            f.write(f'BASE_URL="https://raw.githubusercontent.com/{info.repo}/{info.branch}"\n\n')
             
             # Colors and helper functions
             f.write("# Colors\n")

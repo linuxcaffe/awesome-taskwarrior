@@ -81,7 +81,7 @@ import tempfile
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 
-VERSION = "2.2.0"
+VERSION = "2.2.1"
 
 # GitHub configuration
 GITHUB_REPO = "linuxcaffe/awesome-taskwarrior"
@@ -298,7 +298,7 @@ class RegistryManager:
             return sorted(apps)
         
         except (URLError, HTTPError) as e:
-            print(f"[tw] ÃƒÂ¢Ã…â€œÃ¢â‚¬â€ Failed to fetch registry from GitHub: {e}")
+            print(f"[tw] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â� Failed to fetch registry from GitHub: {e}")
             return []
     
     def get_meta(self, app_name):
@@ -862,7 +862,7 @@ class AppManager:
     def verify(self, app_name):
         """Verify checksums of installed files"""
         if not self.manifest.is_installed(app_name):
-            print(f"[tw] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ï¿½ Not installed: {app_name}")
+            print(f"[tw] ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã¯Â¿Â½ Not installed: {app_name}")
             return False
         
         meta = self.registry.get_meta(app_name)
@@ -873,7 +873,7 @@ class AppManager:
         files = meta.get_files()
         
         if not checksums:
-            print(f"[tw] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â  No checksums available for {app_name}")
+            print(f"[tw] ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  No checksums available for {app_name}")
             return True
         
         print(f"[tw] Verifying {app_name}...")
@@ -892,7 +892,7 @@ class AppManager:
             file_path = target_dir / filename
             
             if not file_path.exists():
-                print(f"[tw] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ï¿½ File not found: {file_path}")
+                print(f"[tw] ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã¯Â¿Â½ File not found: {file_path}")
                 all_valid = False
                 continue
             
@@ -900,15 +900,15 @@ class AppManager:
             actual_checksum = self._calculate_checksum(file_path)
             
             if actual_checksum == expected_checksum:
-                print(f"[tw] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ {filename}")
+                print(f"[tw] ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ {filename}")
             else:
-                print(f"[tw] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ï¿½ {filename} (checksum mismatch)")
+                print(f"[tw] ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã¯Â¿Â½ {filename} (checksum mismatch)")
                 all_valid = False
         
         if all_valid:
-            print(f"[tw] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ All files verified")
+            print(f"[tw] ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ All files verified")
         else:
-            print(f"[tw] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ï¿½ Verification failed")
+            print(f"[tw] ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã¯Â¿Â½ Verification failed")
         
         return all_valid
     
@@ -1292,10 +1292,10 @@ How it Works:
   5. Copies README to ~/.task/docs/
 
 File Placement:
-  - hook files  ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ ~/.task/hooks/
-  - script files ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ ~/.task/scripts/
-  - config files ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ ~/.task/config/
-  - doc files    ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ ~/.task/docs/
+  - hook files  ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ ~/.task/hooks/
+  - script files ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ ~/.task/scripts/
+  - config files ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ ~/.task/config/
+  - doc files    ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ ~/.task/docs/
 
 Example:
   tw --install tw-recurrence-hooks
@@ -1488,7 +1488,7 @@ def validate_first_arg_flag(args):
 def handle_context_command(args):
     """Handle @ context commands - alias for 'context' with @+/- extensions"""
     if not args:
-        # tw @ with no args â†’ show current context
+        # tw @ with no args Ã¢â€ â€™ show current context
         # First check if cmx is active
         current_cmx = get_cmx_contexts()
         if current_cmx:
@@ -1517,8 +1517,8 @@ def handle_context_command(args):
         return remove_context_from_cmx(context_name)
     
     # Otherwise, pass through to task context
-    # tw @ list â†’ task context list
-    # tw @ work â†’ task context work
+    # tw @ list Ã¢â€ â€™ task context list
+    # tw @ work Ã¢â€ â€™ task context work
     return subprocess.run(['task', 'context'] + args, check=False).returncode
 
 def get_cmx_contexts():
@@ -1762,7 +1762,7 @@ def attach_file_to_task(task_id):
         )
         
         if result.returncode == 0:
-            print(f"[tw] âœ“ Attached: {annotation}")
+            print(f"[tw] Ã¢Å“â€œ Attached: {annotation}")
         
         return result.returncode
         
@@ -1829,7 +1829,7 @@ def pass_through_to_task(args):
         # Find task executable
         task_bin = shutil.which('task')
         if not task_bin:
-            print("[tw] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ï¿½ task executable not found")
+            print("[tw] ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã¯Â¿Â½ task executable not found")
             return 1
         
         # Execute task with arguments
@@ -1837,7 +1837,7 @@ def pass_through_to_task(args):
         return result.returncode
         
     except Exception as e:
-        print(f"[tw] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ï¿½ Error executing task: {e}")
+        print(f"[tw] ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã¯Â¿Â½ Error executing task: {e}")
         return 1
 
 def generate_bash_completion():
@@ -2323,400 +2323,6 @@ def install_completion(shell):
         return (False, f"Failed to install completion: {e}")
 
 def main():
-    """Generate bash completion script for tw"""
-    return '''# Bash completion for tw (awesome-taskwarrior package manager)
-# Generated by: tw --generate-completion bash
-#
-# Installation:
-#   tw --generate-completion bash > ~/.bash_completion.d/tw.sh
-#   source ~/.bash_completion.d/tw.sh
-#
-# Or add to ~/.bashrc:
-#   source ~/.bash_completion.d/tw.sh
-
-# Get available apps from registry
-_tw_get_available_apps() {
-    local registry_dir=""
-    if [[ -n "${TW_REGISTRY_DIR:-}" ]]; then
-        registry_dir="$TW_REGISTRY_DIR"
-    elif [[ -d "$HOME/dev/awesome-taskwarrior/registry.d" ]]; then
-        registry_dir="$HOME/dev/awesome-taskwarrior/registry.d"
-    else
-        registry_dir="$HOME/.task/registry"
-    fi
-    
-    if [[ -d "$registry_dir" ]]; then
-        ls "$registry_dir"/*.meta 2>/dev/null | xargs -n1 basename | sed 's/\\.meta$//'
-    fi
-}
-
-# Get installed apps from manifest
-_tw_get_installed_apps() {
-    local manifest="$HOME/.task/.tw_manifest"
-    if [[ -f "$manifest" ]]; then
-        cut -d'|' -f1 "$manifest" | sort -u
-    fi
-}
-
-# Get help topics
-_tw_get_help_topics() {
-    echo "shell install remove verify list info"
-}
-
-# Main completion function for tw
-_tw() {
-    local cur prev opts base
-    
-    COMPREPLY=()
-    cur="${COMP_WORDS[COMP_CWORD]}"
-    prev="${COMP_WORDS[COMP_CWORD-1]}"
-    
-    # tw-specific flags
-    local tw_flags="-I --install -r --remove -u --update -l --list -i --info --verify --tags --dry-run --debug -v --version -h --help -s --shell -p --pager -A --attach --generate-completion"
-    
-    # Check if we're completing a tw command or should pass through to task
-    local i=1
-    local found_tw_cmd=0
-    
-    # Look for tw-specific flags in the command line
-    while [[ $i -lt $COMP_CWORD ]]; do
-        case "${COMP_WORDS[$i]}" in
-            -I|--install|-r|--remove|-u|--update|-l|--list|-i|--info|--verify|--tags|--dry-run|--debug|-v|--version|-h|--help|-s|--shell|-p|--pager|-A|--attach|--generate-completion)
-                found_tw_cmd=1
-                break
-                ;;
-        esac
-        ((i++))
-    done
-    
-    # Handle completions based on previous word
-    case "${prev}" in
-        tw)
-            # First position - offer both tw flags and task commands
-            if [[ ${cur} == -* ]]; then
-                COMPREPLY=( $(compgen -W "${tw_flags}" -- ${cur}) )
-                return 0
-            else
-                # Offer task commands via task _commands
-                local task_cmds=$(task _commands 2>/dev/null)
-                COMPREPLY=( $(compgen -W "${task_cmds}" -- ${cur}) )
-                return 0
-            fi
-            ;;
-        -I|--install)
-            # Complete with available apps from registry
-            COMPREPLY=( $(compgen -W "$(_tw_get_available_apps)" -- ${cur}) )
-            return 0
-            ;;
-        -r|--remove|-u|--update|--verify)
-            # Complete with installed apps
-            COMPREPLY=( $(compgen -W "$(_tw_get_installed_apps)" -- ${cur}) )
-            return 0
-            ;;
-        -i|--info)
-            # Complete with all available apps
-            COMPREPLY=( $(compgen -W "$(_tw_get_available_apps)" -- ${cur}) )
-            return 0
-            ;;
-        -h|--help)
-            # Complete with help topics
-            COMPREPLY=( $(compgen -W "$(_tw_get_help_topics)" -- ${cur}) )
-            return 0
-            ;;
-        -A|--attach)
-            # Complete with task IDs
-            local task_ids=$(task _ids 2>/dev/null)
-            COMPREPLY=( $(compgen -W "${task_ids}" -- ${cur}) )
-            return 0
-            ;;
-        --generate-completion)
-            # Complete with shell types
-            COMPREPLY=( $(compgen -W "bash zsh fish" -- ${cur}) )
-            return 0
-            ;;
-        --debug)
-            # Complete with debug levels
-            COMPREPLY=( $(compgen -W "1 2 3" -- ${cur}) )
-            return 0
-            ;;
-    esac
-    
-    # If we found a tw command earlier, don't pass through to task
-    if [[ $found_tw_cmd -eq 1 ]]; then
-        # For tag filtering on --list, --info
-        case "${cur}" in
-            +*)
-                local tags=$(task _tags 2>/dev/null | sed 's/^/+/')
-                COMPREPLY=( $(compgen -W "${tags}" -- ${cur}) )
-                return 0
-                ;;
-            -*)
-                # Could be a flag or a negative tag
-                if [[ ${#cur} -gt 1 ]] && [[ ${cur:1:1} != "-" ]]; then
-                    # Single dash followed by non-dash = negative tag
-                    local tags=$(task _tags 2>/dev/null | sed 's/^/-/')
-                    COMPREPLY=( $(compgen -W "${tags}" -- ${cur}) )
-                else
-                    # It's a flag
-                    COMPREPLY=( $(compgen -W "${tw_flags}" -- ${cur}) )
-                fi
-                return 0
-                ;;
-        esac
-        return 0
-    fi
-    
-    # Pass through to task completion
-    # Try to source the task completion if available
-    if declare -f _task >/dev/null 2>&1; then
-        _task
-        return 0
-    fi
-    
-    # Fallback: basic task command completion
-    case "${cur}" in
-        +*)
-            local tags=$(task _tags 2>/dev/null | sed 's/^/+/')
-            COMPREPLY=( $(compgen -W "${tags}" -- ${cur}) )
-            ;;
-        -*)
-            local tags=$(task _tags 2>/dev/null | sed 's/^/-/')
-            COMPREPLY=( $(compgen -W "${tags}" -- ${cur}) )
-            ;;
-        project:*|pro:*)
-            local projects=$(task _projects 2>/dev/null)
-            COMPREPLY=( $(compgen -W "${projects}" -- ${cur/*:/}) )
-            ;;
-        *)
-            local task_cmds=$(task _commands 2>/dev/null)
-            COMPREPLY=( $(compgen -W "${task_cmds}" -- ${cur}) )
-            ;;
-    esac
-    
-    return 0
-}
-
-# Register the completion function
-complete -F _tw tw
-'''
-
-def generate_zsh_completion():
-    """Generate zsh completion script for tw"""
-    return '''#compdef tw
-# Zsh completion for tw (awesome-taskwarrior package manager)
-# Generated by: tw --generate-completion zsh
-#
-# Installation:
-#   tw --generate-completion zsh > ~/.zsh/completion/_tw
-#   # Add to ~/.zshrc if needed:
-#   fpath=(~/.zsh/completion $fpath)
-#   autoload -Uz compinit && compinit
-
-# Get available apps from registry
-_tw_available_apps() {
-    local registry_dir=""
-    if [[ -n "${TW_REGISTRY_DIR:-}" ]]; then
-        registry_dir="$TW_REGISTRY_DIR"
-    elif [[ -d "$HOME/dev/awesome-taskwarrior/registry.d" ]]; then
-        registry_dir="$HOME/dev/awesome-taskwarrior/registry.d"
-    else
-        registry_dir="$HOME/.task/registry"
-    fi
-    
-    if [[ -d "$registry_dir" ]]; then
-        local -a apps
-        apps=(${(f)"$(ls "$registry_dir"/*.meta 2>/dev/null | xargs -n1 basename | sed 's/\\.meta$//')"})
-        _describe 'available apps' apps
-    fi
-}
-
-# Get installed apps from manifest
-_tw_installed_apps() {
-    local manifest="$HOME/.task/.tw_manifest"
-    if [[ -f "$manifest" ]]; then
-        local -a apps
-        apps=(${(f)"$(cut -d'|' -f1 "$manifest" | sort -u)"})
-        _describe 'installed apps' apps
-    fi
-}
-
-# Get help topics
-_tw_help_topics() {
-    local -a topics
-    topics=(
-        'shell:Interactive shell guide'
-        'install:Package installation'
-        'remove:Package removal'
-        'verify:Package verification'
-        'list:List installed packages'
-        'info:Package information'
-    )
-    _describe 'help topics' topics
-}
-
-# Get shell types
-_tw_shell_types() {
-    local -a shells
-    shells=(
-        'bash:Bash shell completion'
-        'zsh:Zsh shell completion'
-        'fish:Fish shell completion'
-    )
-    _describe 'shell types' shells
-}
-
-# Main completion function
-_tw() {
-    local curcontext="$curcontext" state line
-    typeset -A opt_args
-    
-    # Check if we should delegate to task completion
-    local -a task_commands
-    task_commands=(${(f)"$(task _commands 2>/dev/null)"})
-    
-    _arguments -C \\
-        '(-I --install)'{-I,--install}'[Install an application]:app:_tw_available_apps' \\
-        '(-r --remove)'{-r,--remove}'[Remove an application]:app:_tw_installed_apps' \\
-        '(-u --update)'{-u,--update}'[Update an application]:app:_tw_installed_apps' \\
-        '(-l --list)'{-l,--list}'[List installed applications]' \\
-        '(-i --info)'{-i,--info}'[Show application info]::app:_tw_available_apps' \\
-        '--verify[Verify application checksums]:app:_tw_installed_apps' \\
-        '--tags[List all available tags]' \\
-        '--dry-run[Show what would be done]' \\
-        '--debug[Enable debug output]::level:(1 2 3)' \\
-        '(-v --version)'{-v,--version}'[Show tw version]' \\
-        '(-h --help)'{-h,--help}'[Show help]::topic:_tw_help_topics' \\
-        '(-s --shell)'{-s,--shell}'[Start interactive shell]' \\
-        '(-p --pager)'{-p,--pager}'[Use pager for task output]' \\
-        '(-A --attach)'{-A,--attach}'[Attach file to task]:taskid' \\
-        '--generate-completion[Generate completion script]:shell:_tw_shell_types' \\
-        '*::task commands:->task_args'
-    
-    case $state in
-        task_args)
-            # Pass through to task completion if available
-            if (( $+functions[_task] )); then
-                _task
-            else
-                # Basic fallback completion
-                local -a task_cmds
-                task_cmds=(${(f)"$(task _commands 2>/dev/null)"})
-                _describe 'task commands' task_cmds
-            fi
-            ;;
-    esac
-}
-
-_tw "$@"
-'''
-
-def generate_fish_completion():
-    """Generate fish completion script for tw"""
-    return '''# Fish completion for tw (awesome-taskwarrior package manager)
-# Generated by: tw --generate-completion fish
-#
-# Installation:
-#   tw --generate-completion fish > ~/.config/fish/completions/tw.fish
-
-# Helper functions
-function __fish_tw_available_apps
-    set -l registry_dir ""
-    if set -q TW_REGISTRY_DIR
-        set registry_dir "$TW_REGISTRY_DIR"
-    else if test -d "$HOME/dev/awesome-taskwarrior/registry.d"
-        set registry_dir "$HOME/dev/awesome-taskwarrior/registry.d"
-    else
-        set registry_dir "$HOME/.task/registry"
-    end
-    
-    if test -d "$registry_dir"
-        ls $registry_dir/*.meta 2>/dev/null | xargs -n1 basename | sed 's/\\.meta$//'
-    end
-end
-
-function __fish_tw_installed_apps
-    set -l manifest "$HOME/.task/.tw_manifest"
-    if test -f "$manifest"
-        cut -d'|' -f1 "$manifest" | sort -u
-    end
-end
-
-function __fish_tw_help_topics
-    echo "shell"
-    echo "install"
-    echo "remove"
-    echo "verify"
-    echo "list"
-    echo "info"
-end
-
-function __fish_tw_needs_app
-    # Check if the previous argument is a flag that needs an app name
-    set -l cmd (commandline -opc)
-    if test (count $cmd) -ge 2
-        switch $cmd[-1]
-            case -I --install -r --remove -u --update --verify -i --info
-                return 0
-        end
-    end
-    return 1
-end
-
-function __fish_tw_needs_help_topic
-    set -l cmd (commandline -opc)
-    if test (count $cmd) -ge 2
-        switch $cmd[-1]
-            case -h --help
-                return 0
-        end
-    end
-    return 1
-end
-
-function __fish_tw_using_command
-    set -l cmd (commandline -opc)
-    if test (count $cmd) -gt 1
-        for tw_cmd in -I --install -r --remove -u --update -l --list -i --info --verify --tags -v --version -h --help -s --shell -p --pager -A --attach --generate-completion
-            if contains -- $tw_cmd $cmd
-                return 0
-            end
-        end
-    end
-    return 1
-end
-
-# Completion specifications
-# Package management
-complete -c tw -s I -l install -d "Install an application" -x -a "(__fish_tw_available_apps)"
-complete -c tw -s r -l remove -d "Remove an application" -x -a "(__fish_tw_installed_apps)"
-complete -c tw -s u -l update -d "Update an application" -x -a "(__fish_tw_installed_apps)"
-complete -c tw -s l -l list -d "List installed applications"
-complete -c tw -s i -l info -d "Show application info" -x -a "(__fish_tw_available_apps)"
-complete -c tw -l verify -d "Verify application checksums" -x -a "(__fish_tw_installed_apps)"
-complete -c tw -l tags -d "List all available tags"
-complete -c tw -l dry-run -d "Show what would be done"
-complete -c tw -l debug -d "Enable debug output" -x -a "1 2 3"
-
-# Utility commands
-complete -c tw -s v -l version -d "Show tw version"
-complete -c tw -s h -l help -d "Show help" -x -a "(__fish_tw_help_topics)"
-complete -c tw -s s -l shell -d "Start interactive shell"
-complete -c tw -s p -l pager -d "Use pager for task output"
-complete -c tw -s A -l attach -d "Attach file to task" -x
-complete -c tw -l generate-completion -d "Generate completion script" -x -a "bash zsh fish"
-
-# Tag completion (for --list, --info with filters)
-complete -c tw -n "__fish_tw_using_command" -a "+(__fish_use_subcommand; and task _tags)" -d "Include tag"
-complete -c tw -n "__fish_tw_using_command" -a "-(__fish_use_subcommand; and task _tags)" -d "Exclude tag"
-
-# Pass through to task completion for non-tw commands
-# Only complete task commands if no tw flags have been used
-complete -c tw -n "not __fish_tw_using_command" -a "(task _commands 2>/dev/null)" -d "Task command"
-complete -c tw -n "not __fish_tw_using_command" -a "+(__fish_use_subcommand; and task _tags)" -d "Include tag"
-complete -c tw -n "not __fish_tw_using_command" -a "-(__fish_use_subcommand; and task _tags)" -d "Exclude tag"
-'''
-
-def main():
     """Main entry point"""
     # Debug support via TW_DEBUG_WRAPPER environment variable
     # Set TW_DEBUG_WRAPPER=1 to see argument parsing flow
@@ -2738,9 +2344,9 @@ def main():
                 print(f"[tw-debug] Context command detected: {sys.argv[1]}", file=sys.stderr)
             
             # Handle different @ formats:
-            # tw @ list       â†’ sys.argv = ['tw', '@', 'list']  â†’ args = ['list']
-            # tw @+ work      â†’ sys.argv = ['tw', '@+', 'work'] â†’ args = ['+work']
-            # tw @- morning   â†’ sys.argv = ['tw', '@-', 'morning'] â†’ args = ['-morning']
+            # tw @ list       Ã¢â€ â€™ sys.argv = ['tw', '@', 'list']  Ã¢â€ â€™ args = ['list']
+            # tw @+ work      Ã¢â€ â€™ sys.argv = ['tw', '@+', 'work'] Ã¢â€ â€™ args = ['+work']
+            # tw @- morning   Ã¢â€ â€™ sys.argv = ['tw', '@-', 'morning'] Ã¢â€ â€™ args = ['-morning']
             
             if sys.argv[1] == '@':
                 # Simple @ - pass remaining args as-is
