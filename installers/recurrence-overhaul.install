@@ -9,7 +9,7 @@ set -euo pipefail
 
 VERSION="2.6.4"
 APPNAME="recurrence-overhaul"
-BASE_URL="https://raw.githubusercontent.com/linuxcaffe/tw-recurrence_overhaul-hook/main/"
+BASE_URL="https://raw.githubusercontent.com/linuxcaffe/tw-recurrence_overhaul-hook/main"
 
 # Colors
 RED='\033[0;31m'

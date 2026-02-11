@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 tw - awesome-taskwarrior package manager and wrapper
-Version: 2.2.0
+Version: 2.2.2
 
 A unified wrapper for Taskwarrior that provides:
 - Transparent pass-through to task command
@@ -660,11 +660,196 @@ class AppManager:
             return True
     
     def update(self, app_name):
-        """Update an application (reinstall)"""
-        print(f"[tw] Updating {app_name}...")
-        if self.manifest.is_installed(app_name):
-            self.remove(app_name)
-        return self.install(app_name)
+        """Update an application safely using stage-then-install
+        
+        Flow:
+          1. Download all new files to temp staging dir (preflight check)
+          2. Verify checksums (if available)
+          3. If staging fails -> old version stays completely intact
+          4. If staging succeeds -> remove old, run real .install script
+          5. If .install fails -> restore from staged backup
+        
+        The .install script remains the single source of truth for
+        file placement, permissions, .taskrc, and manifest tracking.
+        Python staging is purely a safety net / preflight download check.
+        """
+        if not self.manifest.is_installed(app_name):
+            print(f"[tw] [!] Not installed: {app_name}")
+            print(f"[tw] Use --install to install it")
+            return False
+        
+        old_version = self.manifest.get_version(app_name)
+        meta = self.registry.get_meta(app_name)
+        if not meta:
+            print(f"[tw] [X] Meta file not found for: {app_name}")
+            return False
+        
+        new_version = meta.get('version', '?')
+        
+        if old_version == new_version:
+            print(f"[tw] Already at v{new_version}")
+            response = input("[tw] Reinstall anyway? [y/N]: ").strip().lower()
+            if response != 'y':
+                return True
+        
+        print(f"[tw] Updating {app_name}: v{old_version} -> v{new_version}")
+        
+        # Step 1: Preflight - download all new files to temp dir
+        print(f"[tw] Preflight: staging new files...")
+        staged = self._stage_downloads(app_name, meta)
+        if not staged:
+            print(f"[tw] [X] Preflight failed - v{old_version} is still installed")
+            return False
+        
+        stage_dir = staged
+        print(f"[tw] Preflight passed - all files downloaded and verified")
+        
+        # Step 2: Backup current installed files (from manifest)
+        backup_dir = Path(tempfile.mkdtemp(prefix=f'tw-backup-{app_name}-'))
+        debug(f"Backup directory: {backup_dir}", 2)
+        
+        installed_files = self.manifest.get_files(app_name)
+        for file_path in installed_files:
+            src = Path(file_path)
+            if src.exists():
+                dst = backup_dir / src.name
+                shutil.copy2(src, dst)
+                debug(f"Backed up: {src} -> {dst}", 2)
+        
+        # Also backup manifest entries for this app
+        backup_manifest = [e.copy() for e in self.manifest.entries if e['app'] == app_name]
+        
+        # Step 3: Remove old version via installer
+        print(f"[tw] Removing v{old_version}...")
+        self.remove(app_name)
+        
+        # Step 4: Install new version via real .install script
+        print(f"[tw] Installing v{new_version}...")
+        if self.install(app_name):
+            # Success - clean up staging and backup
+            shutil.rmtree(stage_dir, ignore_errors=True)
+            shutil.rmtree(backup_dir, ignore_errors=True)
+            print(f"[tw] [+] Updated {app_name}: v{old_version} -> v{new_version}")
+            return True
+        else:
+            # Install failed - restore from backup
+            print(f"[tw] [X] Install failed! Restoring v{old_version}...")
+            restore_ok = self._restore_backup(app_name, backup_dir, backup_manifest)
+            
+            # Clean up staging dir
+            shutil.rmtree(stage_dir, ignore_errors=True)
+            
+            if restore_ok:
+                print(f"[tw] [+] Restored v{old_version}")
+            else:
+                print(f"[tw] [X] Restore failed! Backup preserved at: {backup_dir}")
+            
+            return False
+    
+    def _stage_downloads(self, app_name, meta):
+        """Download all files to a temp staging directory as a preflight check.
+        
+        This does NOT install anything - it just verifies that all files
+        can be downloaded and checksums match before we touch the old version.
+        
+        Returns stage_dir Path on success, None on failure.
+        """
+        base_url = meta.get_base_url()
+        if not base_url:
+            print(f"[tw] [X] No base_url in meta for {app_name}")
+            return None
+        
+        # Strip trailing slash from base_url to avoid double-slash
+        base_url = base_url.rstrip('/')
+        
+        files = meta.get_files()
+        checksums = meta.get_checksums()
+        
+        if not files:
+            print(f"[tw] [X] No files listed in meta for {app_name}")
+            return None
+        
+        # Create staging directory
+        stage_dir = Path(tempfile.mkdtemp(prefix=f'tw-stage-{app_name}-'))
+        debug(f"Staging directory: {stage_dir}", 2)
+        
+        for i, (filename, file_type) in enumerate(files):
+            url = f"{base_url}/{filename}"
+            staged_path = stage_dir / filename
+            
+            debug(f"Staging: {url} -> {staged_path}", 2)
+            print(f"[tw]   Downloading: {filename}")
+            
+            try:
+                result = subprocess.run(
+                    ['curl', '-fsSL', url, '-o', str(staged_path)],
+                    capture_output=True, text=True, timeout=30
+                )
+                if result.returncode != 0:
+                    print(f"[tw] [X] Download failed: {filename}")
+                    debug(f"curl error: {result.stderr}", 1)
+                    shutil.rmtree(stage_dir, ignore_errors=True)
+                    return None
+            except subprocess.TimeoutExpired:
+                print(f"[tw] [X] Download timed out: {filename}")
+                shutil.rmtree(stage_dir, ignore_errors=True)
+                return None
+            except Exception as e:
+                print(f"[tw] [X] Download error: {filename}: {e}")
+                shutil.rmtree(stage_dir, ignore_errors=True)
+                return None
+            
+            # Verify checksum if available
+            if checksums and i < len(checksums) and checksums[i]:
+                actual = self._calculate_checksum(staged_path)
+                if actual != checksums[i]:
+                    print(f"[tw] [X] Checksum mismatch: {filename}")
+                    debug(f"Expected: {checksums[i]}", 1)
+                    debug(f"Got:      {actual}", 1)
+                    shutil.rmtree(stage_dir, ignore_errors=True)
+                    return None
+                debug(f"Checksum verified: {filename}", 2)
+        
+        print(f"[tw] [+] All {len(files)} files staged and verified")
+        return stage_dir
+    
+    def _restore_backup(self, app_name, backup_dir, backup_manifest):
+        """Restore files from backup after a failed update.
+        
+        Copies backed-up files back to their original locations
+        and restores manifest entries.
+        
+        Returns True on success, False on failure.
+        """
+        try:
+            # Restore files to their original locations using manifest paths
+            for entry in backup_manifest:
+                original_path = Path(entry['file'])
+                backup_file = backup_dir / original_path.name
+                
+                if backup_file.exists():
+                    # Ensure target directory exists
+                    original_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(backup_file, original_path)
+                    
+                    # Restore executable bit if it was executable
+                    if original_path.suffix in ('.py', '.sh', '') and original_path.name.startswith('on-'):
+                        original_path.chmod(original_path.stat().st_mode | 0o755)
+                    
+                    debug(f"Restored: {backup_file} -> {original_path}", 2)
+            
+            # Restore manifest entries
+            for entry in backup_manifest:
+                self.manifest.entries.append(entry)
+            self.manifest._save()
+            
+            # Clean up backup dir on success
+            shutil.rmtree(backup_dir, ignore_errors=True)
+            return True
+        
+        except Exception as e:
+            print(f"[tw] [X] Restore error: {e}")
+            return False
     
     def list_installed(self, tag_filter=None):
         """List all installed and available applications with optional tag filtering"""
