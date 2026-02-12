@@ -136,12 +136,12 @@ tw . annotate "See ticket #1234"    # . = last added task
 tw . start
 
 tw 42 modify priority:H
-tw .. info                          # .. = last modified task
+tw .. due:tomorrow                  # .. = last modified task
 
 tw 15 done
-tw ... info                         # ... = last completed (by UUID)
+tw ... (w. no args runs info)       # ... = last completed (by UUID)
 
-tw .... info                        # .... = last deleted (by UUID)
+tw ....                             # .... = last deleted (by UUID)
 ```
 
 ### Interactive shell
