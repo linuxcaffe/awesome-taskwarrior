@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 tw - awesome-taskwarrior package manager and wrapper
-Version: 2.2.0
+Version: 2.7.0
 
 A unified wrapper for Taskwarrior that provides:
 - Transparent pass-through to task command
@@ -18,13 +18,14 @@ Architecture Changes in v2.0.0:
 - Added docs_dir for README files
 - Self-contained installers that work with or without tw
 
-Updates in v2.2.1:
+Updates in v2.7.0:
 - Fixed: Removed duplicated function definitions (generate_*_completion, main)
 - Fixed: Safe update (tw -u) - preflight staging prevents data loss on failed updates
 - Added: @0 shortcut for context none
 - Added: @: contextname for one-shot context override (rc.context:name)
 - Added: @_ for one-shot no-context override (rc.context:none)
 - Added: @? shortcut for context show
+- Added: Dot-shortcuts for recent tasks (. .. ... ....)
 
 Updates in v2.2.0:
 - Added: @ as alias for 'context' command
@@ -89,7 +90,7 @@ import tempfile
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 
-VERSION = "2.2.1"
+VERSION = "2.7.0"
 
 # GitHub configuration
 GITHUB_REPO = "linuxcaffe/awesome-taskwarrior"
@@ -306,7 +307,7 @@ class RegistryManager:
             return sorted(apps)
         
         except (URLError, HTTPError) as e:
-            print(f"[tw] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â� Failed to fetch registry from GitHub: {e}")
+            print(f"[tw] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Failed to fetch registry from GitHub: {e}")
             return []
     
     def get_meta(self, app_name):
@@ -1678,6 +1679,104 @@ def validate_first_arg_flag(args):
     
     return (False, None)
 
+def resolve_dot_shortcut(dot, debug_wrapper=False):
+    """Resolve dot-shortcuts to task IDs or short UUIDs.
+    
+    .    = ID of most recently added task
+    ..   = ID of most recently modified task
+    ...  = short UUID (8 char) of most recently completed task
+    ....  = short UUID (8 char) of most recently deleted task
+    
+    All queries use rc.context:none to work regardless of active context.
+    Returns the resolved ID/UUID string, or None on failure.
+    """
+    labels = {
+        '.':    'most recently added task',
+        '..':   'most recently modified task',
+        '...':  'most recently completed task',
+        '....': 'most recently deleted task',
+    }
+    
+    label = labels.get(dot)
+    if not label:
+        print(f"[tw] [X] Unknown dot-shortcut: {dot}")
+        return None
+    
+    if debug_wrapper:
+        print(f"[tw-debug] Resolving {dot} -> {label}", file=sys.stderr)
+    
+    if dot == '.':
+        try:
+            result = subprocess.run(
+                ['task', 'rc.context:none', 'rc.verbose:nothing', 'newest', 'limit:1'],
+                capture_output=True, text=True, check=False
+            )
+            # Parse the ID from the first column of output
+            for line in result.stdout.strip().split('\n'):
+                line = line.strip()
+                if line and line.split()[0].isdigit():
+                    task_id = line.split()[0]
+                    if debug_wrapper:
+                        print(f"[tw-debug] Resolved . -> {task_id}", file=sys.stderr)
+                    print(f"[tw] . -> task {task_id}")
+                    return task_id
+        except Exception as e:
+            if debug_wrapper:
+                print(f"[tw-debug] Error resolving .: {e}", file=sys.stderr)
+    
+    elif dot == '..':
+        # Most recently modified pending task
+        try:
+            result = subprocess.run(
+                ['task', 'rc.context:none', 'rc.verbose:nothing',
+                 'status:pending', 'export'],
+                capture_output=True, text=True, check=False
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                tasks = json.loads(result.stdout)
+                if tasks:
+                    # Sort by modified timestamp, most recent first
+                    tasks.sort(key=lambda t: t.get('modified', ''), reverse=True)
+                    task_id = str(tasks[0].get('id', ''))
+                    if task_id and task_id != '0':
+                        if debug_wrapper:
+                            print(f"[tw-debug] Resolved .. -> {task_id}", file=sys.stderr)
+                        print(f"[tw] .. -> task {task_id}")
+                        return task_id
+        except Exception as e:
+            if debug_wrapper:
+                print(f"[tw-debug] Error resolving ..: {e}", file=sys.stderr)
+    
+    elif dot in ('...', '....'):
+        # Completed or deleted - need UUID
+        status = 'completed' if dot == '...' else 'deleted'
+        sort_field = 'end'
+        try:
+            result = subprocess.run(
+                ['task', 'rc.context:none', 'rc.verbose:nothing',
+                 f'status:{status}', 'export'],
+                capture_output=True, text=True, check=False
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                tasks = json.loads(result.stdout)
+                if tasks:
+                    # Sort by end timestamp, most recent first
+                    tasks.sort(key=lambda t: t.get(sort_field, ''), reverse=True)
+                    full_uuid = tasks[0].get('uuid', '')
+                    if full_uuid:
+                        short_uuid = full_uuid[:8]
+                        if debug_wrapper:
+                            print(f"[tw-debug] Resolved {dot} -> {short_uuid}", file=sys.stderr)
+                        print(f"[tw] {dot} -> task {short_uuid}")
+                        return short_uuid
+        except Exception as e:
+            if debug_wrapper:
+                print(f"[tw-debug] Error resolving {dot}: {e}", file=sys.stderr)
+    
+    print(f"[tw] [X] No {label} found")
+    return None
+
+
 def handle_context_command(args):
     """Handle @ context commands - alias for 'context' with @+/- extensions"""
     if not args:
@@ -2531,6 +2630,19 @@ def main():
             print(f"[tw-debug] No arguments, showing help", file=sys.stderr)
         pass
     else:
+        # Resolve dot-shortcuts to task IDs/UUIDs (first arg only)
+        # .    = ID of most recently added task
+        # ..   = ID of most recently modified task
+        # ...  = short UUID of most recently completed task
+        # .... = short UUID of most recently deleted task
+        if sys.argv[1] in ('.', '..', '...', '....'):
+            resolved = resolve_dot_shortcut(sys.argv[1], debug_wrapper)
+            if resolved is None:
+                return 1
+            sys.argv[1] = resolved
+            if debug_wrapper:
+                print(f"[tw-debug] After dot resolution: sys.argv = {sys.argv}", file=sys.stderr)
+        
         # Check for @ context command (special case - not a flag)
         if sys.argv[1].startswith('@'):
             if debug_wrapper:
@@ -2785,6 +2897,11 @@ def main():
         print("  tw @: ctxname [args]       One-shot context override")
         print("  tw @_ [args]               One-shot no-context override")
         print("  tw @?                      Show active context details")
+        print("\nDot Shortcuts:")
+        print("  tw .  [cmd]                Most recently added task (by ID)")
+        print("  tw .. [cmd]                Most recently modified task (by ID)")
+        print("  tw ... [cmd]               Most recently completed task (by UUID)")
+        print("  tw .... [cmd]              Most recently deleted task (by UUID)")
         print("\nTag Filtering:")
         print("  Use +tag to include, -tag to exclude")
         print("  Applies to: --list, --info")
