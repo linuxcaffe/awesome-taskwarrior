@@ -1,0 +1,17 @@
+# wikitags.meta
+# Add :text:and :tags: at the same time (automatically adds +text +tags)
+
+name=wikitags
+version=1.0.0
+type=hook
+description=Add :text:and :tags: at the same time (automatically adds +text +tags)
+repo=https://github.com/linuxcaffe/tw-wikitags-hook
+base_url=https://raw.githubusercontent.com/linuxcaffe/tw-wikitags-hook/master
+files=on-add_wikitags.py:hook,check_wikitags.sh:script,README.md:doc
+tags=wiki, tags, hook
+
+checksums=5ea4d0de60778b71fef12b51aaddf3ff90b373043cce45d672297105b562f333,688f5e701942e62b5dba063b9192cf6662c73a01ee936f9a1169ccd883c4fc7d,74d4ebf56804f4609b2c51d84e5f43291dbb6256405c63f29901934f0a197512
+
+author=linuxcaffe
+license=MIT
+requires_taskwarrior=2.6.0
