@@ -89,6 +89,10 @@ Verify with:
 ```bash
 tw -v
 ```
+View the available options with
+```bash
+tw -h
+```
 
 ---
 
