@@ -1,0 +1,270 @@
+
+------ --------------------------------- ---------------------------------------
+Usage: task                              Runs rc.default.command, if specified.
+       task <filter> active              Active tasks
+       task          add <mods>          Adds a new task
+       task <filter> agenda              agenda -- sched, due, until, wait
+       task <filter> all                 All tasks
+       task <filter> annotate <mods>     Adds an annotation to an existing task
+       task <filter> append <mods>       Appends text to an existing task
+                                         description
+       task <filter> blocked             Blocked tasks
+       task <filter> blocking            Blocking tasks
+       task <filter> burndown.daily      Shows a graphical burndown chart, by
+                                         day
+       task <filter> burndown.monthly    Shows a graphical burndown chart, by
+                                         month
+       task <filter> burndown.weekly     Shows a graphical burndown chart, by
+                                         week
+       task          calc <expression>   Calculator
+       task          calendar            Shows a calendar, with due tasks marked
+       [due|<month> <year>|<year>] [y]
+       task          colors [sample |    All colors, a sample, or a legend
+       legend]
+       task          columns [substring] All supported columns and formatting
+                                         styles
+       task          commands            Generates a list of all commands, with
+                                         behavior details
+       task <filter> completed           Completed tasks
+       task          config [name [value Change settings in the task
+       | '']]                            configuration
+       task          context [<name> |   Set and define contexts (default
+       <subcommand>]                     filters / modifications)
+       task <filter> count               Counts matching tasks
+       task <filter> delete <mods>       Deletes the specified task
+       task <filter> denotate <pattern>  Deletes an annotation
+       task          diagnostics         Platform, build and environment details
+       task <filter> done <mods>         Marks the specified task as completed
+       task <filter> duplicate <mods>    Duplicates the specified tasks
+       task <filter> edate               effective date -- derived from sched,
+                                         due, until, wait
+       task <filter> edit                Launches an editor to modify a task
+                                         directly
+       task          execute <external   Executes external commands and scripts
+       command>
+       task <filter> export [<report>]   Exports tasks in JSON format
+       task <filter> ghistory.annual     Shows a graphical report of task
+                                         history, by year
+       task <filter> ghistory.daily      Shows a graphical report of task
+                                         history, by day
+       task <filter> ghistory.monthly    Shows a graphical report of task
+                                         history, by month
+       task <filter> ghistory.weekly     Shows a graphical report of task
+                                         history, by week
+       task          help ['usage']      Displays this usage help text
+       task <filter> history.annual      Shows a report of task history, by year
+       task <filter> history.daily       Shows a report of task history, by day
+       task <filter> history.monthly     Shows a report of task history, by
+                                         month
+       task <filter> history.weekly      Shows a report of task history, by week
+       task <filter> ids                 Shows the IDs of matching tasks, as a
+                                         range
+       task          import [<file> ...] Imports JSON files
+       task <filter> information         Shows all data and metadata
+       task <filter> instances           Recurring task instances
+       task <filter> list                Most details of tasks
+       task          log <mods>          Adds a new task that is already
+                                         completed
+       task          logo                Displays the Taskwarrior logo
+       task <filter> long                All details of tasks
+       task <filter> ls                  Few details of tasks
+       task <filter> minimal             Minimal details of tasks
+       task <filter> modify <mods>       Modifies the existing task with
+                                         provided arguments.
+       task <filter> newest              Newest tasks
+       task          news                Displays news about the recent releases
+       task <filter> next                Most urgent tasks
+       task <filter> oldest              Oldest tasks
+       task <filter> overdue             Overdue tasks
+       task <filter> prepend <mods>      Prepends text to an existing task
+                                         description
+       task <filter> projects            Shows all project names used
+       task <filter> purge               Removes the specified tasks from the
+                                         data files. Causes permanent loss of
+                                         data.
+       task <filter> ready               Most urgent actionable tasks
+       task <filter> recurring           Recurring task templates and instances
+       task          reports             Lists all supported reports
+       task <filter> sched               Scheduled tasks, and thise with +sch
+                                         tag
+       task          show [all |         Shows all configuration variables or
+       substring]                        subset
+       task <filter> start <mods>        Marks specified task as started
+       task <filter> stats               Shows task database statistics
+       task <filter> stop <mods>         Removes the 'start' time from a task
+       task <filter> summary             Shows a report of task status by
+                                         project
+       task          synchronize         Synchronizes data with the Taskserver
+       [initialize]
+       task <filter> tags                Shows a list of all tags used
+       task <filter> templates           Recurring task templates
+       task [filter] timesheet           Summary of completed and started tasks
+       task          udas                Shows all the defined UDA details
+       task <filter> unblocked           Unblocked tasks
+       task          undo                Reverts the most recent change to a
+                                         task
+       task <filter> uuids               Shows the UUIDs of matching tasks, as a
+                                         space-separated list
+       task          version             Shows the Taskwarrior version number
+       task <filter> waiting             Waiting (hidden) tasks
+       task          _aliases            Generates a list of all aliases, for
+                                         autocompletion purposes
+       task          _columns            Displays only a list of supported
+                                         columns
+       task          _commands           Generates a list of all commands, for
+                                         autocompletion purposes
+       task          _config             Lists all supported configuration
+                                         variables, for completion purposes
+       task          _context            Lists all supported contexts, for
+                                         completion purposes
+       task          _get <DOM> [<DOM>   DOM Accessor
+       ...]
+       task <filter> _ids                Shows the IDs of matching tasks, in the
+                                         form of a list
+       task <filter> _projects           Shows only a list of all project names
+                                         used
+       task <filter> _reviewed           Tasksh review report.  Adjust the
+                                         filter to your needs.
+       task          _show               Shows all configuration settings in a
+                                         machine-readable format
+       task <filter> _tags               Shows only a list of all tags used, for
+                                         autocompletion purposes
+       task          _udas               Shows the defined UDAs for completion
+                                         purposes
+       task <filter> _unique <attribute> Generates lists of unique attribute
+                                         values
+       task <filter> _urgency            Displays the urgency measure of a task
+       task <filter> _uuids              Shows the UUIDs of matching tasks, as a
+                                         list
+       task          _version            Shows only the Taskwarrior version
+                                         number
+       task          _zshattributes      Generates a list of all attributes, for
+                                         zsh autocompletion purposes
+       task          _zshcommands        Generates a list of all commands, for
+                                         zsh autocompletion purposes
+       task <filter> _zshids             Shows the IDs and descriptions of
+                                         matching tasks
+       task <filter> _zshuuids           Shows the UUIDs and descriptions of
+                                         matching tasks
+
+       agd                               Aliased to 'edate:today agenda'
+       agm                               Aliased to 'edate.after:yesterday and
+                                         edate.before:eom agenda'
+       agnm                              Aliased to 'edate.after:eom and
+                                         edate.before:eom+1mo agenda'
+       agnw                              Aliased to 'edate.after:eow and
+                                         edate.before:eow+1w agenda'
+       agt                               Aliased to 'edate:tomorrow agenda'
+       agw                               Aliased to 'edate.after:yesterday and
+                                         edate.before:eoww agenda'
+       agx                               Aliased to 'edate.before:now agenda'
+       burndown                          Aliased to 'burndown.weekly'
+       check_edate                       Aliased to '"( +PENDING or +WAITING )
+                                         and ( scheduled.any: or due.any: or
+                                         until.any: or wait.any: ) modify
+                                         +edate_checkall"'
+       ghistory                          Aliased to 'ghistory.monthly'
+       history                           Aliased to 'history.monthly'
+       l8                                Aliased to '+LATEST'
+       nn                                Aliased to 'exec sh -c
+                                         '~/.task/scripts/nn''
+       rm                                Aliased to 'delete'
+
+Documentation for Taskwarrior can be found using 'man task', 'man taskrc', 'man task-color', 'man task-sync' or at https://taskwarrior.org
+
+The general form of commands is:
+  task [<filter>] <command> [<mods>]
+
+The <filter> consists of zero or more restrictions on which tasks to select, such as:
+  task                                      <command> <mods>
+  task 28                                   <command> <mods>
+  task +weekend                             <command> <mods>
+  task project:Home due.before:today        <command> <mods>
+  task ebeeab00-ccf8-464b-8b58-f7f2d606edfb <command> <mods>
+
+By default, filter elements are combined with an implicit 'and' operator, but 'or' and 'xor' may also be used, provided parentheses are included:
+  task '(/[Cc]at|[Dd]og/ or /[0-9]+/)'      <command> <mods>
+
+A filter may target specific tasks using ID or UUID numbers.  To specify multiple tasks use one of these forms:
+  task 1,2,3                                    delete
+  task 1-3                                      info
+  task 1,2-5,19                                 modify pri:H
+  task 4-7 ebeeab00-ccf8-464b-8b58-f7f2d606edfb info
+
+The <mods> consist of zero or more changes to apply to the selected tasks, such as:
+  task <filter> <command> project:Home
+  task <filter> <command> +weekend +garden due:tomorrow
+  task <filter> <command> Description/annotation text
+  task <filter> <command> /from/to/     <- replace first match
+  task <filter> <command> /from/to/g    <- replace all matches
+
+Tags are arbitrary words, any quantity:
+  +tag       The + means add the tag
+  -tag       The - means remove the tag
+
+Built-in attributes are:
+  description:    Task description text
+  status:         Status of task - pending, completed, deleted, waiting
+  project:        Project name
+  priority:       Priority
+  due:            Due date
+  recur:          Recurrence frequency
+  until:          Expiration date of a task
+  limit:          Desired number of rows in report, or 'page'
+  wait:           Date until task becomes pending
+  entry:          Date task was created
+  end:            Date task was completed/deleted
+  start:          Date task was started
+  scheduled:      Date task is scheduled to start
+  modified:       Date task was last modified
+  depends:        Other tasks that this task depends upon
+
+Attribute modifiers make filters more precise.  Supported modifiers are:
+
+  Modifiers         Example            Equivalent           Meaning
+  ----------------  -----------------  -------------------  -------------------------
+                    due:today          due = today          Fuzzy match
+  not               due.not:today      due != today         Fuzzy non-match
+  before, below     due.before:today   due < today          Exact date comparison
+  after, above      due.after:today    due >= tomorrow      Exact date comparison
+  none              project.none:      project == ''        Empty
+  any               project.any:       project !== ''       Not empty
+  is, equals        project.is:x       project == x         Exact match
+  isnt              project.isnt:x     project !== x        Exact non-match
+  has, contains     desc.has:Hello     desc ~ Hello         Pattern match
+  hasnt,            desc.hasnt:Hello   desc !~ Hello        Pattern non-match
+  startswith, left  desc.left:Hel      desc ~ '^Hel'        Beginning match
+  endswith, right   desc.right:llo     desc ~ 'llo$'        End match
+  word              desc.word:Hello    desc ~ '\bHello\b'   Boundaried word match
+  noword            desc.noword:Hello  desc !~ '\bHello\b'  Boundaried word non-match
+
+Alternately algebraic expressions support:
+  and  or  xor            Logical operators
+  <  <=  =  !=  >=  >     Relational operators
+  (  )                    Precedence
+
+  task due.before:eom priority.not:L   list
+  task '(due < eom and priority != L)'  list
+
+The default .taskrc file can be overridden with:
+  task ... rc:<alternate file> ...
+  task ... rc:~/.alt_taskrc ...
+
+The values in .taskrc (or alternate) can be overridden with:
+  task ... rc.<name>=<value> ...
+  task rc.color=off list
+
+Any command or attribute name may be abbreviated if still unique:
+  task list project:Home
+  task li       pro:Home
+
+Some task descriptions need to be escaped because of the shell:
+  task add "quoted ' quote"
+  task add escaped \' quote
+
+The argument -- tells Taskwarrior to treat all other args as description, even if they would otherwise be attributes or tags:
+  task add -- project:Home needs scheduling
+
+Many characters have special meaning to the shell, including:
+  $ ! ' " ( ) ; \ ` * ? { } [ ] < > | & % # ~
+

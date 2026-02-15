@@ -1,0 +1,55 @@
+.
+├── backlog.data
+├── completed.data
+├── config   ###Claude###  projects with no excutables, like custom.rc files and tw.config too
+│   ├── alias-candy.rc
+│   └── need.rc   ###Claude ### my personal test version
+├── hooks
+│   ├── agenda
+│   │   ├── agenda.rc
+│   │   ├── check_edate.py
+│   │   ├── on-add_agenda.py
+│   │   └── on-modify_agenda.py
+│   ├── on-add_agenda.py -> /home/djp/.task/hooks/agenda/on-add_agenda.py
+│   ├── on-add_priority.py -> /home/djp/.task/hooks/priority/on-add_priority.py
+│   ├── on-add_recurrence.py -> /home/djp/.task/hooks/recurrence/on-add_recurrence.py
+│   ├── on-exit_priority.py -> /home/djp/.task/hooks/priority/on-exit_priority.py
+│   ├── on-exit_recurrence.py -> /home/djp/.task/hooks/recurrence/on-exit_recurrence.py
+│   ├── on-modify_agenda.py -> /home/djp/.task/hooks/agenda/on-modify_agenda.py
+│   ├── on-modify_priority.py -> /home/djp/.task/hooks/priority/on-modify_priority.py
+│   ├── on-modify_recurrence.py -> /home/djp/.task/hooks/recurrence/on-add_recurrence.py
+│   ├── priority -> /home/djp/dev/tw-need_priority-hook
+│   ├── recurrence -> /home/djp/dev/tw-recurrence_overhaul-hook
+│   ├── timelog -> /home/djp/dev/tw-timelog-hook
+│   └── unhook
+│       ├── old-on-add_priority.py -> /home/djp/.task/hooks/priority/on-add_priority.py
+│       ├── old-on-exit_priority.py -> /home/djp/.task/hooks/priority/on-exit_priority.py
+│       ├── old-on-modify_priority.py -> /home/djp/.task/hooks/priority/on-modify_priority.py
+├── logs   ###Claude### all debug and test logs should go here
+├── pending.data
+├── scripts   ###Claude### tw.py should go here too
+│   ├── cmx
+│   │   ├── cmx.sh
+│   │   └── README.md
+│   ├── nicedates
+│   │   ├── bug1.txt
+│   │   ├── nicedates
+│   │   ├── nicedates_hook.py
+│   │   ├── nicedates.py
+│   │   ├── nicedates_readme.md
+│   │   ├── nicedates_v3.py
+│   │   ├── on-exit-nicedates_hook.py
+│   │   └── README.md
+│   ├── resched
+│   │   ├── sched.rc
+│   │   ├── tsch.log
+│   └── zenity
+│       └── zen_task.sh
+├── themes
+│   ├── dark-256.theme
+│   ├── dark-blue-256.theme
+│   ├── README.md
+│   └── tags
+└── undo.data
+
+19 directories, 114 files

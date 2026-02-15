@@ -307,7 +307,7 @@ class RegistryManager:
             return sorted(apps)
         
         except (URLError, HTTPError) as e:
-            print(f"[tw] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Failed to fetch registry from GitHub: {e}")
+            print(f"[tw] ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â� Failed to fetch registry from GitHub: {e}")
             return []
     
     def get_meta(self, app_name):
@@ -1056,7 +1056,7 @@ class AppManager:
     def verify(self, app_name):
         """Verify checksums of installed files"""
         if not self.manifest.is_installed(app_name):
-            print(f"[tw] ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã¯Â¿Â½ Not installed: {app_name}")
+            print(f"[tw] ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¯Ã‚Â¿Ã‚Â½ Not installed: {app_name}")
             return False
         
         meta = self.registry.get_meta(app_name)
@@ -1067,7 +1067,7 @@ class AppManager:
         files = meta.get_files()
         
         if not checksums:
-            print(f"[tw] ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  No checksums available for {app_name}")
+            print(f"[tw] ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  No checksums available for {app_name}")
             return True
         
         print(f"[tw] Verifying {app_name}...")
@@ -1086,7 +1086,7 @@ class AppManager:
             file_path = target_dir / filename
             
             if not file_path.exists():
-                print(f"[tw] ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã¯Â¿Â½ File not found: {file_path}")
+                print(f"[tw] ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¯Ã‚Â¿Ã‚Â½ File not found: {file_path}")
                 all_valid = False
                 continue
             
@@ -1094,15 +1094,15 @@ class AppManager:
             actual_checksum = self._calculate_checksum(file_path)
             
             if actual_checksum == expected_checksum:
-                print(f"[tw] ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ {filename}")
+                print(f"[tw] ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ {filename}")
             else:
-                print(f"[tw] ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã¯Â¿Â½ {filename} (checksum mismatch)")
+                print(f"[tw] ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¯Ã‚Â¿Ã‚Â½ {filename} (checksum mismatch)")
                 all_valid = False
         
         if all_valid:
-            print(f"[tw] ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ All files verified")
+            print(f"[tw] ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ All files verified")
         else:
-            print(f"[tw] ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã¯Â¿Â½ Verification failed")
+            print(f"[tw] ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¯Ã‚Â¿Ã‚Â½ Verification failed")
         
         return all_valid
     
@@ -1486,10 +1486,10 @@ How it Works:
   5. Copies README to ~/.task/docs/
 
 File Placement:
-  - hook files  ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ ~/.task/hooks/
-  - script files ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ ~/.task/scripts/
-  - config files ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ ~/.task/config/
-  - doc files    ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ ~/.task/docs/
+  - hook files  ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ ~/.task/hooks/
+  - script files ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ ~/.task/scripts/
+  - config files ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ ~/.task/config/
+  - doc files    ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ ~/.task/docs/
 
 Example:
   tw --install tw-recurrence-hooks
@@ -1780,7 +1780,7 @@ def resolve_dot_shortcut(dot, debug_wrapper=False):
 def handle_context_command(args):
     """Handle @ context commands - alias for 'context' with @+/- extensions"""
     if not args:
-        # tw @ with no args Ã¢â€ â€™ show current context
+        # tw @ with no args ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ show current context
         # First check if cmx is active
         current_cmx = get_cmx_contexts()
         if current_cmx:
@@ -1809,8 +1809,8 @@ def handle_context_command(args):
         return remove_context_from_cmx(context_name)
     
     # Otherwise, pass through to task context
-    # tw @ list Ã¢â€ â€™ task context list
-    # tw @ work Ã¢â€ â€™ task context work
+    # tw @ list ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ task context list
+    # tw @ work ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ task context work
     return subprocess.run(['task', 'context'] + args, check=False).returncode
 
 def get_cmx_contexts():
@@ -1875,16 +1875,8 @@ def set_cmx_context(contexts_str):
     try:
         if not contexts_str:
             # Clear everything
-            subprocess.run(['task', 'config', 'cmx.contexts', ''], 
-                         input='yes\n', text=True, check=False, 
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            subprocess.run(['task', 'config', 'context.cmx.read', ''], 
-                         input='yes\n', text=True, check=False,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            subprocess.run(['task', 'config', 'context.cmx.write', ''], 
-                         input='yes\n', text=True, check=False,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            subprocess.run(['task', 'config', 'context', ''], 
+            clear_cmx_keys()
+            subprocess.run(['task', 'config', 'context', ''],
                          input='yes\n', text=True, check=False,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             print("Cleared all contexts")
@@ -1933,29 +1925,80 @@ def set_cmx_context(contexts_str):
         print(f"[tw] Error setting context: {e}", file=sys.stderr)
         return 1
 
+def get_active_context():
+    """Get the currently active context name from taskrc (the value of context=)"""
+    try:
+        result = subprocess.run(
+            ['task', '_get', 'rc.context'],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        return result.stdout.strip() if result.returncode == 0 else ""
+    except:
+        return ""
+
+def clear_cmx_keys():
+    """Clear all cmx-related keys (set to blank, preserving the key lines)"""
+    for key in ['cmx.contexts', 'context.cmx.read', 'context.cmx.write']:
+        subprocess.run(['task', 'config', key, ''],
+                     input='yes\n', text=True, check=False,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def demote_to_regular_context(context_name):
+    """Demote from cmx back to a single regular context"""
+    clear_cmx_keys()
+    subprocess.run(['task', 'config', 'context', context_name],
+                 input='yes\n', text=True, check=False,
+                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    print(f"Context: {context_name}")
+
 def add_context_to_cmx(context_name):
-    """Add a context to the current cmx set"""
+    """Add a context to the current cmx set.
+    
+    If a regular (non-cmx) context is active, promote it into cmx first,
+    then add the new context alongside it.
+    """
     if not is_context_defined(context_name):
         print(f"[tw] Error: Context '{context_name}' is not defined")
         print(f"[tw] Use 'task context define {context_name} <filter>' to define it first")
         return 1
     
-    current = get_cmx_contexts()
+    current_cmx = get_cmx_contexts()
     
-    # Check if already in the list
-    if current:
-        current_list = [c.strip() for c in current.split(',')]
+    if current_cmx:
+        # Already in cmx mode - add to existing set
+        current_list = [c.strip() for c in current_cmx.split(',')]
         if context_name in current_list:
             print(f"Context '{context_name}' is already active")
             return 0
-        new_contexts = f"{current},{context_name}"
+        new_contexts = f"{current_cmx},{context_name}"
     else:
-        new_contexts = context_name
+        # Not in cmx mode - check for active regular context to promote
+        active = get_active_context()
+        if active and active != 'cmx' and is_context_defined(active):
+            # Promote the existing regular context into cmx alongside new one
+            if active == context_name:
+                print(f"Context '{context_name}' is already active")
+                return 0
+            new_contexts = f"{active},{context_name}"
+        else:
+            # No active context - just set as regular context (no need for cmx)
+            subprocess.run(['task', 'config', 'context', context_name],
+                         input='yes\n', text=True, check=False,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            print(f"Context: {context_name}")
+            return 0
     
     return set_cmx_context(new_contexts)
 
 def remove_context_from_cmx(context_name):
-    """Remove a context from the current cmx set"""
+    """Remove a context from the current cmx set.
+    
+    If only one context remains after removal, demote back to regular
+    context= and clear all cmx keys.
+    If no contexts remain, clear everything.
+    """
     current = get_cmx_contexts()
     
     if not current:
@@ -1970,9 +2013,22 @@ def remove_context_from_cmx(context_name):
     
     # Remove the context
     new_list = [c for c in current_list if c != context_name]
-    new_contexts = ','.join(new_list) if new_list else ''
     
-    return set_cmx_context(new_contexts)
+    if len(new_list) == 0:
+        # No contexts left - clear everything
+        clear_cmx_keys()
+        subprocess.run(['task', 'config', 'context', ''],
+                     input='yes\n', text=True, check=False,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print("Cleared all contexts")
+        return 0
+    elif len(new_list) == 1:
+        # One context left - demote to regular context
+        demote_to_regular_context(new_list[0])
+        return 0
+    else:
+        # Multiple remain - rebuild cmx
+        return set_cmx_context(','.join(new_list))
 
 def attach_file_to_task(task_id):
     """Attach a file to a task using ranger file browser"""
@@ -2054,7 +2110,7 @@ def attach_file_to_task(task_id):
         )
         
         if result.returncode == 0:
-            print(f"[tw] Ã¢Å“â€œ Attached: {annotation}")
+            print(f"[tw] ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ Attached: {annotation}")
         
         return result.returncode
         
@@ -2121,7 +2177,7 @@ def pass_through_to_task(args):
         # Find task executable
         task_bin = shutil.which('task')
         if not task_bin:
-            print("[tw] ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã¯Â¿Â½ task executable not found")
+            print("[tw] ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¯Ã‚Â¿Ã‚Â½ task executable not found")
             return 1
         
         # Execute task with arguments
@@ -2129,7 +2185,7 @@ def pass_through_to_task(args):
         return result.returncode
         
     except Exception as e:
-        print(f"[tw] ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã¯Â¿Â½ Error executing task: {e}")
+        print(f"[tw] ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¯Ã‚Â¿Ã‚Â½ Error executing task: {e}")
         return 1
 
 def generate_bash_completion():
@@ -2663,10 +2719,15 @@ def main():
                 return handle_context_command(sys.argv[2:])
             
             elif sys.argv[1] == '@0':
-                # @0 = context none
+                # @0 = clear all context state (set values to blank, not delete lines)
                 if debug_wrapper:
-                    print(f"[tw-debug] @0 -> task context none", file=sys.stderr)
-                return subprocess.run(['task', 'context', 'none'], check=False).returncode
+                    print(f"[tw-debug] @0 -> clearing all context and cmx values", file=sys.stderr)
+                for key in ['cmx.contexts', 'context.cmx.read', 'context.cmx.write', 'context']:
+                    subprocess.run(['task', 'config', key, ''],
+                                 input='yes\n', text=True, check=False,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                print("[tw] Context cleared")
+                return 0
             
             elif sys.argv[1] == '@?':
                 # @? = context show
@@ -2856,63 +2917,92 @@ def main():
             # Topic-specific help
             return 0 if show_help_topic(remaining[0]) else 1
         
-        # General help
-        parser.print_help()
+        # General help - custom formatted table (inspired by task help)
+        print()
+        print("------ ------------- ---------------------------- --------------------------------------")
+        print(f"{'Usage:':7s} {'tw':13s} {'':28s} Runs rc.default.command, if specified.")
+        #       1234567 1234567890123 1234567890123456789012345678 description
+        entries = [
+            ("-A", "TASKID",   "--attach",              "TASKID", "Attach file to task using ranger"),
+            ("",   "",         "--debug",               "[LEVEL]", "Enable debug output (1-3)"),
+            ("",   "",         "--dry-run",             "",        "Show what would be done"),
+            ("",   "",         "--generate-completion",  "SHELL",  "Generate shell completion script"),
+            ("-h", "[TOPIC]",  "--help",                "[TOPIC]", "Show help or help on a topic"),
+            ("-i", "[APP]",    "--info",                "[APP]",   "Show app info (all if no name)"),
+            ("-I", "APP",      "--install",             "APP",     "Install an application"),
+            ("",   "",         "--install-completion",   "SHELL",  "Install shell completion script"),
+            ("-l", "[+/-tags]","--list",                "",        "List installed/available applications"),
+            ("-p", "",         "--pager",               "",        "Use pager for task output"),
+            ("-r", "APP",      "--remove",              "APP",     "Remove an application"),
+            ("-s", "",         "--shell",               "",        "Start interactive shell"),
+            ("",   "",         "--tags",                "[APP..]", "List all available tags"),
+            ("-u", "APP",      "--update",              "APP",     "Update an application"),
+            ("-v", "",         "--version",             "",        "Show tw and taskwarrior versions"),
+            ("",   "",         "--verify",              "APP",     "Verify application checksums"),
+        ]
+        for short, sparam, long, lparam, desc in entries:
+            c1 = f"{short} {sparam}".strip() if short else ""
+            c2 = f"{long} {lparam}".strip() if long else ""
+            print(f"       {c1:13s} {c2:28s} {desc}")
+        # Helper for detail sections (same column widths as main table)
+        def row(c1, c2, desc):
+            print(f"       {c1:13s} {c2:28s} {desc}")
+        print("\nHelp Topics:")
+        row("-h shell",    "--help shell",    "Interactive shell guide")
+        row("-h install",  "",                "Package installation")
+        row("-h remove",   "",                "Package removal")
+        row("-h verify",   "",                "Package verification")
+        row("-h list",     "",                "List installed packages")
+        row("-h info",     "",                "Package information")
         print("\nInteractive Shell:")
-        print("  tw --shell                 Start interactive shell")
-        print("  tw --shell add +work       Start shell with command and modifiers")
-        print("  tw --shell +work proj:foo  Start shell with modifiers")
-        print("\nFor detailed help on specific features:")
-        print("  tw --help shell            Interactive shell guide")
-        print("  tw --help install          Package installation")
-        print("  tw --help remove           Package removal")
-        print("  tw --help verify           Package verification")
-        print("  tw --help list             List installed packages")
-        print("  tw --help info             Package information")
-        print("\nDebug and Tags:")
-        print("  tw --debug[=LEVEL]         Enable debug output (1-3)")
-        print("  tw --tags [app ...]        List all tags (optional: for specific apps)")
-        print("  tw --list +tag -tag        List installed apps with tag filter")
-        print("  tw --info                  Show info for all available apps")
-        print("  tw --info app1 app2        Show info for specific apps")
-        print("  tw --info +python          Show info for apps matching tag filter")
-        print("\nWrapper Debug:")
-        print("  TW_DEBUG_WRAPPER=1 tw ...  Show argument parsing flow")
-        print("  Example: TW_DEBUG_WRAPPER=1 tw add test --shell")
+        row("-s",          "--shell",                "Start with empty state")
+        row("-s add",      "--shell add",            "Start in 'add' mode")
+        row("-s add +work","--shell add +work",      "Start with command and modifiers")
+        row("-s +work",    "--shell +work proj:foo", "Start with modifiers only")
+        print("\nDebug and Filtering:")
+        row("",            "--debug[=LEVEL]",        "Enable debug output (1-3)")
+        row("",            "--tags [APP ..]",        "List tags (for specific apps)")
+        row("-l +tag -tag","--list +tag -tag",       "Filter applications by tag")
+        row("-i",          "--info",                 "Show info for all available apps")
+        row("-i APP APP",  "--info APP APP",         "Show info for specific apps")
+        row("-i +python",  "--info +python",         "Show info matching tag filter")
+        row("",            "TW_DEBUG_WRAPPER=1",     "Show argument parsing flow")
         print("\nPager and Attach:")
-        print("  tw -p                      Page default report")
-        print("  tw -p list                 Use pager for long output")
-        print("  tw --pager next +work      Page through next work tasks")
-        print("  tw -A 42                   Attach file to task 42 using ranger")
-        print("  tw --attach 42             Same as -A 42")
+        row("-p",          "--pager",                "Page default report")
+        row("-p list",     "--pager list",           "Use pager for long output")
+        row("-p next +work","",                      "Page through filtered report")
+        row("-A 42",       "--attach 42",            "Attach file to task using ranger")
+        # Context and dot-shortcut sections use wider command column
+        def cmd_row(cmd, desc):
+            print(f"       {cmd:42s} {desc}")
         print("\nContext Multiplexing:")
-        print("  tw @                       Show current context (alias for 'task context')")
-        print("  tw @ list                  List all defined contexts")
-        print("  tw @ work                  Switch to work context")
-        print("  tw @+ personal             Add personal context to current set")
-        print("  tw @- work                 Remove work context from current set")
-        print("  tw @ none                  Clear all contexts")
+        cmd_row("@",                        "Show current context / cmx state")
+        cmd_row("@  list",                  "List all defined contexts")
+        cmd_row("@  <name>",               "Set context (same as 'task context <name>')")
+        cmd_row("@+ <name>",               "Add context to multiplexed set")
+        cmd_row("@- <name>",               "Remove context from multiplexed set")
         print("\nContext Shortcuts:")
-        print("  tw @0                      Context none (clear active context)")
-        print("  tw @: ctxname [args]       One-shot context override")
-        print("  tw @_ [args]               One-shot no-context override")
-        print("  tw @?                      Show active context details")
+        cmd_row("@0",                       "Clear active context and cmx state")
+        cmd_row("@: <name> [args]",        "One-shot context override")
+        cmd_row("@_ [args]",               "One-shot no-context override")
+        cmd_row("@?",                       "Show active context details")
         print("\nDot Shortcuts:")
-        print("  tw .  [cmd]                Most recently added task (by ID)")
-        print("  tw .. [cmd]                Most recently modified task (by ID)")
-        print("  tw ... [cmd]               Most recently completed task (by UUID)")
-        print("  tw .... [cmd]              Most recently deleted task (by UUID)")
+        cmd_row(".    [cmd]",               "Most recently added task (by ID)")
+        cmd_row("..   [cmd]",              "Most recently modified task (by ID)")
+        cmd_row("...  [cmd]",              "Most recently completed task (by UUID)")
+        cmd_row(".... [cmd]",              "Most recently deleted task (by UUID)")
         print("\nTag Filtering:")
-        print("  Use +tag to include, -tag to exclude")
-        print("  Applies to: --list, --info")
+        cmd_row("+tag",                     "Include tag in filter")
+        cmd_row("-tag",                     "Exclude tag from filter")
+        cmd_row("",                         "Applies to: --list, --info")
         print("\nCompletion:")
-        print("  tw --install-completion bash    Install bash completion (recommended)")
-        print("  tw --install-completion zsh     Install zsh completion (recommended)")
-        print("  tw --install-completion fish    Install fish completion (recommended)")
-        print("  tw --generate-completion bash   Generate bash completion (manual)")
-        print("  tw --generate-completion zsh    Generate zsh completion (manual)")
-        print("  tw --generate-completion fish   Generate fish completion (manual)")
-        print("\nFor Taskwarrior help: tw help")
+        row("",            "--install-completion",   "Install completion (recommended)")
+        row("",            "  bash | zsh | fish",    "")
+        row("",            "--generate-completion",  "Generate completion script (manual)")
+        row("",            "  bash | zsh | fish",    "")
+        print()
+        print("All other arguments are passed directly to Taskwarrior.")
+        print("For Taskwarrior help: tw help")
         return 0
     
     # Handle completion generation

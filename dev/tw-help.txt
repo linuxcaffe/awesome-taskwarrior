@@ -1,0 +1,96 @@
+usage: tw [-I APP] [-r APP] [-u APP] [-l] [-i [APP]] [--verify APP] [--tags]
+          [--dry-run] [--debug [LEVEL]] [-v] [-h] [-s] [-p] [-A TASKID]
+          [--generate-completion SHELL] [--install-completion SHELL]
+
+awesome-taskwarrior package manager and wrapper
+
+options:
+  -I APP, --install APP
+                        Install an application
+  -r APP, --remove APP  Remove an application
+  -u APP, --update APP  Update an application
+  -l, --list            List installed applications
+  -i [APP], --info [APP]
+                        Show application info (all apps if no name given)
+  --verify APP          Verify application checksums
+  --tags                List all available tags (optional: filter by app
+                        names)
+  --dry-run             Show what would be done
+  --debug [LEVEL]       Enable debug output (1-3, default: 1)
+  -v, --version         Show tw version
+  -h, --help            Show this help
+  -s, --shell           Start interactive shell (optional: command and
+                        modifiers)
+  -p, --pager           Use pager for task output
+  -A TASKID, --attach TASKID
+                        Attach file to task using ranger
+  --generate-completion SHELL
+                        Generate completion script (bash|zsh|fish)
+  --install-completion SHELL
+                        Install completion script (bash|zsh|fish)
+
+Interactive Shell:
+  tw --shell                 Start interactive shell
+  tw --shell add +work       Start shell with command and modifiers
+  tw --shell +work proj:foo  Start shell with modifiers
+
+For detailed help on specific features:
+  tw --help shell            Interactive shell guide
+  tw --help install          Package installation
+  tw --help remove           Package removal
+  tw --help verify           Package verification
+  tw --help list             List installed packages
+  tw --help info             Package information
+
+Debug and Tags:
+  tw --debug[=LEVEL]         Enable debug output (1-3)
+  tw --tags [app ...]        List all tags (optional: for specific apps)
+  tw --list +tag -tag        List installed apps with tag filter
+  tw --info                  Show info for all available apps
+  tw --info app1 app2        Show info for specific apps
+  tw --info +python          Show info for apps matching tag filter
+
+Wrapper Debug:
+  TW_DEBUG_WRAPPER=1 tw ...  Show argument parsing flow
+  Example: TW_DEBUG_WRAPPER=1 tw add test --shell
+
+Pager and Attach:
+  tw -p                      Page default report
+  tw -p list                 Use pager for long output
+  tw --pager next +work      Page through next work tasks
+  tw -A 42                   Attach file to task 42 using ranger
+  tw --attach 42             Same as -A 42
+
+Context Multiplexing:
+  tw @                       Show current context (alias for 'task context')
+  tw @ list                  List all defined contexts
+  tw @ work                  Switch to work context
+  tw @+ personal             Add personal context to current set
+  tw @- work                 Remove work context from current set
+  tw @ none                  Clear all contexts
+
+Context Shortcuts:
+  tw @0                      Context none (clear active context)
+  tw @: ctxname [args]       One-shot context override
+  tw @_ [args]               One-shot no-context override
+  tw @?                      Show active context details
+
+Dot Shortcuts:
+  tw .  [cmd]                Most recently added task (by ID)
+  tw .. [cmd]                Most recently modified task (by ID)
+  tw ... [cmd]               Most recently completed task (by UUID)
+  tw .... [cmd]              Most recently deleted task (by UUID)
+
+Tag Filtering:
+  Use +tag to include, -tag to exclude
+  Applies to: --list, --info
+
+Completion:
+  tw --install-completion bash    Install bash completion (recommended)
+  tw --install-completion zsh     Install zsh completion (recommended)
+  tw --install-completion fish    Install fish completion (recommended)
+  tw --generate-completion bash   Generate bash completion (manual)
+  tw --generate-completion zsh    Generate zsh completion (manual)
+  tw --generate-completion fish   Generate fish completion (manual)
+
+For Taskwarrior help: tw help
