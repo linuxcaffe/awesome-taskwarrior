@@ -55,7 +55,7 @@ shell, and a growing set of shortcuts that make daily use faster.
   `..` for last modified, `...` for last completed, `....` for last deleted.
 
 - **Auto-paging**
-  Long output is automatically paged through `less` when it exceeds
+  Long output can be automatically paged through `less` when it exceeds
   terminal height.
 
 - **File attachments**
