@@ -2,17 +2,16 @@
 # Replace pri:H,M,L with pri:1-6, Mazlow's Human Needs, and filter accordingly
 
 name=need-priority
-version=0.3.5
+version=0.4.0
 type=hook
 description=Replace pri:H,M,L with pri:1-6, Mazlow's Human Needs, and filter accordingly
 repo=https://github.com/linuxcaffe/tw-need_priority-hook
-base_url=https://raw.githubusercontent.com/linuxcaffe/tw-need_priority-hook/main/
-files=on-add_need-priority.py:hook,on-exit_need-priority.py:hook,on-modify_need-priority.py:hook,need-priority.install:script,nn:script,need.rc:config,README.md:doc
+base_url=https://raw.githubusercontent.com/linuxcaffe/tw-need_priority-hook/main
+files=on-add_need-priority.py:hook,on-exit_need-priority.py:hook,on-modify_need-priority.py:hook,nn:script,need.rc:config,README.md:doc
 tags=priority,needs,focus,hook
 
-checksums=0e8dabe977d7f45ccb40a8c6e6e99107a27645f85e0fc915e33520bd971466db,5ce51bab33e72f8d2d59f4380be81cb84c94493d58b2e7c43009eae4f4672164,fed1d8f126f5c501c892f1fe278648383170e18283f380e844a60bd37f871615,bd4204001ef7734eca1f20983fe211e1b50407588cdc735b87d547320b992a03,0870802419f418df13e0ccb8116a5b8510b84b5f6b686649d067551e70598223,d54db3304cdac7705a5bbdbcaeb61a0242e6344f9457c8aeafa2f3444801b1e6,37cb2b7abb33b2b7a003ba059c5d7e08e07b7a375f127fac016559e7cded2f1e
+checksums=102a1ea29605ccb68d4e50c1f0b43b56c0f9f6810eca73e2d12eacd0e51e49aa,29ed53edd320e3120ef7245bc7985976c3e1ff13c5602bdfae27eb3f1a37400d,102a1ea29605ccb68d4e50c1f0b43b56c0f9f6810eca73e2d12eacd0e51e49aa,0c8b70ed3b9c1b1f7ca265069b6ad1d221d94bdd060612de33440fc40b70fa8a,00833d07f67f6df5be4657e9c8b4195b0c95b67af88907f5ce2d6fd8341fa107,37cb2b7abb33b2b7a003ba059c5d7e08e07b7a375f127fac016559e7cded2f1e
 
 author=Designed by linuxcaffe, implemented by Claude Sonnet 4.5
 license=MIT
 requires_taskwarrior=2.6.0
-requires_python=3

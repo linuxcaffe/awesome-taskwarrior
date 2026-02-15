@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 tw - awesome-taskwarrior package manager and wrapper
-Version: 2.7.0
+Version: 2.7.1
 
 A unified wrapper for Taskwarrior that provides:
 - Transparent pass-through to task command
@@ -808,8 +808,10 @@ class AppManager:
                 shutil.rmtree(stage_dir, ignore_errors=True)
                 return None
             
-            # Verify checksum if available
-            if checksums and i < len(checksums) and checksums[i]:
+            # Verify checksum if available (skip docs - git may alter them)
+            if file_type == 'doc':
+                debug(f"Skipping checksum for doc: {filename}", 2)
+            elif checksums and i < len(checksums) and checksums[i]:
                 actual = self._calculate_checksum(staged_path)
                 if actual != checksums[i]:
                     print(f"[tw] [X] Checksum mismatch: {filename}")
@@ -1079,6 +1081,11 @@ class AppManager:
             
             expected_checksum = checksums[i]
             if not expected_checksum:
+                continue
+            
+            # Skip docs - git/download may alter line endings
+            if file_type == 'doc':
+                debug(f"Skipping checksum for doc: {filename}", 2)
                 continue
             
             # Find file path
