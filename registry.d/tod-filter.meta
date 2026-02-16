@@ -7,11 +7,11 @@ type=hook
 description=Define Time-of-day blocks, add corresponding tags, set context.tod, hide non-matching tasks
 repo=https://github.com/linuxcaffe/tod-filter
 base_url=https://raw.githubusercontent.com/linuxcaffe/tod-filter/main
-files=tod.rc:config,README.md:doc
-tags=time, blocks, tags, hook
+files=on-launch_tod.py:script,tod.rc:config,README.md:doc
+tags=time, blocks, tags, filter, hook
 
-checksums=fc7070b5d7cb3245f54e9bcc5adb9794e94f4d2f68382a9da79d10f51303470c,359df67baffdf2f4c4c39a8c27296762ecc43666ed9ad3f93a167a2815306b5f
+checksums=187de27db9a282b58f6f9b02e43b60527edf54541b985827215695bbcbd9527c,fc7070b5d7cb3245f54e9bcc5adb9794e94f4d2f68382a9da79d10f51303470c,359df67baffdf2f4c4c39a8c27296762ecc43666ed9ad3f93a167a2815306b5f
 
-author=Designed by linuxcaffe, Implemented by Glaude Sonnet 4.5
+author=Designed by linuxcaffe, implemented by Claude Sonnet 4.5
 license=MIT
 requires_taskwarrior=2.6.0

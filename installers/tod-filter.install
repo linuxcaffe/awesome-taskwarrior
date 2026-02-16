@@ -58,6 +58,15 @@ install() {
     tw_msg "Downloading files..."
     debug_msg "Using BASE_URL: $BASE_URL" 2
 
+    debug_msg "Downloading script: on-launch_tod.py" 2
+    curl -fsSL "$BASE_URL/on-launch_tod.py" -o "$SCRIPTS_DIR/on-launch_tod.py" || {
+        tw_error "Failed to download on-launch_tod.py"
+        debug_msg "Download failed: on-launch_tod.py" 1
+        return 1
+    }
+    chmod +x "$SCRIPTS_DIR/on-launch_tod.py"
+    debug_msg "Installed script: $SCRIPTS_DIR/on-launch_tod.py" 2
+
     debug_msg "Downloading config: tod.rc" 2
     curl -fsSL "$BASE_URL/tod.rc" -o "$CONFIG_DIR/tod.rc" || {
         tw_error "Failed to download tod.rc"
@@ -89,6 +98,8 @@ install() {
     TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     mkdir -p "$(dirname "$MANIFEST_FILE")"
 
+    echo "$APPNAME|$VERSION|$SCRIPTS_DIR/on-launch_tod.py||$TIMESTAMP" >> "$MANIFEST_FILE"
+    debug_msg "Manifest entry: $SCRIPTS_DIR/on-launch_tod.py" 3
     echo "$APPNAME|$VERSION|$CONFIG_DIR/tod.rc||$TIMESTAMP" >> "$MANIFEST_FILE"
     debug_msg "Manifest entry: $CONFIG_DIR/tod.rc" 3
     echo "$APPNAME|$VERSION|$DOCS_DIR/tod-filter_README.md||$TIMESTAMP" >> "$MANIFEST_FILE"
