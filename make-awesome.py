@@ -609,7 +609,7 @@ def detect_files() -> List[Tuple[str, str]]:
         return None
     
     # Detect standard hooks (on-add*, on-exit*, on-modify*)
-    for hook in ['on-add', 'on-exit', 'on-modify']:
+    for hook in ['on-add', 'on-exit', 'on-modify', 'on-launch']:
         for ext in ['py', 'sh']:
             for f in Path('.').glob(f'{hook}*.{ext}'):
                 if not f.name.startswith('debug.') and not f.name.endswith('.orig'):
