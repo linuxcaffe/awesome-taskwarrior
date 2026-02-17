@@ -11,7 +11,7 @@ This tool provides a full workflow from development through deployment:
 Single command pipeline: make-awesome.py "commit message"
   Runs: debug -> test -> install -> push (each stage gated on previous success)
 
-Version: 4.4.1
+Version: 4.5.0
 """
 
 import sys
@@ -24,7 +24,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
 
-VERSION = "4.4.1"
+VERSION = "4.5.0"
 
 # ANSI color codes
 class Colors:
@@ -1014,16 +1014,17 @@ def generate_installer(info: ProjectInfo) -> bool:
             if configs:
                 first_config = configs[0][0]
                 # NO NAME CHANGES! Use actual filename
+                # Grep for filename only (path-format-agnostic: handles both ~ and $HOME)
+                # Write with tilde form to match .taskrc convention
                 f.write('    # Add config to .taskrc\n')
-                f.write('    tw_msg "Adding configuration to .taskrc..."\n')
-                f.write(f'    local config_line="include $CONFIG_DIR/{first_config}"\n\n')
-                f.write('    if ! grep -qF "$config_line" "$TASKRC" 2>/dev/null; then\n')
-                f.write('        echo "$config_line" >> "$TASKRC"\n')
-                f.write('        tw_msg "Added config include to .taskrc"\n')
-                f.write('        debug_msg "Added to .taskrc: $config_line" 2\n')
+                f.write('    tw_msg "Checking .taskrc for existing config include..."\n')
+                f.write(f'    if ! grep -q "{first_config}" "$TASKRC" 2>/dev/null; then\n')
+                f.write(f'        echo "include ~/.task/config/{first_config}" >> "$TASKRC"\n')
+                f.write(f'        tw_msg "Added config include to .taskrc"\n')
+                f.write(f'        debug_msg "Added to .taskrc: include ~/.task/config/{first_config}" 2\n')
                 f.write('    else\n')
                 f.write('        tw_msg "Config already in .taskrc"\n')
-                f.write('        debug_msg "Config already present in .taskrc" 2\n')
+                f.write(f'        debug_msg "Config already present in .taskrc: {first_config}" 2\n')
                 f.write('    fi\n\n')
             
             # Download docs
@@ -1099,12 +1100,12 @@ def generate_installer(info: ProjectInfo) -> bool:
             if configs:
                 first_config = configs[0][0]
                 # NO NAME CHANGES! Use actual filename
+                # Match by filename only (path-format-agnostic)
                 f.write('    # Remove config from .taskrc\n')
-                f.write(f'    local config_line="include $CONFIG_DIR/{first_config}"\n')
-                f.write('    if grep -qF "$config_line" "$TASKRC" 2>/dev/null; then\n')
-                f.write('        sed -i.bak "\\|$config_line|d" "$TASKRC"\n')
-                f.write('        tw_msg "Removed config from .taskrc"\n')
-                f.write('        debug_msg "Removed from .taskrc: $config_line" 2\n')
+                f.write(f'    if grep -q "{first_config}" "$TASKRC" 2>/dev/null; then\n')
+                f.write(f'        sed -i.bak "/{first_config}/d" "$TASKRC"\n')
+                f.write(f'        tw_msg "Removed config from .taskrc"\n')
+                f.write(f'        debug_msg "Removed from .taskrc: {first_config}" 2\n')
                 f.write('    fi\n\n')
             
             f.write(f'    tw_success "Removed {info.name}"\n')
@@ -1191,156 +1192,131 @@ def cmd_test(args) -> int:
 # PUSH (Git + Registry)
 # ============================================================================
 
-def check_git_status() -> bool:
+def push_project_repo(commit_msg: str) -> bool:
+    """Show status, confirm, git add/commit/push the project repo."""
     try:
-        result = subprocess.run(['git', 'status', '--porcelain'],
+        result = subprocess.run(['git', 'status', '--short'],
                               capture_output=True, text=True, check=True)
-        if result.stdout.strip():
-            # Parse git status format: "XY filename"
-            # X = index status, Y = working tree status
-            lines = result.stdout.strip().split('\n')
-            
-            changed_files = []
-            for line in lines:
-                if not line.strip():
-                    continue
-                # Git status format: first 2 chars are status, rest is filename
-                filename = line[3:].strip() if len(line) > 3 else ""
-                if filename:
-                    changed_files.append(filename)
-            
-            # Check if it's ONLY .install and .meta files (expected from --install stage)
-            only_registry_files = all(
-                fname.endswith('.install') or fname.endswith('.meta')
-                for fname in changed_files
-            )
-            
-            if only_registry_files and changed_files:
-                msg("Found new .install and .meta files (expected from --install stage)")
-                return True
-            else:
-                error("Git working directory not clean!")
-                print(result.stdout)
-                response = input("Continue? [y/N]: ").strip().lower()
-                return response == 'y'
-        return True
-    except:
-        error("Git status check failed")
-        return False
 
-
-def git_commit_and_push(commit_msg: str) -> bool:
-    try:
-        # Show what will be added
-        msg("Files to be committed:")
-        result = subprocess.run(['git', 'status', '--short'], 
-                              capture_output=True, text=True, check=True)
-        
         if not result.stdout.strip():
             msg("Working tree clean, nothing to commit")
-            msg("Skipping git commit (but will update registry)")
-            return True  # Success - proceed to registry update
-        
+            msg("Skipping project commit (will still update registry)")
+            return True
+
+        msg("Files to be committed:")
         print(result.stdout)
-        
-        # Confirm git add
-        response = input("Run 'git add .'? [Y/n]: ").strip().lower()
-        if response and response != 'y':
-            msg("Skipping git add, using staged files only")
-        else:
-            msg("Git add...")
-            subprocess.run(['git', 'add', '.'], check=True)
-        
+
+        response = input("Commit and push these files? [Y/n]: ").strip().lower()
+        if response == 'n':
+            msg("Skipping project commit")
+            return True  # Not an error - user chose to skip
+
+        msg("Git add...")
+        subprocess.run(['git', 'add', '.'], check=True)
+
         msg(f"Commit: {commit_msg}")
-        result = subprocess.run(['git', 'commit', '-m', commit_msg], 
+        result = subprocess.run(['git', 'commit', '-m', commit_msg],
                               capture_output=True, text=True)
-        
+
         if result.returncode != 0:
-            # Check if it's "nothing to commit"
             if 'nothing to commit' in result.stdout or 'nothing to commit' in result.stderr:
-                msg("Nothing to commit, working tree clean")
-                msg("Skipping git push (but will update registry)")
-                return True  # Success - proceed to registry update
+                msg("Nothing to commit after staging")
+                return True
             else:
                 error("Git commit failed")
                 print(result.stderr)
                 return False
-        
+
         msg("Push...")
-        subprocess.run(['git', 'push'], check=True)
-        
-        success("Git push complete")
+        result = subprocess.run(['git', 'push'],
+                              capture_output=True, text=True)
+
+        if result.returncode != 0:
+            error("Git push failed")
+            print(result.stderr)
+            return False
+
+        success("Project pushed")
         return True
+
     except Exception as e:
         error(f"Git failed: {e}")
         return False
 
 
-def update_registry(project_name: str) -> bool:
+def push_registry(project_name: str) -> bool:
+    """Copy .install/.meta to registry repo, commit --only those files, push."""
     registry_path = Path.home() / 'dev' / 'awesome-taskwarrior'
-    
+
     if not registry_path.exists():
         error(f"Registry not found: {registry_path}")
         return False
-    
-    # Save current directory before changing
+
+    # Resolve file paths BEFORE any chdir
     original_dir = Path.cwd()
-    
     install_file = original_dir / f"{project_name}.install"
     meta_file = original_dir / f"{project_name}.meta"
-    
-    if not install_file.exists() or not meta_file.exists():
-        error("Install/meta files not found")
-        error(f"  Looking for: {install_file}")
-        error(f"  Looking for: {meta_file}")
+
+    if not install_file.exists():
+        error(f"Install file not found: {install_file}")
         return False
-    
+
+    if not meta_file.exists():
+        error(f"Meta file not found: {meta_file}")
+        return False
+
     try:
         import shutil
+
+        # Copy to registry directories
         msg("Copying to registry...")
         shutil.copy(install_file, registry_path / 'installers' / install_file.name)
         shutil.copy(meta_file, registry_path / 'registry.d' / meta_file.name)
-        success("Copied files")
-        
-        msg("Updating registry...")
+        success(f"Copied {install_file.name} -> installers/")
+        success(f"Copied {meta_file.name} -> registry.d/")
+
+        # Switch to registry repo
         os.chdir(registry_path)
-        
-        # Add only the specific files we care about
+
+        # Stage only our two files
         subprocess.run(['git', 'add',
                        f'installers/{install_file.name}',
                        f'registry.d/{meta_file.name}'], check=True)
-        
-        # Commit with --only to ignore other changes in working tree
+
+        # Commit --only so other dirty files in the registry are untouched
         result = subprocess.run(['git', 'commit', '--only', '-m',
-                               f"Updated registry for {project_name}",
+                               f"Updated {project_name}",
                                f'installers/{install_file.name}',
                                f'registry.d/{meta_file.name}'],
                               capture_output=True, text=True)
-        
+
         if result.returncode != 0:
-            # Check if it's "nothing to commit" (files unchanged)
             if 'nothing to commit' in result.stdout or 'nothing to commit' in result.stderr:
                 msg("Registry files unchanged, nothing to commit")
-                msg("Skipping registry push")
                 os.chdir(original_dir)
-                return True  # Success - files already in registry
+                return True
             else:
                 error("Registry commit failed")
                 print(result.stderr)
                 os.chdir(original_dir)
                 return False
-        
-        subprocess.run(['git', 'push'], check=True)
-        
+
+        msg("Push registry...")
+        result = subprocess.run(['git', 'push'],
+                              capture_output=True, text=True)
+
+        if result.returncode != 0:
+            error("Registry push failed")
+            print(result.stderr)
+            os.chdir(original_dir)
+            return False
+
         success("Registry updated")
-        
-        # Return to original directory
         os.chdir(original_dir)
         return True
-        
+
     except Exception as e:
         error(f"Registry update failed: {e}")
-        # Make sure we return to original directory even on error
         try:
             os.chdir(original_dir)
         except:
@@ -1348,38 +1324,43 @@ def update_registry(project_name: str) -> bool:
         return False
 
 
-def cmd_push(args, commit_msg: str) -> int:
-    msg("=" * 70)
-    msg(f"make-awesome.py v{VERSION} --push")
-    msg("=" * 70)
-    print()
-    
-    # Get project name from .meta file, not directory name
-    # (directory might be "tw-need_priority-hook" but app is "need-priority")
+def cmd_push(args, commit_msg: str = None) -> int:
+    """Push project repo and update registry."""
+    # Get project name from .meta file
     meta_files = list(Path('.').glob('*.meta'))
     if not meta_files:
         error("No .meta file found. Run --install first.")
         return 1
-    
+
     meta_file = meta_files[0]
-    project_name = meta_file.stem  # e.g., "need-priority" from "need-priority.meta"
+    project_name = meta_file.stem
+
+    # Default commit message if none provided
+    if not commit_msg:
+        commit_msg = f"Update {project_name}"
+
+    msg("=" * 70)
+    msg(f"make-awesome.py v{VERSION} --push")
     msg(f"Project: {project_name}")
-    
-    if not check_git_status():
-        return 1
-    
-    if not git_commit_and_push(commit_msg):
-        return 1
-    
+    msg(f"Message: {commit_msg}")
+    msg("=" * 70)
     print()
-    
-    if not update_registry(project_name):
+
+    # Step 1: Push the project repo
+    msg("--- Project repo ---")
+    if not push_project_repo(commit_msg):
         return 1
-    
+    print()
+
+    # Step 2: Copy to registry and push
+    msg("--- Registry ---")
+    if not push_registry(project_name):
+        return 1
+
     print()
     success("Push complete!")
     print()
-    
+
     return 0
 
 
@@ -1442,8 +1423,9 @@ def main():
                        help='Test suite [STUB]')
     parser.add_argument('--install', action='store_true',
                        help='Generate installer')
-    parser.add_argument('--push', metavar='MESSAGE',
-                       help='Git push + registry')
+    parser.add_argument('--push', nargs='?', const='', default=None,
+                       metavar='MESSAGE',
+                       help='Git push + registry (message optional)')
     parser.add_argument('--force', action='store_true',
                        help='Force re-enhancement of already enhanced files')
     parser.add_argument('--version', action='version',
@@ -1459,8 +1441,8 @@ def main():
         return cmd_test(args)
     elif args.install:
         return cmd_install(args)
-    elif args.push:
-        return cmd_push(args, args.push)
+    elif args.push is not None:
+        return cmd_push(args, args.push if args.push else None)
     else:
         parser.print_help()
         return 1
