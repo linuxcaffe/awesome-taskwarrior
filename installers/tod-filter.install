@@ -85,16 +85,14 @@ install() {
     debug_msg "Installed config: $CONFIG_DIR/tod.rc" 2
 
     # Add config to .taskrc
-    tw_msg "Adding configuration to .taskrc..."
-    local config_line="include $CONFIG_DIR/tod.rc"
-
-    if ! grep -qF "$config_line" "$TASKRC" 2>/dev/null; then
-        echo "$config_line" >> "$TASKRC"
+    tw_msg "Checking .taskrc for existing config include..."
+    if ! grep -q "tod.rc" "$TASKRC" 2>/dev/null; then
+        echo "include ~/.task/config/tod.rc" >> "$TASKRC"
         tw_msg "Added config include to .taskrc"
-        debug_msg "Added to .taskrc: $config_line" 2
+        debug_msg "Added to .taskrc: include ~/.task/config/tod.rc" 2
     else
         tw_msg "Config already in .taskrc"
-        debug_msg "Config already present in .taskrc" 2
+        debug_msg "Config already present in .taskrc: tod.rc" 2
     fi
 
     tw_msg "Downloading documentation..."
@@ -153,11 +151,10 @@ remove() {
     debug_msg "Removed from manifest" 2
 
     # Remove config from .taskrc
-    local config_line="include $CONFIG_DIR/tod.rc"
-    if grep -qF "$config_line" "$TASKRC" 2>/dev/null; then
-        sed -i.bak "\|$config_line|d" "$TASKRC"
+    if grep -q "tod.rc" "$TASKRC" 2>/dev/null; then
+        sed -i.bak "/tod.rc/d" "$TASKRC"
         tw_msg "Removed config from .taskrc"
-        debug_msg "Removed from .taskrc: $config_line" 2
+        debug_msg "Removed from .taskrc: tod.rc" 2
     fi
 
     tw_success "Removed tod-filter"
