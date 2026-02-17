@@ -1,0 +1,17 @@
+# t.meta
+# t is for timelog. A handy script to track your time using hledger timelog files
+
+name=t
+version=1.0.0
+type=script
+description=t is for timelog. A handy script to track your time using hledger timelog files
+repo=https://github.com/linuxcaffe/t
+base_url=https://raw.githubusercontent.com/linuxcaffe/t/master
+files=t:script,README.md:doc
+tags=time, tracking, timedot, hledger, script
+
+checksums=592c2353bdd2a609bb0f52f0f5a302546a7522d9d4e82079e235c777ab73f6e7,45096ed0188bc86b908188c131f472d49992eb65664c7c06d0af6a980a8f6bb4
+
+author=linuxcaffe, Chase James, Justin Harding
+license=MIT
+requires_taskwarrior=2.6.0
