@@ -11,7 +11,7 @@ This tool provides a full workflow from development through deployment:
 Single command pipeline: make-awesome.py "commit message"
   Runs: debug -> test -> install -> push (each stage gated on previous success)
 
-Version: 4.5.0
+Version: 4.6.0
 """
 
 import sys
@@ -24,7 +24,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
 
-VERSION = "4.5.0"
+VERSION = "4.6.0"
 
 # ANSI color codes
 class Colors:
@@ -537,6 +537,9 @@ class ProjectInfo:
         self.tags = ""
         self.files = []
         self.checksums = []
+        # Wrapper-specific fields
+        self.wrapper_keyword = ""
+        self.wrapper_script = ""
 
 
 def detect_project_info() -> ProjectInfo:
@@ -716,6 +719,10 @@ def prompt_for_metadata(info: ProjectInfo) -> bool:
                         info.license = line.split('=', 1)[1].strip()
                     elif line.startswith('type='):
                         info.type = line.split('=', 1)[1].strip()
+                    elif line.startswith('wrapper.keyword='):
+                        info.wrapper_keyword = line.split('=', 1)[1].strip()
+                    elif line.startswith('wrapper.script='):
+                        info.wrapper_script = line.split('=', 1)[1].strip()
                     elif line.startswith('base_url='):
                         # Extract branch from base_url
                         url = line.split('=', 1)[1].strip()
@@ -734,10 +741,34 @@ def prompt_for_metadata(info: ProjectInfo) -> bool:
     if response:
         info.version = response
     
-    print("Type: (1) hook, (2) script, (3) config, (4) theme")
+    print("Type: (1) hook, (2) script, (3) config, (4) theme, (5) wrapper")
     response = input("Select [1]: ").strip()
-    type_map = {'1': 'hook', '2': 'script', '3': 'config', '4': 'theme'}
+    type_map = {'1': 'hook', '2': 'script', '3': 'config', '4': 'theme', '5': 'wrapper'}
     info.type = type_map.get(response, 'hook')
+    
+    # Wrapper-specific prompts
+    if info.type == 'wrapper':
+        if info.wrapper_keyword:
+            response = input(f"Wrapper keyword [{info.wrapper_keyword}]: ").strip()
+            if response:
+                info.wrapper_keyword = response
+        else:
+            info.wrapper_keyword = input("Wrapper keyword (e.g., ann): ").strip()
+        
+        if not info.wrapper_keyword:
+            error("Wrapper keyword required")
+            return False
+        
+        if info.wrapper_script:
+            response = input(f"Wrapper script [{info.wrapper_script}]: ").strip()
+            if response:
+                info.wrapper_script = response
+        else:
+            info.wrapper_script = input("Wrapper script name (e.g., annn): ").strip()
+        
+        if not info.wrapper_script:
+            error("Wrapper script name required")
+            return False
     
     # Description with default if available
     if info.description:
@@ -881,6 +912,9 @@ def generate_meta_file(info: ProjectInfo) -> bool:
             f.write(f"requires_taskwarrior={info.requires_tw}\n")
             if info.requires_py:
                 f.write(f"requires_python={info.requires_py}\n")
+            if info.type == 'wrapper':
+                f.write(f"\nwrapper.keyword={info.wrapper_keyword}\n")
+                f.write(f"wrapper.script={info.wrapper_script}\n")
         
         success(f"Created {meta_file}")
         return True
@@ -1060,6 +1094,20 @@ def generate_installer(info: ProjectInfo) -> bool:
             
             # Finish install function
             f.write('\n')
+            
+            # Register wrapper if applicable
+            if info.type == 'wrapper' and info.wrapper_keyword and info.wrapper_script:
+                f.write('    # Register wrapper with tw\n')
+                f.write('    WRAPPERS_FILE="${HOME}/.task/config/.tw_wrappers"\n')
+                f.write('    mkdir -p "$(dirname "$WRAPPERS_FILE")"\n')
+                f.write(f'    if ! grep -q "^{info.wrapper_keyword}|" "$WRAPPERS_FILE" 2>/dev/null; then\n')
+                f.write(f'        echo "{info.wrapper_keyword}|{info.wrapper_script}|{info.description}" >> "$WRAPPERS_FILE"\n')
+                f.write(f'        tw_msg "Registered wrapper: {info.wrapper_keyword} -> {info.wrapper_script}"\n')
+                f.write(f'        debug_msg "Registered wrapper in .tw_wrappers" 2\n')
+                f.write('    else\n')
+                f.write(f'        tw_msg "Wrapper already registered: {info.wrapper_keyword}"\n')
+                f.write('    fi\n\n')
+            
             f.write('    debug_msg "Installation complete" 1\n')
             f.write(f'    tw_success "Installed {info.name} v$VERSION"\n')
             f.write('    echo ""\n')
@@ -1106,6 +1154,16 @@ def generate_installer(info: ProjectInfo) -> bool:
                 f.write(f'        sed -i.bak "/{first_config}/d" "$TASKRC"\n')
                 f.write(f'        tw_msg "Removed config from .taskrc"\n')
                 f.write(f'        debug_msg "Removed from .taskrc: {first_config}" 2\n')
+                f.write('    fi\n\n')
+            
+            # Unregister wrapper if applicable
+            if info.type == 'wrapper' and info.wrapper_keyword:
+                f.write('    # Unregister wrapper from tw\n')
+                f.write('    WRAPPERS_FILE="${HOME}/.task/config/.tw_wrappers"\n')
+                f.write(f'    if grep -q "^{info.wrapper_keyword}|" "$WRAPPERS_FILE" 2>/dev/null; then\n')
+                f.write(f'        sed -i.bak "/^{info.wrapper_keyword}|/d" "$WRAPPERS_FILE"\n')
+                f.write(f'        tw_msg "Unregistered wrapper: {info.wrapper_keyword}"\n')
+                f.write(f'        debug_msg "Removed wrapper from .tw_wrappers" 2\n')
                 f.write('    fi\n\n')
             
             f.write(f'    tw_success "Removed {info.name}"\n')
