@@ -1,0 +1,26 @@
+Why this one won’t trample your hooks
+
+The only destructive operations it does are:
+
+mv ~/.task/hooks -> tempdir/hooks.original.moved
+
+mv tempdir/hooks.instrumented -> ~/.task/hooks
+
+So your real hooks are never modified in place, and the restore is a simple swap back.
+
+How to use with your tw wrapper
+
+Since you hard-code datalocation anyway, you can explicitly point it:
+
+./hook-timer.sh --hooks /home/djp/.task/hooks -- tw @_ add test2 +test
+
+One more thing: if tw disables hooks
+
+If this still shows Total hook time: 0ms and wraps a bunch of hooks, then tw is likely doing rc.hooks=off.
+
+In that case, you can test by running:
+
+./hook-timer.sh -- task add hook-test +x
+
+
+If hooks fire there but not under tw, we know it’s the wrapper.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 tw - awesome-taskwarrior package manager and wrapper
-Version: 2.7.1
+Version: 2.8.0
 
 A unified wrapper for Taskwarrior that provides:
 - Transparent pass-through to task command
@@ -10,6 +10,15 @@ A unified wrapper for Taskwarrior that provides:
 - Per-file manifest tracking
 - Checksum verification
 - Dev mode indicator for local development
+
+Updates in v2.8.0:
+- Perf: Added TaskRC class for direct ~/.taskrc + include file parsing (no subprocesses)
+- Perf: @+ / @- cmx operations reduced from ~12 subprocess spawns to 0
+- Perf: All task _get calls in cmx path replaced with direct file reads
+- Perf: All task config writes in cmx path replaced with atomic .taskrc rewrite
+- Perf: build_combined_filter() reuses single TaskRC instance (one parse per operation)
+- Fixed: Context definitions in included files (tod.rc etc.) now correctly visible
+- Fixed: Legacy single-key context format (context.name=filter) supported alongside .read/.write
 
 Architecture Changes in v2.0.0:
 - Removed git-based operations
@@ -1934,15 +1943,12 @@ def resolve_dot_shortcut(dot, debug_wrapper=False):
 def handle_context_command(args):
     """Handle @ context commands - alias for 'context' with @+/- extensions"""
     if not args:
-        # tw @ with no args ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ show current context
+        # tw @ with no args -> show current context
         # First check if cmx is active
         current_cmx = get_cmx_contexts()
         if current_cmx:
             print(f"Context multiplexing active: {current_cmx}")
-            combined_read = subprocess.run(
-                ['task', '_get', 'rc.context.cmx.read'],
-                capture_output=True, text=True, check=False
-            ).stdout.strip()
+            combined_read = TaskRC().get('context.cmx.read')
             if combined_read:
                 print(f"Combined filter: {combined_read}")
             return 0
@@ -1963,112 +1969,205 @@ def handle_context_command(args):
         return remove_context_from_cmx(context_name)
     
     # Otherwise, pass through to task context
-    # tw @ list ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ task context list
-    # tw @ work ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ task context work
+    # tw @ list  -> task context list
+    # tw @ work  -> task context work
     return subprocess.run(['task', 'context'] + args, check=False).returncode
 
+class TaskRC:
+    """Fast .taskrc reader/writer — no subprocesses.
+    
+    Reads ~/.taskrc and follows include directives recursively so that
+    context definitions in tod.rc, recurrence.rc, etc. are all visible.
+    
+    Writes go ONLY to ~/.taskrc (the primary file). Keys defined in
+    included files are readable but not written there.
+    
+    Usage:
+        rc = TaskRC()
+        val = rc.get('context')               # instant, no subprocess
+        val = rc.get('context.work.read')     # works across includes
+        rc.set_keys({'context': 'cmx',
+                     'cmx.contexts': 'work,home',
+                     'context.cmx.read': '( +work ) and ( +home )'})
+    """
+    
+    TASKRC_PATH = Path.home() / '.taskrc'
+    
+    def __init__(self):
+        self._data = {}          # key -> value, all files merged
+        self._primary_lines = [] # raw lines from ~/.taskrc only (for writing)
+        self._loaded = False
+    
+    def _load(self):
+        if self._loaded:
+            return
+        self._loaded = True
+        self._primary_lines = self._read_file(self.TASKRC_PATH, primary=True)
+    
+    def _read_file(self, path, primary=False):
+        """Read one rc file, following includes. Returns raw lines if primary=True."""
+        lines = []
+        try:
+            with open(path, 'r') as f:
+                raw = f.readlines()
+        except OSError:
+            return lines
+        
+        if primary:
+            lines = raw  # preserve for later writing
+        
+        for line in raw:
+            stripped = line.strip()
+            if not stripped or stripped.startswith('#'):
+                continue
+            
+            # Follow include directives
+            if stripped.startswith('include '):
+                inc_path_str = stripped[8:].strip()
+                # Expand ~ and resolve relative paths
+                inc_path = Path(inc_path_str).expanduser()
+                if not inc_path.is_absolute():
+                    inc_path = path.parent / inc_path
+                self._read_file(inc_path, primary=False)
+                continue
+            
+            # Parse key=value
+            if '=' in stripped:
+                key, _, value = stripped.partition('=')
+                key = key.strip()
+                value = value.strip()
+                # Last definition wins (taskwarrior behaviour)
+                self._data[key] = value
+        
+        return lines
+    
+    def get(self, key, default=''):
+        """Return value for key, or default if not found."""
+        self._load()
+        return self._data.get(key, default)
+    
+    def set_keys(self, updates: dict):
+        """Write multiple key=value pairs to ~/.taskrc in one pass.
+        
+        - Existing keys are updated in-place (preserving line order/comments).
+        - New keys are appended at the end.
+        - Empty-string values blank the value but keep the line (key=).
+        """
+        self._load()
+        
+        remaining = dict(updates)  # keys still to handle
+        new_lines = []
+        
+        for line in self._primary_lines:
+            stripped = line.strip()
+            if stripped and not stripped.startswith('#') and '=' in stripped:
+                key = stripped.partition('=')[0].strip()
+                if key in remaining:
+                    # Replace this line
+                    new_lines.append(f"{key}={remaining.pop(key)}\n")
+                    continue
+            new_lines.append(line)
+        
+        # Append any keys that weren't already in the file
+        for key, value in remaining.items():
+            new_lines.append(f"{key}={value}\n")
+        
+        # Write atomically via temp file
+        tmp = self.TASKRC_PATH.with_suffix('.taskrc.tmp')
+        try:
+            with open(tmp, 'w') as f:
+                f.writelines(new_lines)
+            tmp.replace(self.TASKRC_PATH)
+            # Update in-memory state
+            self._primary_lines = new_lines
+            self._data.update(updates)
+        except OSError as e:
+            print(f"[tw] Error writing .taskrc: {e}", file=sys.stderr)
+            tmp.unlink(missing_ok=True)
+            raise
+
+
 def get_cmx_contexts():
-    """Get current cmx.contexts value from taskrc"""
-    try:
-        result = subprocess.run(
-            ['task', '_get', 'rc.cmx.contexts'],
-            capture_output=True,
-            text=True,
-            check=False
-        )
-        return result.stdout.strip() if result.returncode == 0 else ""
-    except:
-        return ""
+    """Get current cmx.contexts value — reads .taskrc directly."""
+    return TaskRC().get('cmx.contexts')
 
 def is_context_defined(context_name):
-    """Check if a context is defined in taskwarrior"""
-    try:
-        result = subprocess.run(
-            ['task', '_get', f'rc.context.{context_name}.read'],
-            capture_output=True,
-            text=True,
-            check=False
-        )
-        # If it returns successfully and has output, context exists
-        return result.returncode == 0 and result.stdout.strip()
-    except:
-        return False
+    """Check if a context is defined — reads .taskrc + includes directly."""
+    rc = TaskRC()
+    # A context exists if it has either a .read or legacy plain filter key
+    return bool(rc.get(f'context.{context_name}.read') or
+                rc.get(f'context.{context_name}'))
 
 def get_context_filter(context_name, filter_type='read'):
-    """Get the read or write filter for a context"""
-    try:
-        result = subprocess.run(
-            ['task', '_get', f'rc.context.{context_name}.{filter_type}'],
-            capture_output=True,
-            text=True,
-            check=False
-        )
-        return result.stdout.strip() if result.returncode == 0 else ""
-    except:
-        return ""
+    """Get the read or write filter for a context — no subprocess."""
+    rc = TaskRC()
+    val = rc.get(f'context.{context_name}.{filter_type}')
+    if not val and filter_type == 'read':
+        # Fall back to legacy single-key context definition
+        val = rc.get(f'context.{context_name}')
+    return val
 
-def build_combined_filter(contexts_str, filter_type='read'):
-    """Build combined filter from comma-separated contexts"""
+def build_combined_filter(rc, contexts_str, filter_type='read'):
+    """Build combined filter from comma-separated contexts.
+    
+    Takes a TaskRC instance to avoid re-parsing files per call.
+    """
     if not contexts_str:
         return ""
     
-    contexts = [c.strip() for c in contexts_str.split(',')]
-    combined_parts = []
+    parts = []
+    for ctx in [c.strip() for c in contexts_str.split(',') if c.strip()]:
+        f = rc.get(f'context.{ctx}.{filter_type}')
+        if not f and filter_type == 'read':
+            f = rc.get(f'context.{ctx}')  # legacy fallback
+        if f:
+            parts.append(f"( {f} )")
     
-    for ctx in contexts:
-        if not ctx:
-            continue
-        filter_str = get_context_filter(ctx, filter_type)
-        if filter_str:
-            combined_parts.append(f"( {filter_str} )")
-    
-    return " and ".join(combined_parts) if combined_parts else ""
+    return " and ".join(parts) if parts else ""
+
+def get_active_context():
+    """Get the currently active context name — reads .taskrc directly."""
+    return TaskRC().get('context')
 
 def set_cmx_context(contexts_str):
-    """Set the cmx context with combined filters"""
+    """Set the cmx context — direct .taskrc writes, zero subprocesses."""
     try:
+        rc = TaskRC()
+        
         if not contexts_str:
-            # Clear everything
-            clear_cmx_keys()
-            subprocess.run(['task', 'config', 'context', ''],
-                         input='yes\n', text=True, check=False,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # Clear everything in one write
+            rc.set_keys({
+                'context':           '',
+                'cmx.contexts':      '',
+                'context.cmx.read':  '',
+                'context.cmx.write': '',
+            })
             print("Cleared all contexts")
             return 0
         
-        # Validate all contexts exist
-        contexts = [c.strip() for c in contexts_str.split(',')]
+        # Validate all contexts exist (reads only, no subprocesses)
+        contexts = [c.strip() for c in contexts_str.split(',') if c.strip()]
         for ctx in contexts:
             if not is_context_defined(ctx):
                 print(f"[tw] Error: Context '{ctx}' is not defined")
                 print(f"[tw] Use 'task context define {ctx} <filter>' to define it first")
                 return 1
         
-        # Build combined filters
-        combined_read = build_combined_filter(contexts_str, 'read')
-        combined_write = build_combined_filter(contexts_str, 'write')
+        # Build combined filters using same rc instance (already loaded)
+        combined_read  = build_combined_filter(rc, contexts_str, 'read')
+        combined_write = build_combined_filter(rc, contexts_str, 'write')
         
-        # Set cmx.contexts
-        subprocess.run(['task', 'config', 'cmx.contexts', contexts_str],
-                     input='yes\n', text=True, check=False,
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        
-        # Set context.cmx.read
+        # Write everything in one pass
+        updates = {
+            'context':      'cmx',
+            'cmx.contexts': contexts_str,
+        }
         if combined_read:
-            subprocess.run(['task', 'config', 'context.cmx.read', combined_read],
-                         input='yes\n', text=True, check=False,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        
-        # Set context.cmx.write if exists
+            updates['context.cmx.read'] = combined_read
         if combined_write:
-            subprocess.run(['task', 'config', 'context.cmx.write', combined_write],
-                         input='yes\n', text=True, check=False,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            updates['context.cmx.write'] = combined_write
         
-        # Activate cmx context
-        subprocess.run(['task', 'config', 'context', 'cmx'],
-                     input='yes\n', text=True, check=False,
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        rc.set_keys(updates)
         
         print(f"Activated contexts: {contexts_str}")
         if combined_read:
@@ -2079,32 +2178,22 @@ def set_cmx_context(contexts_str):
         print(f"[tw] Error setting context: {e}", file=sys.stderr)
         return 1
 
-def get_active_context():
-    """Get the currently active context name from taskrc (the value of context=)"""
-    try:
-        result = subprocess.run(
-            ['task', '_get', 'rc.context'],
-            capture_output=True,
-            text=True,
-            check=False
-        )
-        return result.stdout.strip() if result.returncode == 0 else ""
-    except:
-        return ""
-
 def clear_cmx_keys():
-    """Clear all cmx-related keys (set to blank, preserving the key lines)"""
-    for key in ['cmx.contexts', 'context.cmx.read', 'context.cmx.write']:
-        subprocess.run(['task', 'config', key, ''],
-                     input='yes\n', text=True, check=False,
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    """Clear all cmx-related keys — direct .taskrc write, no subprocesses."""
+    TaskRC().set_keys({
+        'cmx.contexts':      '',
+        'context.cmx.read':  '',
+        'context.cmx.write': '',
+    })
 
 def demote_to_regular_context(context_name):
-    """Demote from cmx back to a single regular context"""
-    clear_cmx_keys()
-    subprocess.run(['task', 'config', 'context', context_name],
-                 input='yes\n', text=True, check=False,
-                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    """Demote from cmx back to a single regular context — one .taskrc write."""
+    TaskRC().set_keys({
+        'context':           context_name,
+        'cmx.contexts':      '',
+        'context.cmx.read':  '',
+        'context.cmx.write': '',
+    })
     print(f"Context: {context_name}")
 
 def add_context_to_cmx(context_name):
@@ -2138,9 +2227,7 @@ def add_context_to_cmx(context_name):
             new_contexts = f"{active},{context_name}"
         else:
             # No active context - just set as regular context (no need for cmx)
-            subprocess.run(['task', 'config', 'context', context_name],
-                         input='yes\n', text=True, check=False,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            TaskRC().set_keys({'context': context_name})
             print(f"Context: {context_name}")
             return 0
     
@@ -2170,10 +2257,12 @@ def remove_context_from_cmx(context_name):
     
     if len(new_list) == 0:
         # No contexts left - clear everything
-        clear_cmx_keys()
-        subprocess.run(['task', 'config', 'context', ''],
-                     input='yes\n', text=True, check=False,
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        TaskRC().set_keys({
+            'context':           '',
+            'cmx.contexts':      '',
+            'context.cmx.read':  '',
+            'context.cmx.write': '',
+        })
         print("Cleared all contexts")
         return 0
     elif len(new_list) == 1:
