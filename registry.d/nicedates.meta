@@ -1,0 +1,20 @@
+# nicedates.meta
+# Transformes report dates to human-readable; Today, Friday, Feb20, Jan1-27
+
+name=nicedates
+version=1.0.0
+type=wrapper
+description=Transformes report dates to human-readable; Today, Friday, Feb20, Jan1-27
+repo=https://github.com/linuxcaffe/tw-nicedates-hook
+base_url=https://raw.githubusercontent.com/linuxcaffe/tw-nicedates-hook/main
+files=nicedates.py:script,nicedates.rc:config,README.md:doc
+tags=nice, readable, dates, time, reports, wrapper
+
+checksums=e08c98a841b96a19cd94314b8cbb7c6f3b964992fc4d2983603cb5ab90de140e,d183b67aefbf3b7723ee1f30e926ce664c1bfb834665bf0260666bc8c82439c2,b249b70d8ed80efe86739574960b5dc31157086d01f9531261a82903ca0098d1
+
+author=Designed by linuxcaffe, coded by Claude
+license=MIT
+requires_taskwarrior=2.6.0
+
+wrapper.keyword=nicedates
+wrapper.script=nicedates.py
