@@ -106,12 +106,12 @@ install() {
     # Register wrapper with tw
     WRAPPERS_FILE="${HOME}/.task/config/.tw_wrappers"
     mkdir -p "$(dirname "$WRAPPERS_FILE")"
-    if ! grep -q "^--dates|" "$WRAPPERS_FILE" 2>/dev/null; then
-        echo "--dates|nicedates|Transforms report dates to human readable; Today, Friday, Feb20, etc|filter" >> "$WRAPPERS_FILE"
-        tw_msg "Registered wrapper: --dates -> nicedates (filter)"
+    if ! grep -q "^n-dates|" "$WRAPPERS_FILE" 2>/dev/null; then
+        echo "n-dates|nicedates|Transforms report dates to human readable; Today, Friday, Feb20, etc|filter" >> "$WRAPPERS_FILE"
+        tw_msg "Registered wrapper: n-dates -> nicedates (filter)"
         debug_msg "Registered wrapper in .tw_wrappers" 2
     else
-        tw_msg "Wrapper already registered: --dates"
+        tw_msg "Wrapper already registered: n-dates"
     fi
 
     debug_msg "Installation complete" 1
@@ -159,9 +159,9 @@ remove() {
 
     # Unregister wrapper from tw
     WRAPPERS_FILE="${HOME}/.task/config/.tw_wrappers"
-    if grep -q "^--dates|" "$WRAPPERS_FILE" 2>/dev/null; then
-        sed -i.bak "/^--dates|/d" "$WRAPPERS_FILE"
-        tw_msg "Unregistered wrapper: --dates"
+    if grep -q "^n-dates|" "$WRAPPERS_FILE" 2>/dev/null; then
+        sed -i.bak "/^n-dates|/d" "$WRAPPERS_FILE"
+        tw_msg "Unregistered wrapper: n-dates"
         debug_msg "Removed wrapper from .tw_wrappers" 2
     fi
 
