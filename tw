@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 tw - awesome-taskwarrior package manager and wrapper
-Version: 2.8.0
+Version: 2.9.0
 
 A unified wrapper for Taskwarrior that provides:
 - Transparent pass-through to task command
@@ -11,15 +11,22 @@ A unified wrapper for Taskwarrior that provides:
 - Checksum verification
 - Dev mode indicator for local development
 
-Updates in v2.8.0:
-- Perf: Added TaskRC class for direct ~/.taskrc + include file parsing (no subprocesses)
-- Perf: @+ / @- cmx operations reduced from ~12 subprocess spawns to 0
-- Perf: All task _get calls in cmx path replaced with direct file reads
-- Perf: All task config writes in cmx path replaced with atomic .taskrc rewrite
-- Perf: build_combined_filter() reuses single TaskRC instance (one parse per operation)
-- Fixed: Context definitions in included files (tod.rc etc.) now correctly visible
-- Fixed: Legacy single-key context format (context.name=filter) supported alongside .read/.write
-- Added: --timing flag — per-hook wall-clock breakdown using rc.debug.hooks=1
+Updates in v2.9.0:
+- Added: filter wrapper type in .tw_wrappers (type=filter field)
+- Added: WrapperManager.get_filters() and run_through_filters()
+- Added: Filter wrappers chain task output through registered scripts
+- Changed: pass_through_to_task() routes through filter wrappers automatically
+- Changed: .tw_wrappers format extended with optional |type field (default: command)
+- Changed: Help shows command and filter wrappers in separate sections
+- Fixed: Garbled unicode in error messages replaced with plain ASCII
+
+A unified wrapper for Taskwarrior that provides:
+- Transparent pass-through to task command
+- Package management for Taskwarrior extensions (hooks, wrappers, configs)
+- Curl-based installation (no git clones)
+- Per-file manifest tracking
+- Checksum verification
+- Dev mode indicator for local development
 
 Architecture Changes in v2.0.0:
 - Removed git-based operations
@@ -100,7 +107,7 @@ import tempfile
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 
-VERSION = "2.8.0"
+VERSION = "2.9.0"
 
 # GitHub configuration
 GITHUB_REPO = "linuxcaffe/awesome-taskwarrior"
@@ -282,13 +289,20 @@ class PathManager:
 class WrapperManager:
     """Manages wrapper dispatch for tw.
     
-    Wrappers are external scripts that extend tw with new commands.
-    Registered in ~/.task/config/.tw_wrappers with format:
-        keyword|script|description
+    Two wrapper types, registered in ~/.task/config/.tw_wrappers:
+        keyword|script|description|type
     
-    Example: ann|annn|Annotation manager
-    When user types 'tw 42 ann.1', tw detects 'ann' keyword,
-    extracts filter='42' and action='.1', then runs: annn 42.1
+    type=command  (default) — keyword found in args triggers dispatch.
+        Example: ann|annn|Annotation manager|command
+        tw 42 ann.1  → detects 'ann', runs: annn 42.1
+
+    type=filter  — output filter applied to any report command.
+        Example: nicedates|nicedates|Nice date formatting|filter
+        tw next  → runs: task next | nicedates
+        Multiple filter wrappers are chained in registration order.
+
+    The type field is optional; omitting it defaults to 'command' for
+    backward compatibility with existing .tw_wrappers entries.
     """
     
     WRAPPERS_FILE = Path.home() / ".task" / "config" / ".tw_wrappers"
@@ -304,7 +318,11 @@ class WrapperManager:
         return self._wrappers
     
     def _load(self):
-        """Read .tw_wrappers registry file."""
+        """Read .tw_wrappers registry file.
+        
+        Format: keyword|script|description[|type]
+        type defaults to 'command' if omitted.
+        """
         result = {}
         if not self.WRAPPERS_FILE.exists():
             return result
@@ -318,9 +336,14 @@ class WrapperManager:
                     parts = line.split('|')
                     if len(parts) >= 2:
                         keyword = parts[0].strip()
-                        script = parts[1].strip()
-                        desc = parts[2].strip() if len(parts) > 2 else ""
-                        result[keyword] = {'script': script, 'description': desc}
+                        script  = parts[1].strip()
+                        desc    = parts[2].strip() if len(parts) > 2 else ""
+                        wtype   = parts[3].strip().lower() if len(parts) > 3 else "command"
+                        result[keyword] = {
+                            'script':      script,
+                            'description': desc,
+                            'type':        wtype,
+                        }
             debug(f"WrapperManager: loaded {len(result)} wrapper(s)", 2)
         except Exception as e:
             debug(f"WrapperManager: error reading wrappers file: {e}", 1)
@@ -425,6 +448,100 @@ class WrapperManager:
     def list_wrappers(self):
         """List registered wrappers for help display."""
         return self.wrappers
+
+    def get_filters(self):
+        """Return ordered list of registered filter-type wrappers.
+        
+        Filter wrappers receive task output on stdin and write
+        transformed output to stdout. Multiple filters are chained.
+        Returns list of {'keyword', 'script', 'description'} dicts.
+        """
+        return [
+            {'keyword': kw, **info}
+            for kw, info in self.wrappers.items()
+            if info.get('type') == 'filter'
+        ]
+
+    def resolve_script(self, script):
+        """Find script in PATH or ~/.task/scripts/. Returns path or None."""
+        path = shutil.which(script)
+        if path:
+            return path
+        candidate = Path.home() / ".task" / "scripts" / script
+        if candidate.exists():
+            return str(candidate)
+        return None
+
+    def run_through_filters(self, task_args, debug_wrapper=False):
+        """Run task and pipe output through all registered filter wrappers.
+        
+        Chains filters in registration order:
+            task [args] | filter1 | filter2 | ...
+        
+        Returns exit code of the task process.
+        """
+        filters = self.get_filters()
+        if not filters:
+            return None  # No filters — caller should use normal passthrough
+
+        # Resolve all filter scripts first — fail early if any missing
+        resolved = []
+        for f in filters:
+            script_path = self.resolve_script(f['script'])
+            if not script_path:
+                print(f"[tw] Error: filter script '{f['script']}' not found")
+                print(f"[tw] Searched PATH and ~/.task/scripts/")
+                return 1
+            resolved.append(script_path)
+            debug(f"WrapperManager: filter resolved: {f['keyword']} → {script_path}", 2)
+
+        if debug_wrapper:
+            chain = ' | '.join([f"task {' '.join(task_args)}"] + resolved)
+            print(f"[tw-debug] Filter chain: {chain}", file=sys.stderr)
+
+        # Build process chain: task | filter1 | filter2 | ...
+        # Each process's stdout feeds the next's stdin.
+        procs = []
+
+        # Start task process
+        task_bin = shutil.which('task')
+        if not task_bin:
+            print("[tw] Error: task executable not found")
+            return 1
+
+        task_proc = subprocess.Popen(
+            [task_bin] + task_args,
+            stdout=subprocess.PIPE,
+            stderr=None,   # inherit stderr (task errors go to terminal)
+        )
+        procs.append(task_proc)
+        prev_stdout = task_proc.stdout
+
+        # Chain filter processes
+        for i, script_path in enumerate(resolved):
+            is_last = (i == len(resolved) - 1)
+            filter_proc = subprocess.Popen(
+                [script_path],
+                stdin=prev_stdout,
+                stdout=None if is_last else subprocess.PIPE,
+                stderr=None,  # inherit stderr
+            )
+            procs.append(filter_proc)
+            if not is_last:
+                prev_stdout = filter_proc.stdout
+
+        # Close upstream pipe ends (avoid blocking)
+        for proc in procs[:-1]:
+            if proc.stdout and proc.stdout != prev_stdout:
+                pass  # already handed to next process
+        
+        # Wait for all processes
+        for proc in procs:
+            proc.wait()
+
+        return procs[0].returncode  # task's exit code is authoritative
+
+
 
 class RegistryManager:
     """Manages registry access - local files or GitHub API"""
@@ -1817,8 +1934,7 @@ def validate_first_arg_flag(args):
     known_short = ['-I', '-r', '-u', '-l', '-i', '-v', '-h', '-s', '-p', '-A']
     known_long = ['--install', '--remove', '--update', '--list', '--info', 
                   '--verify', '--tags', '--dry-run', '--debug', 
-                  '--version', '--help', '--shell', '--pager', '--attach', '--generate-completion', '--install-completion',
-                  '--timing']
+                  '--version', '--help', '--shell', '--pager', '--attach', '--generate-completion', '--install-completion']
     
     # Check if it's a known flag (exact match)
     if first_arg in known_short or first_arg in known_long:
@@ -1950,7 +2066,10 @@ def handle_context_command(args):
         current_cmx = get_cmx_contexts()
         if current_cmx:
             print(f"Context multiplexing active: {current_cmx}")
-            combined_read = TaskRC().get('context.cmx.read')
+            combined_read = subprocess.run(
+                ['task', '_get', 'rc.context.cmx.read'],
+                capture_output=True, text=True, check=False
+            ).stdout.strip()
             if combined_read:
                 print(f"Combined filter: {combined_read}")
             return 0
@@ -1975,201 +2094,108 @@ def handle_context_command(args):
     # tw @ work  -> task context work
     return subprocess.run(['task', 'context'] + args, check=False).returncode
 
-class TaskRC:
-    """Fast .taskrc reader/writer — no subprocesses.
-    
-    Reads ~/.taskrc and follows include directives recursively so that
-    context definitions in tod.rc, recurrence.rc, etc. are all visible.
-    
-    Writes go ONLY to ~/.taskrc (the primary file). Keys defined in
-    included files are readable but not written there.
-    
-    Usage:
-        rc = TaskRC()
-        val = rc.get('context')               # instant, no subprocess
-        val = rc.get('context.work.read')     # works across includes
-        rc.set_keys({'context': 'cmx',
-                     'cmx.contexts': 'work,home',
-                     'context.cmx.read': '( +work ) and ( +home )'})
-    """
-    
-    TASKRC_PATH = Path.home() / '.taskrc'
-    
-    def __init__(self):
-        self._data = {}          # key -> value, all files merged
-        self._primary_lines = [] # raw lines from ~/.taskrc only (for writing)
-        self._loaded = False
-    
-    def _load(self):
-        if self._loaded:
-            return
-        self._loaded = True
-        self._primary_lines = self._read_file(self.TASKRC_PATH, primary=True)
-    
-    def _read_file(self, path, primary=False):
-        """Read one rc file, following includes. Returns raw lines if primary=True."""
-        lines = []
-        try:
-            with open(path, 'r') as f:
-                raw = f.readlines()
-        except OSError:
-            return lines
-        
-        if primary:
-            lines = raw  # preserve for later writing
-        
-        for line in raw:
-            stripped = line.strip()
-            if not stripped or stripped.startswith('#'):
-                continue
-            
-            # Follow include directives
-            if stripped.startswith('include '):
-                inc_path_str = stripped[8:].strip()
-                # Expand ~ and resolve relative paths
-                inc_path = Path(inc_path_str).expanduser()
-                if not inc_path.is_absolute():
-                    inc_path = path.parent / inc_path
-                self._read_file(inc_path, primary=False)
-                continue
-            
-            # Parse key=value
-            if '=' in stripped:
-                key, _, value = stripped.partition('=')
-                key = key.strip()
-                value = value.strip()
-                # Last definition wins (taskwarrior behaviour)
-                self._data[key] = value
-        
-        return lines
-    
-    def get(self, key, default=''):
-        """Return value for key, or default if not found."""
-        self._load()
-        return self._data.get(key, default)
-    
-    def set_keys(self, updates: dict):
-        """Write multiple key=value pairs to ~/.taskrc in one pass.
-        
-        - Existing keys are updated in-place (preserving line order/comments).
-        - New keys are appended at the end.
-        - Empty-string values blank the value but keep the line (key=).
-        """
-        self._load()
-        
-        remaining = dict(updates)  # keys still to handle
-        new_lines = []
-        
-        for line in self._primary_lines:
-            stripped = line.strip()
-            if stripped and not stripped.startswith('#') and '=' in stripped:
-                key = stripped.partition('=')[0].strip()
-                if key in remaining:
-                    # Replace this line
-                    new_lines.append(f"{key}={remaining.pop(key)}\n")
-                    continue
-            new_lines.append(line)
-        
-        # Append any keys that weren't already in the file
-        for key, value in remaining.items():
-            new_lines.append(f"{key}={value}\n")
-        
-        # Write atomically via temp file
-        tmp = self.TASKRC_PATH.with_suffix('.taskrc.tmp')
-        try:
-            with open(tmp, 'w') as f:
-                f.writelines(new_lines)
-            tmp.replace(self.TASKRC_PATH)
-            # Update in-memory state
-            self._primary_lines = new_lines
-            self._data.update(updates)
-        except OSError as e:
-            print(f"[tw] Error writing .taskrc: {e}", file=sys.stderr)
-            tmp.unlink(missing_ok=True)
-            raise
-
-
 def get_cmx_contexts():
-    """Get current cmx.contexts value — reads .taskrc directly."""
-    return TaskRC().get('cmx.contexts')
+    """Get current cmx.contexts value from taskrc"""
+    try:
+        result = subprocess.run(
+            ['task', '_get', 'rc.cmx.contexts'],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        return result.stdout.strip() if result.returncode == 0 else ""
+    except:
+        return ""
 
 def is_context_defined(context_name):
-    """Check if a context is defined — reads .taskrc + includes directly."""
-    rc = TaskRC()
-    # A context exists if it has either a .read or legacy plain filter key
-    return bool(rc.get(f'context.{context_name}.read') or
-                rc.get(f'context.{context_name}'))
+    """Check if a context is defined in taskwarrior"""
+    try:
+        result = subprocess.run(
+            ['task', '_get', f'rc.context.{context_name}.read'],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        # If it returns successfully and has output, context exists
+        return result.returncode == 0 and result.stdout.strip()
+    except:
+        return False
 
 def get_context_filter(context_name, filter_type='read'):
-    """Get the read or write filter for a context — no subprocess."""
-    rc = TaskRC()
-    val = rc.get(f'context.{context_name}.{filter_type}')
-    if not val and filter_type == 'read':
-        # Fall back to legacy single-key context definition
-        val = rc.get(f'context.{context_name}')
-    return val
+    """Get the read or write filter for a context"""
+    try:
+        result = subprocess.run(
+            ['task', '_get', f'rc.context.{context_name}.{filter_type}'],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        return result.stdout.strip() if result.returncode == 0 else ""
+    except:
+        return ""
 
-def build_combined_filter(rc, contexts_str, filter_type='read'):
-    """Build combined filter from comma-separated contexts.
-    
-    Takes a TaskRC instance to avoid re-parsing files per call.
-    """
+def build_combined_filter(contexts_str, filter_type='read'):
+    """Build combined filter from comma-separated contexts"""
     if not contexts_str:
         return ""
     
-    parts = []
-    for ctx in [c.strip() for c in contexts_str.split(',') if c.strip()]:
-        f = rc.get(f'context.{ctx}.{filter_type}')
-        if not f and filter_type == 'read':
-            f = rc.get(f'context.{ctx}')  # legacy fallback
-        if f:
-            parts.append(f"( {f} )")
+    contexts = [c.strip() for c in contexts_str.split(',')]
+    combined_parts = []
     
-    return " and ".join(parts) if parts else ""
-
-def get_active_context():
-    """Get the currently active context name — reads .taskrc directly."""
-    return TaskRC().get('context')
+    for ctx in contexts:
+        if not ctx:
+            continue
+        filter_str = get_context_filter(ctx, filter_type)
+        if filter_str:
+            combined_parts.append(f"( {filter_str} )")
+    
+    return " and ".join(combined_parts) if combined_parts else ""
 
 def set_cmx_context(contexts_str):
-    """Set the cmx context — direct .taskrc writes, zero subprocesses."""
+    """Set the cmx context with combined filters"""
     try:
-        rc = TaskRC()
-        
         if not contexts_str:
-            # Clear everything in one write
-            rc.set_keys({
-                'context':           '',
-                'cmx.contexts':      '',
-                'context.cmx.read':  '',
-                'context.cmx.write': '',
-            })
+            # Clear everything
+            clear_cmx_keys()
+            subprocess.run(['task', 'config', 'context', ''],
+                         input='yes\n', text=True, check=False,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             print("Cleared all contexts")
             return 0
         
-        # Validate all contexts exist (reads only, no subprocesses)
-        contexts = [c.strip() for c in contexts_str.split(',') if c.strip()]
+        # Validate all contexts exist
+        contexts = [c.strip() for c in contexts_str.split(',')]
         for ctx in contexts:
             if not is_context_defined(ctx):
                 print(f"[tw] Error: Context '{ctx}' is not defined")
                 print(f"[tw] Use 'task context define {ctx} <filter>' to define it first")
                 return 1
         
-        # Build combined filters using same rc instance (already loaded)
-        combined_read  = build_combined_filter(rc, contexts_str, 'read')
-        combined_write = build_combined_filter(rc, contexts_str, 'write')
+        # Build combined filters
+        combined_read = build_combined_filter(contexts_str, 'read')
+        combined_write = build_combined_filter(contexts_str, 'write')
         
-        # Write everything in one pass
-        updates = {
-            'context':      'cmx',
-            'cmx.contexts': contexts_str,
-        }
+        # Set cmx.contexts
+        subprocess.run(['task', 'config', 'cmx.contexts', contexts_str],
+                     input='yes\n', text=True, check=False,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        # Set context.cmx.read
         if combined_read:
-            updates['context.cmx.read'] = combined_read
-        if combined_write:
-            updates['context.cmx.write'] = combined_write
+            subprocess.run(['task', 'config', 'context.cmx.read', combined_read],
+                         input='yes\n', text=True, check=False,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
-        rc.set_keys(updates)
+        # Set context.cmx.write if exists
+        if combined_write:
+            subprocess.run(['task', 'config', 'context.cmx.write', combined_write],
+                         input='yes\n', text=True, check=False,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        # Activate cmx context
+        subprocess.run(['task', 'config', 'context', 'cmx'],
+                     input='yes\n', text=True, check=False,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
         print(f"Activated contexts: {contexts_str}")
         if combined_read:
@@ -2180,22 +2206,32 @@ def set_cmx_context(contexts_str):
         print(f"[tw] Error setting context: {e}", file=sys.stderr)
         return 1
 
+def get_active_context():
+    """Get the currently active context name from taskrc (the value of context=)"""
+    try:
+        result = subprocess.run(
+            ['task', '_get', 'rc.context'],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        return result.stdout.strip() if result.returncode == 0 else ""
+    except:
+        return ""
+
 def clear_cmx_keys():
-    """Clear all cmx-related keys — direct .taskrc write, no subprocesses."""
-    TaskRC().set_keys({
-        'cmx.contexts':      '',
-        'context.cmx.read':  '',
-        'context.cmx.write': '',
-    })
+    """Clear all cmx-related keys (set to blank, preserving the key lines)"""
+    for key in ['cmx.contexts', 'context.cmx.read', 'context.cmx.write']:
+        subprocess.run(['task', 'config', key, ''],
+                     input='yes\n', text=True, check=False,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def demote_to_regular_context(context_name):
-    """Demote from cmx back to a single regular context — one .taskrc write."""
-    TaskRC().set_keys({
-        'context':           context_name,
-        'cmx.contexts':      '',
-        'context.cmx.read':  '',
-        'context.cmx.write': '',
-    })
+    """Demote from cmx back to a single regular context"""
+    clear_cmx_keys()
+    subprocess.run(['task', 'config', 'context', context_name],
+                 input='yes\n', text=True, check=False,
+                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     print(f"Context: {context_name}")
 
 def add_context_to_cmx(context_name):
@@ -2229,7 +2265,9 @@ def add_context_to_cmx(context_name):
             new_contexts = f"{active},{context_name}"
         else:
             # No active context - just set as regular context (no need for cmx)
-            TaskRC().set_keys({'context': context_name})
+            subprocess.run(['task', 'config', 'context', context_name],
+                         input='yes\n', text=True, check=False,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             print(f"Context: {context_name}")
             return 0
     
@@ -2259,12 +2297,10 @@ def remove_context_from_cmx(context_name):
     
     if len(new_list) == 0:
         # No contexts left - clear everything
-        TaskRC().set_keys({
-            'context':           '',
-            'cmx.contexts':      '',
-            'context.cmx.read':  '',
-            'context.cmx.write': '',
-        })
+        clear_cmx_keys()
+        subprocess.run(['task', 'config', 'context', ''],
+                     input='yes\n', text=True, check=False,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         print("Cleared all contexts")
         return 0
     elif len(new_list) == 1:
@@ -2416,161 +2452,28 @@ def run_with_pager(task_args):
         # Fall back to normal execution
         return pass_through_to_task(task_args)
 
-def run_with_timing(args):
-    """Run task command with rc.debug.hooks=1 and report per-hook timing.
-    
-    task 2.6.2 writes debug output (Hook:, Perf, Found, Timer lines) to STDOUT,
-    interleaved with normal task output. We capture stdout, split debug lines from
-    real output, print real output to terminal, parse debug lines for timing data.
-    
-    Hook feedback from hook scripts goes to stderr and is passed through unchanged.
-    tw's own overhead is measured with perf_counter around the subprocess.
-    """
-    import time
-    import re
-    
-    task_bin = shutil.which('task')
-    if not task_bin:
-        print("[tw] [X] task executable not found")
-        return 1
-    
-    # rc.debug.hooks=1 activates Hook:/Perf/Found lines on stderr
-    cmd = [task_bin, 'rc.debug.hooks=1'] + args
-    
-    tw_start = time.perf_counter()
+def pass_through_to_task(args, debug_wrapper=False):
+    """Pass command through to task, routing via filter wrappers if registered."""
     try:
-        result = subprocess.run(
-            cmd,
-            stdout=subprocess.PIPE,   # capture — debug lines mixed with task output
-            stderr=subprocess.PIPE,   # capture — hook script feedback
-            text=True,
-            check=False
-        )
-    except Exception as e:
-        print(f"[tw] Error running task: {e}", file=sys.stderr)
-        return 1
-    tw_end = time.perf_counter()
-    total_wall_ms = (tw_end - tw_start) * 1000
-    
-    # --- Parse stderr for timing data ---
-    # rc.debug.hooks=1 emits on stderr:
-    #   Hook: Calling /path/hook.py     (one per hook fired)
-    #   Perf task 2.6.2 ... hooks:N total:N  (aggregate, microseconds)
-    # task 2.6.2 does NOT emit per-hook Timer lines — hooks:N is the only breakdown.
+        # Check for filter-type wrappers — these intercept all task output
+        wrapper_mgr = WrapperManager()
+        if wrapper_mgr.get_filters():
+            rc = wrapper_mgr.run_through_filters(args, debug_wrapper=debug_wrapper)
+            if rc is not None:
+                return rc
 
-    hooks_called  = []   # basenames in call order
-    perf          = {}
-
-    perf_start_re = re.compile(r'^Perf\s+task\s+')
-    perf_kv_re    = re.compile(r'(\w+):(\d+)')
-    calling_re    = re.compile(r'^Hook: Calling (.+)$')
-    debug_res     = [
-        re.compile(r'^Hook:'),
-        re.compile(r'^Found (?:hook|misnamed)'),
-        re.compile(r'^Perf '),
-        re.compile(r'^Timer '),
-        re.compile(r'^Configuration override'),
-        re.compile(r'^Applying context'),
-        re.compile(r'^Detected context'),
-        re.compile(r'^\s+\S+\.data\s+rw'),   # data file I/O stats
-        re.compile(r'^\s+MODIFICATION '),     # tod.py modification lines
-        re.compile(r'^DEBUG'),
-        re.compile(r'^Parse Tree'),           # rc.debug=1 parse tree header
-        re.compile(r'^\s+_(?:original_)?args'),  # parse tree sections
-        re.compile(r'^\s+/usr/'),             # parse tree binary path
-        re.compile(r'^\s+word '),             # parse tree tokens
-        re.compile(r'^\s+pair '),
-        re.compile(r'^\s+identifier '),
-        re.compile(r'^\s+tag '),
-        re.compile(r'^\s+task rc\.'),         # hook's copy of the command
-    ]
-
-    # stdout is clean task output — print directly
-    if result.stdout:
-        print(result.stdout, end='')
-
-    # Parse stderr: extract timing data, suppress debug noise, pass real messages
-    for line in result.stderr.splitlines():
-        m = calling_re.match(line)
-        if m:
-            hooks_called.append(Path(m.group(1)).name)
-            continue
-        if perf_start_re.match(line):
-            perf = {k: int(v) for k, v in perf_kv_re.findall(line)}
-            continue
-        if any(r.match(line) for r in debug_res):
-            continue
-        # Real message (project notices, hook feedback) — pass through
-        print(line, file=sys.stderr)
-
-    # --- Render timing report ---
-    W       = 52
-    cmd_str = ' '.join(args) if args else '(default)'
-
-    print(f"\n[tw timing] task {cmd_str}", file=sys.stderr)
-    print(f"  {'─'*W}", file=sys.stderr)
-
-    def bar(ms, scale=50):
-        return '█' * min(int(ms / scale), 20)
-
-    if perf:
-        init_ms  = (perf.get('init',0) + perf.get('load',0) + perf.get('gc',0))   / 1000
-        work_ms  = (perf.get('filter',0) + perf.get('commit',0) +
-                    perf.get('sort',0)   + perf.get('render',0))                   / 1000
-        hooks_ms =  perf.get('hooks', 0) / 1000
-        other_ms =  perf.get('other', 0) / 1000
-        task_ms  =  perf.get('total', 0) / 1000
-        tw_ms    =  total_wall_ms - task_ms
-
-        print(f"  tw wrapper overhead:    {tw_ms:7.1f}ms", file=sys.stderr)
-        print(f"  task init/load/gc:      {init_ms:7.1f}ms  {bar(init_ms)}", file=sys.stderr)
-        print(f"  task filter/commit/etc: {work_ms:7.1f}ms  {bar(work_ms)}", file=sys.stderr)
-        if other_ms:
-            print(f"  task other:             {other_ms:7.1f}ms  {bar(other_ms)}", file=sys.stderr)
-
-        if hooks_called:
-            avg_ms = hooks_ms / len(hooks_called)
-            print(f"  hooks total:            {hooks_ms:7.1f}ms  {bar(hooks_ms)}", file=sys.stderr)
-            for name in hooks_called:
-                print(f"    └─ {name}", file=sys.stderr)
-            if len(hooks_called) > 1:
-                print(f"       (~{avg_ms:.0f}ms avg per hook)", file=sys.stderr)
-        else:
-            print(f"  hooks:                  {hooks_ms:7.1f}ms  (none fired)", file=sys.stderr)
-
-        print(f"  {'─'*W}", file=sys.stderr)
-        print(f"  task total (Perf):      {task_ms:7.1f}ms", file=sys.stderr)
-        print(f"  wall clock:             {total_wall_ms:7.1f}ms", file=sys.stderr)
-
-    else:
-        if hooks_called:
-            print(f"  hooks fired ({len(hooks_called)}):", file=sys.stderr)
-            for name in hooks_called:
-                print(f"    └─ {name}", file=sys.stderr)
-        else:
-            print(f"  (no hooks fired)", file=sys.stderr)
-        print(f"  {'─'*W}", file=sys.stderr)
-        print(f"  wall clock:             {total_wall_ms:7.1f}ms", file=sys.stderr)
-
-    print(f"  {'─'*W}", file=sys.stderr)
-    return result.returncode
-
-
-def pass_through_to_task(args):
-    """Pass command through to task"""
-    try:
         # Find task executable
         task_bin = shutil.which('task')
         if not task_bin:
-            print("[tw] ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¿Ãƒâ€šÃ‚Â½ task executable not found")
+            print("[tw] Error: task executable not found")
             return 1
-        
+
         # Execute task with arguments
         result = subprocess.run([task_bin] + args, check=False)
         return result.returncode
-        
+
     except Exception as e:
-        print(f"[tw] ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¿Ãƒâ€šÃ‚Â½ Error executing task: {e}")
+        print(f"[tw] Error executing task: {e}")
         return 1
 
 def generate_bash_completion():
@@ -3190,7 +3093,7 @@ def main():
             if debug_wrapper:
                 print(f"[tw-debug] First arg not a tw flag, passing through to task", file=sys.stderr)
                 print(f"[tw-debug] Executing: task {' '.join(sys.argv[1:])}", file=sys.stderr)
-            return pass_through_to_task(sys.argv[1:])
+            return pass_through_to_task(sys.argv[1:], debug_wrapper=debug_wrapper)
     
     # If we get here, either no args or first arg is a valid tw flag
     if debug_wrapper:
@@ -3256,7 +3159,6 @@ def main():
     parser.add_argument('-A', '--attach', metavar='TASKID', help='Attach file to task using ranger')
     parser.add_argument('--generate-completion', metavar='SHELL', help='Generate completion script (bash|zsh|fish)')
     parser.add_argument('--install-completion', metavar='SHELL', help='Install completion script (bash|zsh|fish)')
-    parser.add_argument('--timing', action='store_true', help='Show per-hook timing after task command')
     
     # Parse ONLY the consecutive flags from the beginning
     # Use our pre-split args_for_parser instead of letting argparse scan everything
@@ -3334,7 +3236,6 @@ def main():
             ("-u", "APP",      "--update",              "APP",     "Update an application"),
             ("-v", "",         "--version",             "",        "Show tw and taskwarrior versions"),
             ("",   "",         "--verify",              "APP",     "Verify application checksums"),
-            ("",   "",         "--timing",              "[cmd]",   "Show per-hook timing breakdown"),
         ]
         for short, sparam, long, lparam, desc in entries:
             c1 = f"{short} {sparam}".strip() if short else ""
@@ -3368,9 +3269,6 @@ def main():
         row("-p list",     "--pager list",           "Use pager for long output")
         row("-p next +work","",                      "Page through filtered report")
         row("-A 42",       "--attach 42",            "Attach file to task using ranger")
-        print("\nTiming and Diagnostics:")
-        row("",            "--timing [cmd]",         "Show per-hook timing breakdown")
-        row("",            "--timing add ...",       "Time a specific task command")
         # Context and dot-shortcut sections use wider command column
         def cmd_row(cmd, desc):
             print(f"       {cmd:42s} {desc}")
@@ -3404,10 +3302,18 @@ def main():
         wmgr = WrapperManager()
         wrappers = wmgr.list_wrappers()
         if wrappers:
-            print("\nInstalled Wrappers:")
-            for kw, info in sorted(wrappers.items()):
-                desc = info.get('description', '')
-                cmd_row(f"<id> {kw}[.<N>]", f"{desc} (via {info['script']})")
+            cmd_wrappers    = {k: v for k, v in wrappers.items() if v.get('type', 'command') == 'command'}
+            filter_wrappers = {k: v for k, v in wrappers.items() if v.get('type') == 'filter'}
+            if cmd_wrappers:
+                print("\nInstalled Command Wrappers:")
+                for kw, info in sorted(cmd_wrappers.items()):
+                    desc = info.get('description', '')
+                    cmd_row(f"<id> {kw}[.<N>]", f"{desc} (via {info['script']})")
+            if filter_wrappers:
+                print("\nInstalled Filter Wrappers (applied to all report output):")
+                for kw, info in sorted(filter_wrappers.items()):
+                    desc = info.get('description', '')
+                    cmd_row(f"{kw}", f"{desc} (via {info['script']})")
         
         print()
         print("All other arguments are passed directly to Taskwarrior.")
@@ -3457,10 +3363,6 @@ def main():
         else:
             # No command given - use default report
             return run_with_pager([])
-    
-    # Handle timing - run task with hook debug output and report breakdown
-    if args.timing:
-        return run_with_timing(remaining if remaining else [])
     
     if args.shell:
         # Parse trailing arguments after --shell
@@ -3579,7 +3481,7 @@ def main():
     
     # If no tw commands, pass through to task
     if remaining or (not any(vars(args).values())):
-        return pass_through_to_task(remaining if remaining else sys.argv[1:])
+        return pass_through_to_task(remaining if remaining else sys.argv[1:], debug_wrapper=debug_wrapper)
     
     return 0
 

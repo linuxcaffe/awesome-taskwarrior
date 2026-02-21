@@ -11,7 +11,7 @@ This tool provides a full workflow from development through deployment:
 Single command pipeline: make-awesome.py "commit message"
   Runs: debug -> test -> install -> push (each stage gated on previous success)
 
-Version: 4.6.0
+Version: 4.7.0
 """
 
 import sys
@@ -24,7 +24,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
 
-VERSION = "4.6.0"
+VERSION = "4.7.0"
 
 # ANSI color codes
 class Colors:
@@ -540,6 +540,7 @@ class ProjectInfo:
         # Wrapper-specific fields
         self.wrapper_keyword = ""
         self.wrapper_script = ""
+        self.wrapper_type = "command"  # 'command' or 'filter'
 
 
 def detect_project_info() -> ProjectInfo:
@@ -723,6 +724,8 @@ def prompt_for_metadata(info: ProjectInfo) -> bool:
                         info.wrapper_keyword = line.split('=', 1)[1].strip()
                     elif line.startswith('wrapper.script='):
                         info.wrapper_script = line.split('=', 1)[1].strip()
+                    elif line.startswith('wrapper.type='):
+                        info.wrapper_type = line.split('=', 1)[1].strip()
                     elif line.startswith('base_url='):
                         # Extract branch from base_url
                         url = line.split('=', 1)[1].strip()
@@ -769,6 +772,14 @@ def prompt_for_metadata(info: ProjectInfo) -> bool:
         if not info.wrapper_script:
             error("Wrapper script name required")
             return False
+        
+        # Wrapper type: command (keyword dispatch) or filter (output filter)
+        current_wtype = info.wrapper_type or 'command'
+        print(f"Wrapper type: (1) command  — keyword in args triggers dispatch (e.g., annn)")
+        print(f"              (2) filter   — pipes all report output through script (e.g., nicedates)")
+        wtype_map = {'1': 'command', '2': 'filter', 'command': 'command', 'filter': 'filter'}
+        response = input(f"Select [{current_wtype}]: ").strip().lower()
+        info.wrapper_type = wtype_map.get(response, current_wtype)
     
     # Description with default if available
     if info.description:
@@ -915,6 +926,7 @@ def generate_meta_file(info: ProjectInfo) -> bool:
             if info.type == 'wrapper':
                 f.write(f"\nwrapper.keyword={info.wrapper_keyword}\n")
                 f.write(f"wrapper.script={info.wrapper_script}\n")
+                f.write(f"wrapper.type={info.wrapper_type}\n")
         
         success(f"Created {meta_file}")
         return True
@@ -1101,8 +1113,8 @@ def generate_installer(info: ProjectInfo) -> bool:
                 f.write('    WRAPPERS_FILE="${HOME}/.task/config/.tw_wrappers"\n')
                 f.write('    mkdir -p "$(dirname "$WRAPPERS_FILE")"\n')
                 f.write(f'    if ! grep -q "^{info.wrapper_keyword}|" "$WRAPPERS_FILE" 2>/dev/null; then\n')
-                f.write(f'        echo "{info.wrapper_keyword}|{info.wrapper_script}|{info.description}" >> "$WRAPPERS_FILE"\n')
-                f.write(f'        tw_msg "Registered wrapper: {info.wrapper_keyword} -> {info.wrapper_script}"\n')
+                f.write(f'        echo "{info.wrapper_keyword}|{info.wrapper_script}|{info.description}|{info.wrapper_type}" >> "$WRAPPERS_FILE"\n')
+                f.write(f'        tw_msg "Registered wrapper: {info.wrapper_keyword} -> {info.wrapper_script} ({info.wrapper_type})"\n')
                 f.write(f'        debug_msg "Registered wrapper in .tw_wrappers" 2\n')
                 f.write('    else\n')
                 f.write(f'        tw_msg "Wrapper already registered: {info.wrapper_keyword}"\n')
