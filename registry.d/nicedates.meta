@@ -10,7 +10,7 @@ base_url=https://raw.githubusercontent.com/linuxcaffe/tw-nicedates-hook/main
 files=nicedates:script,nicedates.rc:config,README.md:doc
 tags=nice, readable, dates, time, reports, wrapper
 
-checksums=50a98ac33c60ecc8cb4ef1d8a6fee44359157f674758226c1d2059bade16b138,939467003ddba4bf30426ea93ecac081b1ec9ca33c861aa3340dd6ef64bfe545,b249b70d8ed80efe86739574960b5dc31157086d01f9531261a82903ca0098d1
+checksums=d80b4ec66e55a74a8e2a38f875f8ea8d42a5a3ea2c666b18826fa1f16bff2045,939467003ddba4bf30426ea93ecac081b1ec9ca33c861aa3340dd6ef64bfe545,b249b70d8ed80efe86739574960b5dc31157086d01f9531261a82903ca0098d1
 
 author=Designed by linuxcaffe, coded by Claude
 license=MIT
