@@ -16,6 +16,6 @@ author=Designed by linuxcaffe, coded by Claude
 license=MIT
 requires_taskwarrior=2.6.0
 
-wrapper.keyword=nicedates
+wrapper.keyword=--dates
 wrapper.script=nicedates
 wrapper.type=filter
