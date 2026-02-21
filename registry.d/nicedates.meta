@@ -2,7 +2,7 @@
 # Transforms report dates to human readable; Today, Friday, Feb20, etc
 
 name=nicedates
-version=1.0.1
+version=1.0.2
 type=wrapper
 description=Transforms report dates to human readable; Today, Friday, Feb20, etc
 repo=https://github.com/linuxcaffe/tw-nicedates-hook
@@ -10,7 +10,7 @@ base_url=https://raw.githubusercontent.com/linuxcaffe/tw-nicedates-hook/main
 files=nicedates:script,nicedates.rc:config,README.md:doc
 tags=nice, readable, dates, time, reports, wrapper
 
-checksums=d1a432e1fd2e9a61c887274c7a6abba3ba5948ff802ae52b68b65842e85053d4,939467003ddba4bf30426ea93ecac081b1ec9ca33c861aa3340dd6ef64bfe545,b249b70d8ed80efe86739574960b5dc31157086d01f9531261a82903ca0098d1
+checksums=ac109f57f3d38621afd61eaa53b34d6b20c804e9f821da460b015d32ce593967,36ba2928f6fb22c9064e0d6bec362fe2a1b16bf9728b21c4b459d5fc1eb8da78,b249b70d8ed80efe86739574960b5dc31157086d01f9531261a82903ca0098d1
 
 author=Designed by linuxcaffe, coded by Claude
 license=MIT
