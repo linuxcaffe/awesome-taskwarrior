@@ -19,6 +19,7 @@ Updates in v2.8.0:
 - Perf: build_combined_filter() reuses single TaskRC instance (one parse per operation)
 - Fixed: Context definitions in included files (tod.rc etc.) now correctly visible
 - Fixed: Legacy single-key context format (context.name=filter) supported alongside .read/.write
+- Added: --timing flag — per-hook wall-clock breakdown using rc.debug.hooks=1
 
 Architecture Changes in v2.0.0:
 - Removed git-based operations
@@ -461,7 +462,7 @@ class RegistryManager:
             apps = [item['name'][:-5] for item in data if item['name'].endswith('.meta')]
             debug(f"Found {len(apps)} apps on GitHub", 2)
             return sorted(apps)
-#TODO: clean up the utf8 crap        
+        
         except (URLError, HTTPError) as e:
             print(f"[tw] ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ï¿½ Failed to fetch registry from GitHub: {e}")
             return []
@@ -1213,7 +1214,6 @@ class AppManager:
     
     def verify(self, app_name):
         """Verify checksums of installed files"""
-#TODO: more utf8 crap
         if not self.manifest.is_installed(app_name):
             print(f"[tw] ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¿Ãƒâ€šÃ‚Â½ Not installed: {app_name}")
             return False
@@ -1817,7 +1817,8 @@ def validate_first_arg_flag(args):
     known_short = ['-I', '-r', '-u', '-l', '-i', '-v', '-h', '-s', '-p', '-A']
     known_long = ['--install', '--remove', '--update', '--list', '--info', 
                   '--verify', '--tags', '--dry-run', '--debug', 
-                  '--version', '--help', '--shell', '--pager', '--attach', '--generate-completion', '--install-completion']
+                  '--version', '--help', '--shell', '--pager', '--attach', '--generate-completion', '--install-completion',
+                  '--timing']
     
     # Check if it's a known flag (exact match)
     if first_arg in known_short or first_arg in known_long:
@@ -2414,6 +2415,146 @@ def run_with_pager(task_args):
         print(f"[tw] Error using pager: {e}", file=sys.stderr)
         # Fall back to normal execution
         return pass_through_to_task(task_args)
+
+def run_with_timing(args):
+    """Run task command with rc.debug.hooks=1 and report per-hook timing.
+    
+    task 2.6.2 writes debug output (Hook:, Perf, Found, Timer lines) to STDOUT,
+    interleaved with normal task output. We capture stdout, split debug lines from
+    real output, print real output to terminal, parse debug lines for timing data.
+    
+    Hook feedback from hook scripts goes to stderr and is passed through unchanged.
+    tw's own overhead is measured with perf_counter around the subprocess.
+    """
+    import time
+    import re
+    
+    task_bin = shutil.which('task')
+    if not task_bin:
+        print("[tw] [X] task executable not found")
+        return 1
+    
+    # rc.debug.hooks=1 activates Hook:/Perf/Found lines on stderr
+    cmd = [task_bin, 'rc.debug.hooks=1'] + args
+    
+    tw_start = time.perf_counter()
+    try:
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,   # capture — debug lines mixed with task output
+            stderr=subprocess.PIPE,   # capture — hook script feedback
+            text=True,
+            check=False
+        )
+    except Exception as e:
+        print(f"[tw] Error running task: {e}", file=sys.stderr)
+        return 1
+    tw_end = time.perf_counter()
+    total_wall_ms = (tw_end - tw_start) * 1000
+    
+    # --- Parse stderr for timing data ---
+    # rc.debug.hooks=1 emits on stderr:
+    #   Hook: Calling /path/hook.py     (one per hook fired)
+    #   Perf task 2.6.2 ... hooks:N total:N  (aggregate, microseconds)
+    # task 2.6.2 does NOT emit per-hook Timer lines — hooks:N is the only breakdown.
+
+    hooks_called  = []   # basenames in call order
+    perf          = {}
+
+    perf_start_re = re.compile(r'^Perf\s+task\s+')
+    perf_kv_re    = re.compile(r'(\w+):(\d+)')
+    calling_re    = re.compile(r'^Hook: Calling (.+)$')
+    debug_res     = [
+        re.compile(r'^Hook:'),
+        re.compile(r'^Found (?:hook|misnamed)'),
+        re.compile(r'^Perf '),
+        re.compile(r'^Timer '),
+        re.compile(r'^Configuration override'),
+        re.compile(r'^Applying context'),
+        re.compile(r'^Detected context'),
+        re.compile(r'^\s+\S+\.data\s+rw'),   # data file I/O stats
+        re.compile(r'^\s+MODIFICATION '),     # tod.py modification lines
+        re.compile(r'^DEBUG'),
+        re.compile(r'^Parse Tree'),           # rc.debug=1 parse tree header
+        re.compile(r'^\s+_(?:original_)?args'),  # parse tree sections
+        re.compile(r'^\s+/usr/'),             # parse tree binary path
+        re.compile(r'^\s+word '),             # parse tree tokens
+        re.compile(r'^\s+pair '),
+        re.compile(r'^\s+identifier '),
+        re.compile(r'^\s+tag '),
+        re.compile(r'^\s+task rc\.'),         # hook's copy of the command
+    ]
+
+    # stdout is clean task output — print directly
+    if result.stdout:
+        print(result.stdout, end='')
+
+    # Parse stderr: extract timing data, suppress debug noise, pass real messages
+    for line in result.stderr.splitlines():
+        m = calling_re.match(line)
+        if m:
+            hooks_called.append(Path(m.group(1)).name)
+            continue
+        if perf_start_re.match(line):
+            perf = {k: int(v) for k, v in perf_kv_re.findall(line)}
+            continue
+        if any(r.match(line) for r in debug_res):
+            continue
+        # Real message (project notices, hook feedback) — pass through
+        print(line, file=sys.stderr)
+
+    # --- Render timing report ---
+    W       = 52
+    cmd_str = ' '.join(args) if args else '(default)'
+
+    print(f"\n[tw timing] task {cmd_str}", file=sys.stderr)
+    print(f"  {'─'*W}", file=sys.stderr)
+
+    def bar(ms, scale=50):
+        return '█' * min(int(ms / scale), 20)
+
+    if perf:
+        init_ms  = (perf.get('init',0) + perf.get('load',0) + perf.get('gc',0))   / 1000
+        work_ms  = (perf.get('filter',0) + perf.get('commit',0) +
+                    perf.get('sort',0)   + perf.get('render',0))                   / 1000
+        hooks_ms =  perf.get('hooks', 0) / 1000
+        other_ms =  perf.get('other', 0) / 1000
+        task_ms  =  perf.get('total', 0) / 1000
+        tw_ms    =  total_wall_ms - task_ms
+
+        print(f"  tw wrapper overhead:    {tw_ms:7.1f}ms", file=sys.stderr)
+        print(f"  task init/load/gc:      {init_ms:7.1f}ms  {bar(init_ms)}", file=sys.stderr)
+        print(f"  task filter/commit/etc: {work_ms:7.1f}ms  {bar(work_ms)}", file=sys.stderr)
+        if other_ms:
+            print(f"  task other:             {other_ms:7.1f}ms  {bar(other_ms)}", file=sys.stderr)
+
+        if hooks_called:
+            avg_ms = hooks_ms / len(hooks_called)
+            print(f"  hooks total:            {hooks_ms:7.1f}ms  {bar(hooks_ms)}", file=sys.stderr)
+            for name in hooks_called:
+                print(f"    └─ {name}", file=sys.stderr)
+            if len(hooks_called) > 1:
+                print(f"       (~{avg_ms:.0f}ms avg per hook)", file=sys.stderr)
+        else:
+            print(f"  hooks:                  {hooks_ms:7.1f}ms  (none fired)", file=sys.stderr)
+
+        print(f"  {'─'*W}", file=sys.stderr)
+        print(f"  task total (Perf):      {task_ms:7.1f}ms", file=sys.stderr)
+        print(f"  wall clock:             {total_wall_ms:7.1f}ms", file=sys.stderr)
+
+    else:
+        if hooks_called:
+            print(f"  hooks fired ({len(hooks_called)}):", file=sys.stderr)
+            for name in hooks_called:
+                print(f"    └─ {name}", file=sys.stderr)
+        else:
+            print(f"  (no hooks fired)", file=sys.stderr)
+        print(f"  {'─'*W}", file=sys.stderr)
+        print(f"  wall clock:             {total_wall_ms:7.1f}ms", file=sys.stderr)
+
+    print(f"  {'─'*W}", file=sys.stderr)
+    return result.returncode
+
 
 def pass_through_to_task(args):
     """Pass command through to task"""
@@ -3115,6 +3256,7 @@ def main():
     parser.add_argument('-A', '--attach', metavar='TASKID', help='Attach file to task using ranger')
     parser.add_argument('--generate-completion', metavar='SHELL', help='Generate completion script (bash|zsh|fish)')
     parser.add_argument('--install-completion', metavar='SHELL', help='Install completion script (bash|zsh|fish)')
+    parser.add_argument('--timing', action='store_true', help='Show per-hook timing after task command')
     
     # Parse ONLY the consecutive flags from the beginning
     # Use our pre-split args_for_parser instead of letting argparse scan everything
@@ -3192,6 +3334,7 @@ def main():
             ("-u", "APP",      "--update",              "APP",     "Update an application"),
             ("-v", "",         "--version",             "",        "Show tw and taskwarrior versions"),
             ("",   "",         "--verify",              "APP",     "Verify application checksums"),
+            ("",   "",         "--timing",              "[cmd]",   "Show per-hook timing breakdown"),
         ]
         for short, sparam, long, lparam, desc in entries:
             c1 = f"{short} {sparam}".strip() if short else ""
@@ -3225,6 +3368,9 @@ def main():
         row("-p list",     "--pager list",           "Use pager for long output")
         row("-p next +work","",                      "Page through filtered report")
         row("-A 42",       "--attach 42",            "Attach file to task using ranger")
+        print("\nTiming and Diagnostics:")
+        row("",            "--timing [cmd]",         "Show per-hook timing breakdown")
+        row("",            "--timing add ...",       "Time a specific task command")
         # Context and dot-shortcut sections use wider command column
         def cmd_row(cmd, desc):
             print(f"       {cmd:42s} {desc}")
@@ -3311,6 +3457,10 @@ def main():
         else:
             # No command given - use default report
             return run_with_pager([])
+    
+    # Handle timing - run task with hook debug output and report breakdown
+    if args.timing:
+        return run_with_timing(remaining if remaining else [])
     
     if args.shell:
         # Parse trailing arguments after --shell
