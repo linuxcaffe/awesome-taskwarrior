@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 tw - awesome-taskwarrior package manager and wrapper
-Version: 2.9.0
+Version: 2.9.3
 
 A unified wrapper for Taskwarrior that provides:
 - Transparent pass-through to task command
@@ -10,6 +10,11 @@ A unified wrapper for Taskwarrior that provides:
 - Per-file manifest tracking
 - Checksum verification
 - Dev mode indicator for local development
+
+Updates in v2.9.1:
+- Fixed: run_through_filters() now runs task via PTY (preserving colors/width)
+- Fixed: find_keyword() now skips filter-type wrappers (they are not command dispatchers)
+- Changed: Filter chain uses communicate() for sequential stdin/stdout handoff
 
 Updates in v2.9.0:
 - Added: filter wrapper type in .tw_wrappers (type=filter field)
@@ -94,6 +99,7 @@ Updates in v2.1.2:
 
 import sys
 import os
+import re
 import subprocess
 import argparse
 from pathlib import Path
@@ -371,6 +377,9 @@ class WrapperManager:
         for i, arg in enumerate(args):
             # Check each registered keyword
             for keyword in self.wrappers:
+                # Skip filter-type wrappers — they are not command dispatchers
+                if self.wrappers[keyword].get('type') == 'filter':
+                    continue
                 # Exact match: "ann"
                 if arg == keyword:
                     filter_args = args[:i]
@@ -473,18 +482,22 @@ class WrapperManager:
         return None
 
     def run_through_filters(self, task_args, debug_wrapper=False):
-        """Run task and pipe output through all registered filter wrappers.
-        
-        Chains filters in registration order:
-            task [args] | filter1 | filter2 | ...
-        
+        """Run task via PTY (preserving colors) and pipe output through filter wrappers.
+
+        Uses a pseudo-terminal so task produces full color/width output, then
+        feeds the captured bytes through each registered filter in order:
+            task [args]  ->  PTY capture  ->  filter1.stdin  ->  terminal
+
         Returns exit code of the task process.
         """
+        import pty
+        import select as _select
+
         filters = self.get_filters()
         if not filters:
-            return None  # No filters — caller should use normal passthrough
+            return None  # No filters -- caller should use normal passthrough
 
-        # Resolve all filter scripts first — fail early if any missing
+        # Resolve all filter scripts first -- fail early if any missing
         resolved = []
         for f in filters:
             script_path = self.resolve_script(f['script'])
@@ -493,53 +506,113 @@ class WrapperManager:
                 print(f"[tw] Searched PATH and ~/.task/scripts/")
                 return 1
             resolved.append(script_path)
-            debug(f"WrapperManager: filter resolved: {f['keyword']} → {script_path}", 2)
+            debug(f"WrapperManager: filter resolved: {f['keyword']} -> {script_path}", 2)
 
         if debug_wrapper:
             chain = ' | '.join([f"task {' '.join(task_args)}"] + resolved)
-            print(f"[tw-debug] Filter chain: {chain}", file=sys.stderr)
+            print(f"[tw-debug] Filter chain (PTY): {chain}", file=sys.stderr)
 
-        # Build process chain: task | filter1 | filter2 | ...
-        # Each process's stdout feeds the next's stdin.
-        procs = []
-
-        # Start task process
         task_bin = shutil.which('task')
         if not task_bin:
             print("[tw] Error: task executable not found")
             return 1
 
-        task_proc = subprocess.Popen(
-            [task_bin] + task_args,
-            stdout=subprocess.PIPE,
-            stderr=None,   # inherit stderr (task errors go to terminal)
-        )
-        procs.append(task_proc)
-        prev_stdout = task_proc.stdout
+        # Get terminal dimensions so task renders at the correct width
+        try:
+            term_cols, term_rows = os.get_terminal_size()
+        except OSError:
+            term_cols, term_rows = 80, 24
 
-        # Chain filter processes
+        env = os.environ.copy()
+        env['COLUMNS'] = str(term_cols)
+        env['LINES']   = str(term_rows)
+
+        # Run task under a PTY so it believes it has a real terminal
+        master_fd, slave_fd = pty.openpty()
+
+        # Inject rc overrides so task outputs the canonical date format
+        # that filter scripts (e.g. nicedates) expect to parse.
+        rc_overrides = [
+            'rc._forcecolor=on',
+            'rc.dateformat=Y-M-D H:N:S',
+            'rc.verbose=all,-override',
+        ]
+        task_proc = subprocess.Popen(
+            [task_bin] + rc_overrides + task_args,
+            stdin=slave_fd,
+            stdout=slave_fd,
+            stderr=slave_fd,
+            env=env,
+        )
+        os.close(slave_fd)
+
+        # Drain the PTY master into a buffer
+        output = b''
+        while True:
+            ready, _, _ = _select.select([master_fd], [], [], 0.1)
+            if ready:
+                try:
+                    chunk = os.read(master_fd, 4096)
+                    if not chunk:
+                        break
+                    output += chunk
+                except OSError:
+                    break
+            elif task_proc.poll() is not None:
+                # Process exited -- drain any remaining bytes
+                try:
+                    chunk = os.read(master_fd, 4096)
+                    output += chunk
+                except OSError:
+                    pass
+                break
+
+        os.close(master_fd)
+        task_proc.wait()
+        task_rc = task_proc.returncode
+        debug(f"WrapperManager: task exit={task_rc}, captured {len(output)} bytes", 2)
+
+        # Chain filter processes: feed PTY output into first filter's stdin.
+        # For a single filter (common case), communicate() is simplest.
+        # For multiple filters, chain communicate() calls in sequence.
+
+        # Set NICEDATES_REPORT so filter scripts can honour nice.reports=
+        # Detect the report name using the same logic as _args_have_report()
+        filter_env = os.environ.copy()
+        for arg in task_args:
+            if arg.startswith('rc.') or arg.startswith('rc:'):
+                continue
+            if arg.startswith('+') or arg.startswith('-') or ':' in arg:
+                continue
+            if arg.isdigit():
+                continue
+            if arg.startswith('--') or (arg.startswith('-') and len(arg) == 2):
+                continue
+            if re.match(r'^[a-z][a-z0-9._]*$', arg) and arg not in _TASK_NONREPORT_COMMANDS:
+                filter_env['NICEDATES_REPORT'] = arg
+                break
+
+        current_input = output
         for i, script_path in enumerate(resolved):
             is_last = (i == len(resolved) - 1)
             filter_proc = subprocess.Popen(
                 [script_path],
-                stdin=prev_stdout,
+                stdin=subprocess.PIPE,
                 stdout=None if is_last else subprocess.PIPE,
-                stderr=None,  # inherit stderr
+                stderr=None,  # inherit stderr so filter messages reach terminal
+                env=filter_env,
             )
-            procs.append(filter_proc)
-            if not is_last:
-                prev_stdout = filter_proc.stdout
+            if is_last:
+                # Last filter streams directly to terminal (stdout=None=inherited)
+                filter_proc.stdin.write(current_input)
+                filter_proc.stdin.close()
+                filter_proc.wait()
+            else:
+                # Intermediate filter: capture output for next stage
+                stdout_bytes, _ = filter_proc.communicate(input=current_input)
+                current_input = stdout_bytes
 
-        # Close upstream pipe ends (avoid blocking)
-        for proc in procs[:-1]:
-            if proc.stdout and proc.stdout != prev_stdout:
-                pass  # already handed to next process
-        
-        # Wait for all processes
-        for proc in procs:
-            proc.wait()
-
-        return procs[0].returncode  # task's exit code is authoritative
+        return task_rc  # task's exit code is authoritative
 
 
 
@@ -2452,12 +2525,52 @@ def run_with_pager(task_args):
         # Fall back to normal execution
         return pass_through_to_task(task_args)
 
+# Task commands that modify state or produce non-report output.
+# Filter wrappers (e.g. nicedates) are skipped for these — they only
+# make sense for report commands that produce tabular date output.
+_TASK_NONREPORT_COMMANDS = {
+    'add', 'modify', 'done', 'delete', 'rm', 'denotate', 'annotate',
+    'append', 'prepend', 'duplicate', 'start', 'stop', 'import', 'export',
+    'purge', 'undo', 'sync', 'execute', 'edit', 'logo', 'diagnostics',
+    'show', 'config', 'context', 'help', 'version', 'calc', 'columns',
+    'commands', 'reports', 'stats', 'tags', 'projects', 'timesheet',
+    'burndown', 'history', 'ghistory', 'calendar',
+}
+
+def _args_have_report(args):
+    """Return True if args look like a report invocation.
+
+    Skips rc.* overrides, tags (+/-), attribute:value pairs, numbers,
+    and known non-report task commands. If any bare lowercase word remains
+    that is NOT a known task command, we assume it could be a report name
+    and allow filter wrappers to run.
+    """
+    for arg in args:
+        if arg.startswith('rc.') or arg.startswith('rc:'):
+            continue
+        if arg.startswith('+') or arg.startswith('-'):
+            continue
+        if ':' in arg:
+            continue
+        if arg.isdigit():
+            continue
+        if arg.startswith('--') or (arg.startswith('-') and len(arg) == 2):
+            continue
+        if not re.match(r'^[a-z][a-z0-9._]*$', arg):
+            continue
+        if arg in _TASK_NONREPORT_COMMANDS:
+            return False  # definitely a command, not a report
+        return True  # bare word not in command list — likely a report
+    return True  # no bare word found — default report (e.g. bare 'tw' or 'tw +filter')
+
+
 def pass_through_to_task(args, debug_wrapper=False):
     """Pass command through to task, routing via filter wrappers if registered."""
     try:
-        # Check for filter-type wrappers — these intercept all task output
+        # Only route through filter wrappers for report-like invocations.
+        # Commands that modify state (add, done, rm, etc.) bypass filters.
         wrapper_mgr = WrapperManager()
-        if wrapper_mgr.get_filters():
+        if wrapper_mgr.get_filters() and _args_have_report(args):
             rc = wrapper_mgr.run_through_filters(args, debug_wrapper=debug_wrapper)
             if rc is not None:
                 return rc
