@@ -3,15 +3,16 @@
 make-awesome.py - Complete development-to-deployment pipeline for awesome-taskwarrior
 
 This tool provides a full workflow from development through deployment:
-- --debug: Enhance with debug infrastructure (tw --debug=2 compatible)
-- --test: Run test suite (tw --test compatible) [STUB]
+- --debug:  Enhance with debug infrastructure (tw --debug=2 compatible)
+- --timing: Inject TW_TIMING timing block (tw --timing compatible)
+- --test:   Run test suite (tw --test compatible) [STUB]
 - --install: Generate .install and .meta files for registry
-- --push: Git commit/push + registry update
+- --push:   Git commit/push + registry update
 
 Single command pipeline: make-awesome.py "commit message"
-  Runs: debug -> test -> install -> push (each stage gated on previous success)
+  Runs: debug -> timing -> test -> install -> push (each stage gated on previous success)
 
-Version: 4.7.0
+Version: 4.8.1
 """
 
 import sys
@@ -24,7 +25,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
 
-VERSION = "4.7.0"
+VERSION = "4.8.1"
 
 # ANSI color codes
 class Colors:
@@ -519,8 +520,158 @@ def cmd_debug(args) -> int:
 
 
 # ============================================================================
-# INSTALL Generation
+# TIMING Enhancement
 # ============================================================================
+
+# The timing block injected into each hook.
+# Placed immediately after the shebang so _t0 is set before any imports,
+# capturing full Python interpreter startup cost.
+# Uses atexit so the report fires at natural script exit regardless of
+# how the hook terminates.  All names are prefixed with _ to avoid
+# colliding with any hook's own namespace.
+_TIMING_BLOCK = '''\
+import os as _os_timing, time as _time_module
+if _os_timing.environ.get('TW_TIMING'):
+    import atexit as _atexit
+    _t0 = _time_module.perf_counter()
+
+    def _report_timing():
+        elapsed = (_time_module.perf_counter() - _t0) * 1000
+        import os.path as _osp
+        print(f"[timing] {_osp.basename(__file__)}: {elapsed:.1f}ms", file=__import__('sys').stderr)
+
+    _atexit.register(_report_timing)
+
+'''
+
+
+def _find_shebang_line(lines: list) -> int:
+    """Return index of the line immediately after the shebang.
+
+    If no shebang is present, returns 0 (insert at very top).
+    The timing block must be the first real code after #!/usr/bin/env python3
+    so that _t0 is set before any other imports run.
+    """
+    if lines and lines[0].startswith('#!'):
+        return 1
+    return 0
+
+
+def inject_timing_block(filepath: str, force: bool = False) -> bool:
+    """Inject the TW_TIMING block into a Python hook file.
+
+    Inserts immediately after the shebang line so _t0 is set before any
+    other imports, capturing full Python interpreter startup cost.
+
+    Idempotent: skips if TW_TIMING already present unless force=True.
+    On --force, strips the existing block before re-injecting.
+    """
+    with open(filepath, 'r') as f:
+        content = f.read()
+        lines = content.splitlines(keepends=True)
+
+    if 'TW_TIMING' in content:
+        if not force:
+            warn(f"Already timed: {filepath}")
+            return False  # False = skipped, not an error
+        else:
+            msg(f"--force: re-injecting timing block into {filepath}")
+            # Strip old block. The block starts at a known marker line and
+            # ends at the first blank line that follows '_atexit.register'.
+            # We can't stop on the first blank because the block itself
+            # contains internal blank lines.
+            strip_markers = (
+                'import os as _os_timing',        # new-style block start
+                '# Timing support',                # old-style banner
+                "if os.environ.get('TW_TIMING')",  # old-style (no banner)
+            )
+            new_lines = []
+            skip = False
+            seen_register = False
+            for line in lines:
+                if not skip and any(line.startswith(m) for m in strip_markers):
+                    skip = True
+                    seen_register = False
+                    continue
+                if skip:
+                    if '_atexit.register' in line:
+                        seen_register = True
+                        continue
+                    if seen_register and line.strip() == '':
+                        # Trailing blank after register — done stripping
+                        skip = False
+                        seen_register = False
+                    continue
+                new_lines.append(line)
+            lines = new_lines
+
+    idx = _find_shebang_line(lines)
+
+    lines = lines[:idx] + _TIMING_BLOCK.splitlines(keepends=True) + lines[idx:]
+
+    # Backup original (only if no .orig already exists)
+    orig_path = Path(filepath).with_suffix(Path(filepath).suffix + '.orig')
+    if not orig_path.exists():
+        msg(f"Backing up to: {orig_path.name}")
+        Path(filepath).rename(orig_path)
+    else:
+        msg(f"Backup exists: {orig_path.name} (overwriting source only)")
+        Path(filepath).unlink()
+
+    with open(filepath, 'w') as f:
+        f.writelines(lines)
+
+    if orig_path.exists() and os.access(orig_path, os.X_OK):
+        os.chmod(filepath, os.stat(orig_path).st_mode)
+
+    success(f"Timing injected: {filepath}")
+    return True
+
+
+def cmd_timing(args) -> int:
+    """Inject TW_TIMING timing block into all hook Python files."""
+    msg("=" * 70)
+    msg(f"make-awesome.py v{VERSION} --timing")
+    msg("=" * 70)
+    print()
+
+    force = args and hasattr(args, 'force') and args.force
+
+    files = find_python_files()
+
+    if not files:
+        warn("No Python files found")
+        return 0
+
+    success(f"Found {len(files)} file(s)")
+    if force:
+        msg("--force enabled: will re-inject timing block in all files")
+    print()
+
+    injected = 0
+    skipped  = 0
+    for f in files:
+        try:
+            result = inject_timing_block(f, force=force)
+            if result:
+                injected += 1
+            else:
+                skipped += 1
+            print()
+        except Exception as e:
+            error(f"Failed: {f}: {e}")
+
+    if injected > 0:
+        success(f"Timing block injected into {injected} file(s)")
+    if skipped > 0:
+        msg(f"Skipped {skipped} file(s) (already timed; use --force to re-inject)")
+
+    msg("Triggered by: tw --timing")
+    print()
+
+    return 0 if (injected > 0 or skipped > 0) else 1
+
+
 
 class ProjectInfo:
     def __init__(self):
@@ -1444,34 +1595,40 @@ def cmd_pipeline(commit_msg: str) -> int:
     msg(f"Message: {commit_msg}")
     msg("=" * 70)
     print()
-    
-    msg("STAGE 1/4: Debug")
+
+    msg("STAGE 1/5: Debug")
     if cmd_debug(None) != 0:
         error("Debug failed")
         return 1
     print()
-    
-    msg("STAGE 2/4: Test")
+
+    msg("STAGE 2/5: Timing")
+    if cmd_timing(None) != 0:
+        error("Timing failed")
+        return 1
+    print()
+
+    msg("STAGE 3/5: Test")
     cmd_test(None)
     print()
-    
-    msg("STAGE 3/4: Install")
+
+    msg("STAGE 4/5: Install")
     if cmd_install(None) != 0:
         error("Install failed")
         return 1
     print()
-    
-    msg("STAGE 4/4: Push")
+
+    msg("STAGE 5/5: Push")
     if cmd_push(None, commit_msg) != 0:
         error("Push failed")
         return 1
     print()
-    
+
     msg("=" * 70)
     success("PIPELINE COMPLETE!")
     msg("=" * 70)
     print()
-    
+
     return 0
 
 
@@ -1484,11 +1641,13 @@ def main():
         description='make-awesome.py - Full pipeline tool',
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    
+
     parser.add_argument('commit_message', nargs='?',
                        help='Commit message (runs full pipeline)')
     parser.add_argument('--debug', action='store_true',
                        help='Debug enhancement')
+    parser.add_argument('--timing', action='store_true',
+                       help='Inject TW_TIMING timing block')
     parser.add_argument('--test', action='store_true',
                        help='Test suite [STUB]')
     parser.add_argument('--install', action='store_true',
@@ -1500,13 +1659,15 @@ def main():
                        help='Force re-enhancement of already enhanced files')
     parser.add_argument('--version', action='version',
                        version=f'v{VERSION}')
-    
+
     args = parser.parse_args()
-    
+
     if args.commit_message:
         return cmd_pipeline(args.commit_message)
     elif args.debug:
         return cmd_debug(args)
+    elif args.timing:
+        return cmd_timing(args)
     elif args.test:
         return cmd_test(args)
     elif args.install:

@@ -11,6 +11,12 @@ A unified wrapper for Taskwarrior that provides:
 - Checksum verification
 - Dev mode indicator for local development
 
+Updates in v2.10.1:
+- Changed: run_with_timing() sets TW_TIMING=1 in subprocess env
+- Added: Parses [timing] hook-name.py: Nms lines from instrumented hooks
+- Changed: Timing report shows per-hook self-reported ms alongside Perf aggregate
+- Note: hooks require make-awesome.py --timing instrumentation for per-hook data
+
 Updates in v2.10.0 (merge of v2.8.x perf + v2.9.x filter-wrapper):
 - Added: TaskRC class — direct ~/.taskrc + include file parsing (no subprocesses)
 - Perf: @+ / @- cmx operations reduced from ~12 subprocess spawns to 0
@@ -124,7 +130,7 @@ import tempfile
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 
-VERSION = "2.10.0"
+VERSION = "2.10.1"
 
 # GitHub configuration
 GITHUB_REPO = "linuxcaffe/awesome-taskwarrior"
@@ -2655,12 +2661,16 @@ def _args_have_report(args):
 
 
 def run_with_timing(args):
-    """Run task command with rc.debug.hooks=1 and report per-hook timing.
+    """Run task command with rc.debug.hooks=1 and TW_TIMING=1.
 
-    task 2.6.2 writes debug output (Hook:, Perf, Found lines) to stderr,
-    interleaved with hook feedback. We capture stderr, split debug lines from
-    real messages, print real messages to terminal, and parse debug lines for
-    timing data.  Normal task stdout is passed through unchanged.
+    Sets TW_TIMING=1 in the subprocess environment so that hooks
+    instrumented by make-awesome.py --timing self-report their elapsed
+    time on stderr as:
+        [timing] hook-name.py: 12.3ms
+
+    Also enables rc.debug.hooks=1 so task emits Hook:/Perf lines on
+    stderr for aggregate breakdown.  Both data streams are parsed and
+    rendered in a unified timing report.
 
     Returns exit code of the task process.
     """
@@ -2673,6 +2683,10 @@ def run_with_timing(args):
 
     cmd = [task_bin, 'rc.debug.hooks=1'] + args
 
+    # Set TW_TIMING=1 so instrumented hooks self-report
+    env = os.environ.copy()
+    env['TW_TIMING'] = '1'
+
     tw_start = time.perf_counter()
     try:
         result = subprocess.run(
@@ -2680,7 +2694,8 @@ def run_with_timing(args):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            check=False
+            check=False,
+            env=env,
         )
     except Exception as e:
         print(f"[tw] Error running task: {e}", file=sys.stderr)
@@ -2689,16 +2704,20 @@ def run_with_timing(args):
     total_wall_ms = (tw_end - tw_start) * 1000
 
     # --- Parse stderr for timing data ---
-    # rc.debug.hooks=1 emits on stderr:
-    #   Hook: Calling /path/hook.py     (one per hook fired)
+    # rc.debug.hooks=1 emits:
+    #   Hook: Calling /path/hook.py          (one per hook fired)
     #   Perf task 2.6.2 ... hooks:N total:N  (aggregate, microseconds)
+    # TW_TIMING=1 causes instrumented hooks to emit:
+    #   [timing] hook-name.py: 12.3ms        (self-reported wall clock)
 
-    hooks_called  = []
+    hooks_called  = []   # basenames in call order (from Hook: Calling)
+    hook_self_ms  = {}   # basename -> ms (from [timing] lines)
     perf          = {}
 
     perf_start_re = re.compile(r'^Perf\s+task\s+')
     perf_kv_re    = re.compile(r'(\w+):(\d+)')
     calling_re    = re.compile(r'^Hook: Calling (.+)$')
+    timing_re     = re.compile(r'^\[timing\]\s+(.+?):\s+([\d.]+)ms$')
     debug_res     = [
         re.compile(r'^Hook:'),
         re.compile(r'^Found (?:hook|misnamed)'),
@@ -2729,6 +2748,10 @@ def run_with_timing(args):
         m = calling_re.match(line)
         if m:
             hooks_called.append(Path(m.group(1)).name)
+            continue
+        m = timing_re.match(line)
+        if m:
+            hook_self_ms[m.group(1)] = float(m.group(2))
             continue
         if perf_start_re.match(line):
             perf = {k: int(v) for k, v in perf_kv_re.findall(line)}
@@ -2764,12 +2787,16 @@ def run_with_timing(args):
             print(f"  task other:             {other_ms:7.1f}ms  {bar(other_ms)}", file=sys.stderr)
 
         if hooks_called:
-            avg_ms = hooks_ms / len(hooks_called)
-            print(f"  hooks total:            {hooks_ms:7.1f}ms  {bar(hooks_ms)}", file=sys.stderr)
+            print(f"  hooks total (Perf):     {hooks_ms:7.1f}ms  {bar(hooks_ms)}", file=sys.stderr)
             for name in hooks_called:
-                print(f"    |_ {name}", file=sys.stderr)
-            if len(hooks_called) > 1:
-                print(f"       (~{avg_ms:.0f}ms avg per hook)", file=sys.stderr)
+                self_ms = hook_self_ms.get(name)
+                if self_ms is not None:
+                    print(f"    |_ {name:<36s} {self_ms:6.1f}ms  {bar(self_ms, scale=20)}", file=sys.stderr)
+                else:
+                    print(f"    |_ {name}  (no TW_TIMING data — run make-awesome.py --timing)", file=sys.stderr)
+            if len(hooks_called) > 1 and hook_self_ms:
+                avg_ms = sum(hook_self_ms.values()) / len(hook_self_ms)
+                print(f"       (~{avg_ms:.0f}ms avg per instrumented hook)", file=sys.stderr)
         else:
             print(f"  hooks:                  {hooks_ms:7.1f}ms  (none fired)", file=sys.stderr)
 
@@ -2777,10 +2804,15 @@ def run_with_timing(args):
         print(f"  task total (Perf):      {task_ms:7.1f}ms", file=sys.stderr)
         print(f"  wall clock:             {total_wall_ms:7.1f}ms", file=sys.stderr)
     else:
+        # No Perf data — show what we have from TW_TIMING lines
         if hooks_called:
             print(f"  hooks fired ({len(hooks_called)}):", file=sys.stderr)
             for name in hooks_called:
-                print(f"    |_ {name}", file=sys.stderr)
+                self_ms = hook_self_ms.get(name)
+                if self_ms is not None:
+                    print(f"    |_ {name:<36s} {self_ms:6.1f}ms  {bar(self_ms, scale=20)}", file=sys.stderr)
+                else:
+                    print(f"    |_ {name}  (no TW_TIMING data)", file=sys.stderr)
         else:
             print(f"  (no hooks fired)", file=sys.stderr)
         print(f"  {'─'*W}", file=sys.stderr)
