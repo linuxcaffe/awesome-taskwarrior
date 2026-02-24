@@ -2,7 +2,7 @@
 # Define blocks of time, add corresponding filters, apply context tod, hide non-matching tags
 
 name=tod-filter
-version=0.1.1
+version=0.1.2
 type=hook
 description=Define blocks of time, add corresponding filters, apply context tod, hide non-matching tags
 repo=https://github.com/linuxcaffe/tod-filter
@@ -10,7 +10,7 @@ base_url=https://raw.githubusercontent.com/linuxcaffe/tod-filter/main
 files=on-exit_tod.py:hook,on-launch_tod.py:hook,tod.rc:config,README.md:doc
 tags=time, blocks, tags, filter, focus, hook
 
-checksums=7c06359732498a7c9d7bda2162c4fcb6b4c10822f478f451af4533a54fe72439,0bcf6511f2d6edff4c96106e5bdf4d02d184b2d62886a63d5c3099f1ee3fb97e,fc7070b5d7cb3245f54e9bcc5adb9794e94f4d2f68382a9da79d10f51303470c,2e2e83588dd28ca06fba4d5e473e3b12b8b3e987a331cfe9e7e468f7e0b24cfc
+checksums=18804b0f9b5336466560849d7a3cde207673cb0b9f265ced4e45809510470aa0,714a4ec6482a2adcecd5266c4c8a61fca44a32eb4febda34fe817ee2efc8f763,cf979b4766494308195ff38133ee64d75e22358866a2074d501356609d2b0462,2e2e83588dd28ca06fba4d5e473e3b12b8b3e987a331cfe9e7e468f7e0b24cfc
 
 author=Designed by linuxcaffe, implemented by Claude Sonnet 4.5
 license=MIT
