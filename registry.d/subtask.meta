@@ -1,0 +1,15 @@
+# subtask.meta
+# Activates subtask annotations as real Taskwarrior dependent tasks on task start
+
+name=subtask
+version=1.0.0
+type=hook
+description=Activates subtask annotations (- [ ] …) as real dependent tasks when a parent task is started; updates annotation state when children complete or are deleted
+repo=https://github.com/linuxcaffe/tw-subtask-hook
+base_url=https://raw.githubusercontent.com/linuxcaffe/tw-subtask-hook/main
+files=on-modify_subtask.py:hook,subtask.rc:config,README.md:doc
+tags=subtask,dependency,hook,interactive,on-modify
+
+author=Designed by linuxcaffe, implemented by Claude Sonnet 4.6
+license=MIT
+requires_taskwarrior=2.6.0
