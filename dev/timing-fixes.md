@@ -1,0 +1,4 @@
+make-awesome.py v4.8.1. Summary of what changed:
+The timing block is now injected on line 2 — immediately after the shebang, before the docstring, before any imports. _t0 is set as the very first thing Python executes, so the self-reported time will now include interpreter startup, module import, and hook logic — the same wall-clock window that Perf measures from the outside.
+The --force strip logic was also fixed. The old version stopped on the first blank line inside the block; the new version waits for _atexit.register to appear and then consumes the trailing blank, so it strips the entire block regardless of internal whitespace.
+After you run make-awesome.py --timing --force across your hooks, the per-hook numbers in tw --timing should be much closer to what Perf reports for hooks total.
