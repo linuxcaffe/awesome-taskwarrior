@@ -562,7 +562,17 @@ class WrapperManager:
             # If action starts with "." or "-", combine with filter for dot syntax
             # e.g. filter=['42'], action=['.1'] → '42.1'
             # e.g. filter=['42'], action=['-ann.1'] → extract '-42.1'
-            filter_str = ' '.join(filter_args) if len(filter_args) > 1 else filter_args[0]
+            # Strip tw-own flags (--timing, --debug, etc.) that may precede the
+            # task ID when find_keyword() runs before argparse sees them.
+            task_filter_args = [a for a in filter_args if not a.startswith('--')]
+            if not task_filter_args:
+                # All filter args were tw flags — no task ID, dispatch without one
+                cmd.extend(action_args)
+                if debug_wrapper:
+                    print(f"[tw-debug] Wrapper dispatch: {' '.join(cmd)}", file=sys.stderr)
+                result = subprocess.run(cmd, check=False)
+                return result.returncode
+            filter_str = ' '.join(task_filter_args) if len(task_filter_args) > 1 else task_filter_args[0]
             
             if action_args and action_args[0].startswith('-' + keyword + '.'):
                 # Remove syntax: -ann.1 → -42.1

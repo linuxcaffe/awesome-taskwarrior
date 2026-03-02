@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ============================================================================
+# daily-email - Installer Script
+# Version: 0.1.0
+#
+# HANDCRAFTED — do not overwrite with make-awesome.py --install
+# This installer handles systemd units and config-preservation logic
+# that make-awesome.py cannot generate. Deploy via --push only.
+# ============================================================================
+
+VERSION="0.1.0"
+APPNAME="daily-email"
+BASE_URL="https://raw.githubusercontent.com/linuxcaffe/tw-daily-email/master"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+tw_msg()     { echo -e "${BLUE}[tw]${NC} $*"; }
+tw_success() { echo -e "${GREEN}[tw] [OK]${NC} $*"; }
+tw_error()   { echo -e "${RED}[tw] [FAIL]${NC} $*" >&2; }
+
+DEBUG_LEVEL="${TW_DEBUG:-0}"
+debug_msg() {
+    local msg="$1" level="${2:-1}"
+    [[ $DEBUG_LEVEL -ge $level ]] && echo -e "${BLUE}[DEBUG-$level]${NC} $msg" >&2 || true
+}
+
+# Directories
+HOME="${HOME:-$(eval echo ~$USER)}"
+TASK_DIR="${HOME}/.task"
+SCRIPTS_DIR="${TASK_DIR}/scripts"
+CONFIG_DIR="${TASK_DIR}/config"
+DOCS_DIR="${TASK_DIR}/docs"
+SYSTEMD_DIR="${HOME}/.config/systemd/user"
+MANIFEST_FILE="${CONFIG_DIR}/.tw_manifest"
+
+# ============================================================================
+# Installation
+# ============================================================================
+
+install() {
+    tw_msg "Installing daily-email v$VERSION..."
+
+    mkdir -p "$SCRIPTS_DIR" "$CONFIG_DIR" "$DOCS_DIR" "$SYSTEMD_DIR"
+
+    tw_msg "Downloading files..."
+
+    # Main script
+    curl -fsSL "$BASE_URL/tw-daily-email" -o "$SCRIPTS_DIR/tw-daily-email" || {
+        tw_error "Failed to download tw-daily-email"
+        return 1
+    }
+    chmod +x "$SCRIPTS_DIR/tw-daily-email"
+    debug_msg "Installed: $SCRIPTS_DIR/tw-daily-email" 2
+
+    # Config — only write if not already present (preserve user's settings)
+    if [[ ! -f "$CONFIG_DIR/daily-email.rc" ]]; then
+        curl -fsSL "$BASE_URL/daily-email.rc" -o "$CONFIG_DIR/daily-email.rc" || {
+            tw_error "Failed to download daily-email.rc"
+            return 1
+        }
+        debug_msg "Installed config: $CONFIG_DIR/daily-email.rc" 2
+    else
+        tw_msg "Config already exists, not overwriting: $CONFIG_DIR/daily-email.rc"
+    fi
+
+    # Systemd service
+    curl -fsSL "$BASE_URL/tw-daily-email.service" \
+        -o "$SYSTEMD_DIR/tw-daily-email.service" || {
+        tw_error "Failed to download tw-daily-email.service"
+        return 1
+    }
+    debug_msg "Installed: $SYSTEMD_DIR/tw-daily-email.service" 2
+
+    # Systemd timer
+    curl -fsSL "$BASE_URL/tw-daily-email.timer" \
+        -o "$SYSTEMD_DIR/tw-daily-email.timer" || {
+        tw_error "Failed to download tw-daily-email.timer"
+        return 1
+    }
+    debug_msg "Installed: $SYSTEMD_DIR/tw-daily-email.timer" 2
+
+    # Reload systemd so it sees the new units
+    if command -v systemctl &>/dev/null; then
+        systemctl --user daemon-reload 2>/dev/null || true
+        debug_msg "systemctl --user daemon-reload done" 2
+    fi
+
+    # Documentation
+    curl -fsSL "$BASE_URL/README.md" \
+        -o "$DOCS_DIR/daily-email_README.md" 2>/dev/null || true
+
+    # Manifest
+    local TIMESTAMP
+    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    mkdir -p "$(dirname "$MANIFEST_FILE")"
+    echo "$APPNAME|$VERSION|$SCRIPTS_DIR/tw-daily-email||$TIMESTAMP"        >> "$MANIFEST_FILE"
+    echo "$APPNAME|$VERSION|$CONFIG_DIR/daily-email.rc||$TIMESTAMP"         >> "$MANIFEST_FILE"
+    echo "$APPNAME|$VERSION|$SYSTEMD_DIR/tw-daily-email.service||$TIMESTAMP" >> "$MANIFEST_FILE"
+    echo "$APPNAME|$VERSION|$SYSTEMD_DIR/tw-daily-email.timer||$TIMESTAMP"  >> "$MANIFEST_FILE"
+    echo "$APPNAME|$VERSION|$DOCS_DIR/daily-email_README.md||$TIMESTAMP"    >> "$MANIFEST_FILE"
+
+    tw_success "Installed daily-email v$VERSION"
+    echo ""
+    tw_msg "Next steps:"
+    tw_msg "  1. Install msmtp:  sudo apt install msmtp msmtp-mta"
+    tw_msg "  2. Create ~/.msmtprc with your Gmail App Password (chmod 600)"
+    tw_msg "  3. Edit ~/.task/config/daily-email.rc — set daily.email"
+    tw_msg "  4. Test:  tw-daily-email"
+    tw_msg "  5. Enable timer:  systemctl --user enable --now tw-daily-email.timer"
+    echo ""
+    tw_msg "Documentation: $DOCS_DIR/daily-email_README.md"
+    echo ""
+
+    return 0
+}
+
+# ============================================================================
+# Removal
+# ============================================================================
+
+remove() {
+    tw_msg "Removing daily-email..."
+
+    [[ -f "$MANIFEST_FILE" ]] || { tw_error "Manifest not found"; return 1; }
+
+    # Stop and disable timer if running
+    if command -v systemctl &>/dev/null; then
+        systemctl --user disable --now tw-daily-email.timer 2>/dev/null || true
+        systemctl --user daemon-reload 2>/dev/null || true
+    fi
+
+    # Remove files listed in manifest
+    grep "^$APPNAME|" "$MANIFEST_FILE" | cut -d"|" -f3 | while read -r file; do
+        if [[ -f "$file" ]]; then
+            rm "$file"
+            tw_msg "Removed: $(basename "$file")"
+        fi
+    done
+
+    # Note: daily-email.rc is left in place to preserve user settings
+    tw_msg "Config preserved: $CONFIG_DIR/daily-email.rc"
+
+    sed -i.bak "/^$APPNAME|/d" "$MANIFEST_FILE"
+
+    tw_success "Removed daily-email"
+    return 0
+}
+
+# ============================================================================
+# Main
+# ============================================================================
+
+case "${1:-install}" in
+    install)   install ;;
+    remove|uninstall) remove ;;
+    *) echo "Usage: $0 {install|remove}"; exit 1 ;;
+esac

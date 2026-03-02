@@ -1368,7 +1368,14 @@ def cmd_install(args) -> int:
     
     info = detect_project_info()
     print()
-    
+
+    # Respect hand-crafted installers — skip generation if sentinel is present
+    install_file = Path(f"{info.name}.install")
+    if install_file.exists() and 'HANDCRAFTED' in install_file.read_text():
+        warn(f"{install_file} is marked HANDCRAFTED — skipping installer generation")
+        warn("Remove the HANDCRAFTED marker to let make-awesome.py manage this installer")
+        return 0
+
     info.files = detect_files()
     if not info.files:
         return 1
