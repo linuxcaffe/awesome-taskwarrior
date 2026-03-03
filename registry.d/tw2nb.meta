@@ -1,0 +1,15 @@
+# tw2nb.meta
+# Archives completed Taskwarrior tasks to nb as todos and journal entries
+
+name=tw2nb
+version=0.1.0
+type=hook
+description=Archives completed Taskwarrior tasks to nb as todos and running journal entries
+repo=https://github.com/linuxcaffe/tw2nb
+base_url=https://raw.githubusercontent.com/linuxcaffe/tw2nb/master
+files=on-modify_tw2nb.py:hook,tw2nb_lib.py:script,tw2nb-retro:script,tw2nb.rc:config,README.md:doc
+tags=nb, archive, journal, notes, completed, hook
+
+author=Designed by linuxcaffe, implemented by Claude Code
+license=MIT
+requires_taskwarrior=2.6.0

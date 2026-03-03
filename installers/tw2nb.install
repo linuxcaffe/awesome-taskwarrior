@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+# HANDCRAFTED
+set -euo pipefail
+
+# ============================================================================
+# tw2nb - Standalone Installer
+# Version: 0.1.0
+#
+# Installs:
+#   ~/.task/hooks/on-modify_tw2nb.py
+#   ~/.task/scripts/tw2nb_lib.py
+#   ~/.task/scripts/tw2nb-retro
+#   ~/.task/scripts/tw-runtime.sh    (from tw-lib, if available)
+#   ~/.task/config/tw2nb.rc          (only if not already present)
+# ============================================================================
+
+VERSION="0.1.0"
+APPNAME="tw2nb"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+tw_msg()     { echo -e "${BLUE}[tw]${NC} $*"; }
+tw_success() { echo -e "${GREEN}[tw] [OK]${NC} $*"; }
+tw_error()   { echo -e "${RED}[tw] [FAIL]${NC} $*" >&2; }
+
+TASK_DIR="${HOME}/.task"
+HOOKS_DIR="${TASK_DIR}/hooks"
+SCRIPTS_DIR="${TASK_DIR}/scripts"
+CONFIG_DIR="${TASK_DIR}/config"
+MANIFEST_FILE="${TASK_DIR}/config/.tw_manifest"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# ============================================================================
+# Installation
+# ============================================================================
+
+install() {
+    tw_msg "Installing ${APPNAME} v${VERSION}..."
+
+    mkdir -p "$HOOKS_DIR" "$SCRIPTS_DIR" "$CONFIG_DIR"
+
+    # Hook
+    cp "${SCRIPT_DIR}/on-modify_tw2nb.py" "${HOOKS_DIR}/on-modify_tw2nb.py"
+    chmod +x "${HOOKS_DIR}/on-modify_tw2nb.py"
+    tw_msg "Installed: ${HOOKS_DIR}/on-modify_tw2nb.py"
+
+    # Shared library
+    cp "${SCRIPT_DIR}/tw2nb_lib.py" "${SCRIPTS_DIR}/tw2nb_lib.py"
+    tw_msg "Installed: ${SCRIPTS_DIR}/tw2nb_lib.py"
+
+    # Retro script
+    cp "${SCRIPT_DIR}/tw2nb-retro" "${SCRIPTS_DIR}/tw2nb-retro"
+    chmod +x "${SCRIPTS_DIR}/tw2nb-retro"
+    tw_msg "Installed: ${SCRIPTS_DIR}/tw2nb-retro"
+
+    # tw-runtime.sh (from tw-lib, idempotent)
+    if [[ -f "${HOME}/dev/tw-lib/tw-runtime.sh" ]]; then
+        cp "${HOME}/dev/tw-lib/tw-runtime.sh" "${SCRIPTS_DIR}/tw-runtime.sh"
+        chmod +x "${SCRIPTS_DIR}/tw-runtime.sh"
+        tw_msg "Installed: ${SCRIPTS_DIR}/tw-runtime.sh (from tw-lib)"
+    elif [[ -f "${SCRIPTS_DIR}/tw-runtime.sh" ]]; then
+        tw_msg "tw-runtime.sh already present"
+    else
+        tw_msg "NOTE: tw-runtime.sh not found — run tw-lib.install separately if needed"
+    fi
+
+    # Config (never overwrite existing)
+    if [[ -f "${CONFIG_DIR}/tw2nb.rc" ]]; then
+        tw_msg "Config already exists: ${CONFIG_DIR}/tw2nb.rc (not overwritten)"
+    else
+        cp "${SCRIPT_DIR}/tw2nb.rc" "${CONFIG_DIR}/tw2nb.rc"
+        tw_msg "Installed: ${CONFIG_DIR}/tw2nb.rc"
+        tw_msg "EDIT ${CONFIG_DIR}/tw2nb.rc to set your nb notebook names."
+    fi
+
+    # .taskrc include
+    TASKRC="${HOME}/.taskrc"
+    if ! grep -q "tw2nb.rc" "$TASKRC" 2>/dev/null; then
+        echo "include ~/.task/config/tw2nb.rc" >> "$TASKRC"
+        tw_msg "Added include to .taskrc"
+    else
+        tw_msg "Config include already in .taskrc"
+    fi
+
+    # Manifest
+    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    if [[ -f "$MANIFEST_FILE" ]]; then
+        grep -v "^${APPNAME}|" "$MANIFEST_FILE" > "${MANIFEST_FILE}.tmp" || true
+        mv "${MANIFEST_FILE}.tmp" "$MANIFEST_FILE"
+    fi
+    echo "${APPNAME}|${VERSION}|${HOOKS_DIR}/on-modify_tw2nb.py||${TIMESTAMP}"  >> "$MANIFEST_FILE"
+    echo "${APPNAME}|${VERSION}|${SCRIPTS_DIR}/tw2nb_lib.py||${TIMESTAMP}"      >> "$MANIFEST_FILE"
+    echo "${APPNAME}|${VERSION}|${SCRIPTS_DIR}/tw2nb-retro||${TIMESTAMP}"       >> "$MANIFEST_FILE"
+    echo "${APPNAME}|${VERSION}|${CONFIG_DIR}/tw2nb.rc||${TIMESTAMP}"           >> "$MANIFEST_FILE"
+
+    tw_success "Installed ${APPNAME} v${VERSION}"
+    echo ""
+    tw_msg "Next steps:"
+    tw_msg "  1. Edit ${CONFIG_DIR}/tw2nb.rc"
+    tw_msg "  2. Create nb notebook:  nb notebooks add tasks"
+    tw_msg "  3. Test:                task <id> done"
+    tw_msg "  4. Check nb:            nb tasks: list"
+    tw_msg "  Backfill past tasks:   tw2nb-retro --dry-run"
+    echo ""
+}
+
+# ============================================================================
+# Removal
+# ============================================================================
+
+remove() {
+    tw_msg "Removing ${APPNAME}..."
+
+    if [[ ! -f "$MANIFEST_FILE" ]]; then
+        tw_error "Manifest not found: $MANIFEST_FILE"
+        return 1
+    fi
+
+    grep "^${APPNAME}|" "$MANIFEST_FILE" | cut -d'|' -f3 | while read -r file; do
+        if [[ -f "$file" ]]; then
+            rm "$file"
+            tw_msg "Removed: $(basename "$file")"
+        fi
+    done
+
+    grep -v "^${APPNAME}|" "$MANIFEST_FILE" > "${MANIFEST_FILE}.tmp" || true
+    mv "${MANIFEST_FILE}.tmp" "$MANIFEST_FILE"
+
+    TASKRC="${HOME}/.taskrc"
+    if grep -q "tw2nb.rc" "$TASKRC" 2>/dev/null; then
+        sed -i "/tw2nb.rc/d" "$TASKRC"
+        tw_msg "Removed config include from .taskrc"
+    fi
+
+    tw_success "Removed ${APPNAME}"
+    tw_msg "Note: nb notebooks and notes are untouched."
+}
+
+# ============================================================================
+# Main
+# ============================================================================
+
+case "${1:-install}" in
+    install)          install ;;
+    remove|uninstall) remove  ;;
+    *)
+        echo "Usage: $0 {install|remove}"
+        exit 1
+        ;;
+esac
