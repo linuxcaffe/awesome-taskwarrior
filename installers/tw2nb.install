@@ -12,6 +12,7 @@ set -euo pipefail
 #   ~/.task/scripts/tw2nb-retro
 #   ~/.task/scripts/tw-runtime.sh    (from tw-lib, if available)
 #   ~/.task/config/tw2nb.rc          (only if not already present)
+#   ~/.nb/.plugins/tw.nb-plugin      (nb plugin, if nb is present)
 # ============================================================================
 
 VERSION="0.1.0"
@@ -42,10 +43,14 @@ install() {
 
     mkdir -p "$HOOKS_DIR" "$SCRIPTS_DIR" "$CONFIG_DIR"
 
-    # Hook
+    # Hooks
     cp "${SCRIPT_DIR}/on-modify_tw2nb.py" "${HOOKS_DIR}/on-modify_tw2nb.py"
     chmod +x "${HOOKS_DIR}/on-modify_tw2nb.py"
     tw_msg "Installed: ${HOOKS_DIR}/on-modify_tw2nb.py"
+
+    cp "${SCRIPT_DIR}/on-add_tw2nb.py" "${HOOKS_DIR}/on-add_tw2nb.py"
+    chmod +x "${HOOKS_DIR}/on-add_tw2nb.py"
+    tw_msg "Installed: ${HOOKS_DIR}/on-add_tw2nb.py"
 
     # Shared library
     cp "${SCRIPT_DIR}/tw2nb_lib.py" "${SCRIPTS_DIR}/tw2nb_lib.py"
@@ -65,6 +70,18 @@ install() {
         tw_msg "tw-runtime.sh already present"
     else
         tw_msg "NOTE: tw-runtime.sh not found — run tw-lib.install separately if needed"
+    fi
+
+    # nb plugin (only if nb is present)
+    NB_PLUGINS_DIR="${HOME}/.nb/.plugins"
+    if command -v nb &>/dev/null; then
+        mkdir -p "$NB_PLUGINS_DIR"
+        cp "${SCRIPT_DIR}/plugins/tw.nb-plugin" "${NB_PLUGINS_DIR}/tw.nb-plugin"
+        tw_msg "Installed: ${NB_PLUGINS_DIR}/tw.nb-plugin"
+        cp "${SCRIPT_DIR}/plugins/grep.nb-plugin" "${NB_PLUGINS_DIR}/grep.nb-plugin"
+        tw_msg "Installed: ${NB_PLUGINS_DIR}/grep.nb-plugin"
+    else
+        tw_msg "NOTE: nb not found — skipping plugin install (install nb, then: nb plugin install ${SCRIPT_DIR}/plugins/tw.nb-plugin)"
     fi
 
     # Config (never overwrite existing)
@@ -91,10 +108,13 @@ install() {
         grep -v "^${APPNAME}|" "$MANIFEST_FILE" > "${MANIFEST_FILE}.tmp" || true
         mv "${MANIFEST_FILE}.tmp" "$MANIFEST_FILE"
     fi
-    echo "${APPNAME}|${VERSION}|${HOOKS_DIR}/on-modify_tw2nb.py||${TIMESTAMP}"  >> "$MANIFEST_FILE"
+    echo "${APPNAME}|${VERSION}|${HOOKS_DIR}/on-modify_tw2nb.py||${TIMESTAMP}"    >> "$MANIFEST_FILE"
+    echo "${APPNAME}|${VERSION}|${HOOKS_DIR}/on-add_tw2nb.py||${TIMESTAMP}"      >> "$MANIFEST_FILE"
     echo "${APPNAME}|${VERSION}|${SCRIPTS_DIR}/tw2nb_lib.py||${TIMESTAMP}"      >> "$MANIFEST_FILE"
     echo "${APPNAME}|${VERSION}|${SCRIPTS_DIR}/tw2nb-retro||${TIMESTAMP}"       >> "$MANIFEST_FILE"
     echo "${APPNAME}|${VERSION}|${CONFIG_DIR}/tw2nb.rc||${TIMESTAMP}"           >> "$MANIFEST_FILE"
+    echo "${APPNAME}|${VERSION}|${NB_PLUGINS_DIR}/tw.nb-plugin||${TIMESTAMP}"   >> "$MANIFEST_FILE"
+    echo "${APPNAME}|${VERSION}|${NB_PLUGINS_DIR}/grep.nb-plugin||${TIMESTAMP}" >> "$MANIFEST_FILE"
 
     tw_success "Installed ${APPNAME} v${VERSION}"
     echo ""
@@ -136,7 +156,8 @@ remove() {
     fi
 
     tw_success "Removed ${APPNAME}"
-    tw_msg "Note: nb notebooks and notes are untouched."
+    tw_msg "Note: nb notebooks, notes, and plugin are untouched."
+    tw_msg "      To remove the nb plugin: nb plugin uninstall tw"
 }
 
 # ============================================================================
