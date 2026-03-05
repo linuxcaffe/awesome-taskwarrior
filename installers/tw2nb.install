@@ -62,14 +62,14 @@ install() {
     tw_msg "Installed: ${SCRIPTS_DIR}/tw2nb-retro"
 
     # tw-runtime.sh (from tw-lib, idempotent)
-    if [[ -f "${HOME}/dev/tw-lib/tw-runtime.sh" ]]; then
-        cp "${HOME}/dev/tw-lib/tw-runtime.sh" "${SCRIPTS_DIR}/tw-runtime.sh"
+    if [[ -f "${HOME}/dev/awesome-taskwarrior/lib/tw-runtime.sh" ]]; then
+        cp "${HOME}/dev/awesome-taskwarrior/lib/tw-runtime.sh" "${SCRIPTS_DIR}/tw-runtime.sh"
         chmod +x "${SCRIPTS_DIR}/tw-runtime.sh"
-        tw_msg "Installed: ${SCRIPTS_DIR}/tw-runtime.sh (from tw-lib)"
+        tw_msg "Installed: ${SCRIPTS_DIR}/tw-runtime.sh (from awesome-taskwarrior/lib)"
     elif [[ -f "${SCRIPTS_DIR}/tw-runtime.sh" ]]; then
         tw_msg "tw-runtime.sh already present"
     else
-        tw_msg "NOTE: tw-runtime.sh not found — run tw-lib.install separately if needed"
+        tw_msg "NOTE: tw-runtime.sh not found — install awesome-taskwarrior first"
     fi
 
     # nb plugin (only if nb is present)
