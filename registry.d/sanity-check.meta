@@ -4,10 +4,10 @@
 name=sanity-check
 version=0.1.0
 type=script
-description=Reviews and fixes common Taskwarrior inconsistencies (overdue, stale deps, date conflicts). No-args shows status counts; 'all' or a condition name runs the interactive review with readline-editable pre-filled fix commands.
+description=Reviews and fixes common Taskwarrior inconsistencies (overdue, stale deps, date conflicts). No-args shows numbered menu to select a condition; 'all' or a condition name runs interactive review with readline-editable pre-filled fix commands.
 repo=https://github.com/linuxcaffe/tw-sanity-check
 base_url=https://raw.githubusercontent.com/linuxcaffe/tw-sanity-check/master
-files=tw-sanity-check:script,sanity.rc:config,README.md:doc
+files=sanity-check:script,sanity.rc:config,README.md:doc
 tags=sanity, review, maintenance, dates, dependencies
 
 author=Designed by linuxcaffe, implemented by Claude Code
