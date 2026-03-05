@@ -591,8 +591,11 @@ class WrapperManager:
             print(f"[tw-debug] Wrapper dispatch: {' '.join(cmd)}", file=sys.stderr)
         
         # Execute wrapper, inheriting stdin for pipe support
-        result = subprocess.run(cmd, check=False)
-        return result.returncode
+        try:
+            result = subprocess.run(cmd, check=False)
+            return result.returncode
+        except KeyboardInterrupt:
+            return 130
     
     def list_wrappers(self):
         """List registered wrappers for help display."""
