@@ -5,7 +5,7 @@ Version: 0.1.0
 
 Usage (dev time, from project directory):
     import sys, os
-    sys.path.insert(0, os.path.expanduser('~/dev/tw-lib'))
+    sys.path.insert(0, os.path.expanduser('~/dev/awesome-taskwarrior/lib'))
     from tw_hook_lib import task_export, read_hook_input, write_hook_output
 
 Usage (installed, via make-awesome.py inline injection):
