@@ -2,7 +2,7 @@
 # t is for timelog. A handy script to track your time using hledger timelog files
 
 name=t
-version=2.0.0
+version=2.0.2
 type=script
 description=t is for timelog. A handy script to track your time using hledger timelog files
 repo=https://github.com/linuxcaffe/t
