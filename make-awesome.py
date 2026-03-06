@@ -3,16 +3,20 @@
 make-awesome.py - Complete development-to-deployment pipeline for awesome-taskwarrior
 
 This tool provides a full workflow from development through deployment:
-- --debug:  Enhance with debug infrastructure (tw --debug=2 compatible)
-- --timing: Inject TW_TIMING timing block (tw --timing compatible)
-- --test:   Run test suite (tw --test compatible) [STUB]
-- --install: Generate .install and .meta files for registry
-- --push:   Git commit/push + registry update
+- --debug:    Enhance with debug infrastructure (tw --debug=2 compatible)
+- --testing:  Run test suite [STUB]
+- --timing:   Inject TW_TIMING timing block (tw --timing compatible)
+- --stdhelp:  Standardise help output [STUB]
+- --meta:     Generate .meta registry entry only
+- --install:  Generate .install (and .meta if run standalone)
+- --push:     Git commit/push + registry update
 
-Single command pipeline: make-awesome.py "commit message"
-  Runs: debug -> timing -> test -> install -> push (each stage gated on previous success)
+Pipeline order: debug → testing → timing → stdhelp → meta → install → push
 
-Version: 4.8.1
+Single command: make-awesome.py "commit message"  — runs full pipeline
+Flag combo:     make-awesome.py --meta --push "msg"  — runs selected stages in order
+
+Version: 4.9.0
 """
 
 import sys
@@ -25,7 +29,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
 
-VERSION = "4.8.1"
+VERSION = "4.9.0"
 
 # ANSI color codes
 class Colors:
@@ -1360,14 +1364,50 @@ def generate_installer(info: ProjectInfo) -> bool:
         return False
 
 
-def cmd_install(args) -> int:
+def cmd_meta(args, info=None) -> tuple:
+    """Generate .meta file only. Returns (rc, info) so info can flow to cmd_install."""
+    msg("=" * 70)
+    msg(f"make-awesome.py v{VERSION} --meta")
+    msg("=" * 70)
+    print()
+
+    if info is None:
+        info = detect_project_info()
+        print()
+
+        info.files = detect_files()
+        if not info.files:
+            return 1, None
+        print()
+
+        if not prompt_for_metadata(info):
+            return 1, None
+
+        info.checksums = calculate_checksums(info.files)
+        if not info.checksums:
+            return 1, None
+        print()
+
+    if not generate_meta_file(info):
+        return 1, None
+
+    print()
+    success(".meta file generated!")
+    print()
+    return 0, info
+
+
+def cmd_install(args, info=None) -> int:
     msg("=" * 70)
     msg(f"make-awesome.py v{VERSION} --install")
     msg("=" * 70)
     print()
-    
-    info = detect_project_info()
-    print()
+
+    standalone = info is None
+
+    if info is None:
+        info = detect_project_info()
+        print()
 
     # Respect hand-crafted installers — skip generation if sentinel is present
     install_file = Path(f"{info.name}.install")
@@ -1376,42 +1416,57 @@ def cmd_install(args) -> int:
         warn("Remove the HANDCRAFTED marker to let make-awesome.py manage this installer")
         return 0
 
-    info.files = detect_files()
-    if not info.files:
-        return 1
-    print()
-    
-    if not prompt_for_metadata(info):
-        return 1
-    
-    info.checksums = calculate_checksums(info.files)
-    if not info.checksums:
-        return 1
-    print()
-    
-    if not generate_meta_file(info):
-        return 1
-    
+    if standalone:
+        info.files = detect_files()
+        if not info.files:
+            return 1
+        print()
+
+        if not prompt_for_metadata(info):
+            return 1
+
+        info.checksums = calculate_checksums(info.files)
+        if not info.checksums:
+            return 1
+        print()
+
+        if not generate_meta_file(info):
+            return 1
+
     if not generate_installer(info):
         return 1
-    
+
     print()
     success("Installation files generated!")
     print()
-    
+
     return 0
 
 
 # ============================================================================
-# TEST (Stub)
+# TESTING (Stub)
 # ============================================================================
 
-def cmd_test(args) -> int:
+def cmd_testing(args) -> int:
     msg("=" * 70)
-    msg(f"make-awesome.py v{VERSION} --test")
+    msg(f"make-awesome.py v{VERSION} --testing")
     msg("=" * 70)
     print()
     warn("Test infrastructure not yet implemented")
+    print()
+    return 0
+
+
+# ============================================================================
+# STDHELP (Stub)
+# ============================================================================
+
+def cmd_stdhelp(args) -> int:
+    msg("=" * 70)
+    msg(f"make-awesome.py v{VERSION} --stdhelp")
+    msg("=" * 70)
+    print()
+    warn("Help standardisation not yet implemented")
     print()
     return 0
 
@@ -1603,33 +1658,40 @@ def cmd_pipeline(commit_msg: str) -> int:
     msg("=" * 70)
     print()
 
-    msg("STAGE 1/5: Debug")
-    if cmd_debug(None) != 0:
-        error("Debug failed")
-        return 1
-    print()
+    # Stages: (name, gated)  — stubs are not gated so pipeline continues
+    stages = [
+        ('Debug',    True),
+        ('Testing',  False),
+        ('Timing',   True),
+        ('Stdhelp',  False),
+        ('Meta',     True),
+        ('Install',  True),
+        ('Push',     True),
+    ]
 
-    msg("STAGE 2/5: Timing")
-    if cmd_timing(None) != 0:
-        error("Timing failed")
-        return 1
-    print()
+    meta_info = None
+    for i, (name, gated) in enumerate(stages, 1):
+        msg(f"STAGE {i}/{len(stages)}: {name}")
 
-    msg("STAGE 3/5: Test")
-    cmd_test(None)
-    print()
+        if name == 'Debug':
+            rc = cmd_debug(None)
+        elif name == 'Testing':
+            rc = cmd_testing(None)
+        elif name == 'Timing':
+            rc = cmd_timing(None)
+        elif name == 'Stdhelp':
+            rc = cmd_stdhelp(None)
+        elif name == 'Meta':
+            rc, meta_info = cmd_meta(None)
+        elif name == 'Install':
+            rc = cmd_install(None, info=meta_info)
+        elif name == 'Push':
+            rc = cmd_push(None, commit_msg)
 
-    msg("STAGE 4/5: Install")
-    if cmd_install(None) != 0:
-        error("Install failed")
-        return 1
-    print()
-
-    msg("STAGE 5/5: Push")
-    if cmd_push(None, commit_msg) != 0:
-        error("Push failed")
-        return 1
-    print()
+        if rc != 0 and gated:
+            error(f"{name} stage failed")
+            return 1
+        print()
 
     msg("=" * 70)
     success("PIPELINE COMPLETE!")
@@ -1643,22 +1705,35 @@ def cmd_pipeline(commit_msg: str) -> int:
 # Main
 # ============================================================================
 
+PIPELINE_ORDER = ['debug', 'testing', 'timing', 'stdhelp', 'meta', 'install', 'push']
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='make-awesome.py - Full pipeline tool',
-        formatter_class=argparse.RawDescriptionHelpFormatter
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            f"Pipeline order: {' → '.join(PIPELINE_ORDER)}\n"
+            "With commit message: runs full pipeline\n"
+            "With flags: runs selected stages in pipeline order\n"
+            "  e.g. make-awesome.py --meta --push 'update registry'"
+        ),
     )
 
     parser.add_argument('commit_message', nargs='?',
-                       help='Commit message (runs full pipeline)')
+                       help='Commit message — runs full pipeline')
     parser.add_argument('--debug', action='store_true',
                        help='Debug enhancement')
+    parser.add_argument('--testing', action='store_true',
+                       help='Run test suite [STUB]')
     parser.add_argument('--timing', action='store_true',
                        help='Inject TW_TIMING timing block')
-    parser.add_argument('--test', action='store_true',
-                       help='Test suite [STUB]')
+    parser.add_argument('--stdhelp', action='store_true',
+                       help='Standardise help output [STUB]')
+    parser.add_argument('--meta', action='store_true',
+                       help='Generate .meta file only')
     parser.add_argument('--install', action='store_true',
-                       help='Generate installer')
+                       help='Generate .install (and .meta if run standalone)')
     parser.add_argument('--push', nargs='?', const='', default=None,
                        metavar='MESSAGE',
                        help='Git push + registry (message optional)')
@@ -1671,19 +1746,42 @@ def main():
 
     if args.commit_message:
         return cmd_pipeline(args.commit_message)
-    elif args.debug:
-        return cmd_debug(args)
-    elif args.timing:
-        return cmd_timing(args)
-    elif args.test:
-        return cmd_test(args)
-    elif args.install:
-        return cmd_install(args)
-    elif args.push is not None:
-        return cmd_push(args, args.push if args.push else None)
-    else:
+
+    # Collect requested steps in pipeline order
+    def flag_set(name):
+        if name == 'push':
+            return args.push is not None
+        return bool(getattr(args, name, False))
+
+    steps = [s for s in PIPELINE_ORDER if flag_set(s)]
+
+    if not steps:
         parser.print_help()
         return 1
+
+    # Run steps in pipeline order; meta passes its info to install
+    meta_info = None
+    for step in steps:
+        if step == 'debug':
+            rc = cmd_debug(args)
+        elif step == 'testing':
+            rc = cmd_testing(args)
+        elif step == 'timing':
+            rc = cmd_timing(args)
+        elif step == 'stdhelp':
+            rc = cmd_stdhelp(args)
+        elif step == 'meta':
+            rc, meta_info = cmd_meta(args)
+        elif step == 'install':
+            rc = cmd_install(args, info=meta_info)
+            meta_info = None
+        elif step == 'push':
+            rc = cmd_push(args, args.push if args.push else None)
+
+        if rc != 0:
+            return rc
+
+    return 0
 
 
 if __name__ == '__main__':
