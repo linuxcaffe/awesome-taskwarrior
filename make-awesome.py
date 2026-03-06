@@ -29,7 +29,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
 
-VERSION = "4.9.0"
+VERSION = "4.10.0"
 
 # ANSI color codes
 class Colors:
@@ -847,6 +847,43 @@ def detect_files() -> List[Tuple[str, str]]:
     return files
 
 
+def load_files_from_meta(meta_file: Path) -> list:
+    """Parse files= line from .meta. Returns list of 2-tuples (name, type) or
+    3-tuples (name, type, dest) when a custom destination is specified."""
+    try:
+        with open(meta_file) as f:
+            for line in f:
+                if line.startswith('files='):
+                    val = line.split('=', 1)[1].strip()
+                    if not val:
+                        return []
+                    result = []
+                    for entry in val.split(','):
+                        parts = entry.strip().split(':')
+                        if len(parts) >= 3:
+                            result.append((parts[0], parts[1], ':'.join(parts[2:])))
+                        elif len(parts) == 2:
+                            result.append((parts[0], parts[1]))
+                    return result
+    except Exception:
+        pass
+    return []
+
+
+def _load_or_detect_files() -> list:
+    """Use files= from existing .meta if available, else detect from filesystem."""
+    meta_files = list(Path('.').glob('*.meta'))
+    if meta_files:
+        files = load_files_from_meta(meta_files[0])
+        if files:
+            msg(f"  Using files= from {meta_files[0].name}")
+            for t in files:
+                dest = f" → {t[2]}" if len(t) > 2 else ""
+                msg(f"    {t[0]}:{t[1]}{dest}")
+            return files
+    return detect_files()
+
+
 def prompt_for_metadata(info: ProjectInfo) -> bool:
     msg("Gathering metadata...")
     print()
@@ -1038,7 +1075,7 @@ def calculate_checksums(files: List[Tuple[str, str]]) -> List[str]:
     msg("Calculating checksums...")
     checksums = []
     
-    for filename, _ in files:
+    for filename, *_ in files:
         try:
             with open(filename, 'rb') as f:
                 sha256 = hashlib.sha256(f.read()).hexdigest()
@@ -1055,7 +1092,10 @@ def generate_meta_file(info: ProjectInfo) -> bool:
     meta_file = f"{info.name}.meta"
     msg(f"Generating {meta_file}...")
     
-    files_list = ','.join([f"{name}:{ftype}" for name, ftype in info.files])
+    def _file_str(t):
+        dest = t[2] if len(t) > 2 else None
+        return f"{t[0]}:{t[1]}" + (f":{dest}" if dest else "")
+    files_list = ','.join(_file_str(t) for t in info.files)
     checksums_list = ','.join(info.checksums)
     base_url = f"https://raw.githubusercontent.com/{info.repo}/{info.branch}"
     repo_url = f"https://github.com/{info.repo}"
@@ -1155,68 +1195,72 @@ def generate_installer(info: ProjectInfo) -> bool:
             f.write('    tw_msg "Downloading files..."\n')
             f.write('    debug_msg "Using BASE_URL: $BASE_URL" 2\n\n')
             
-            # Separate files by type
-            hooks = [(name, ftype) for name, ftype in info.files if ftype == 'hook']
-            scripts = [(name, ftype) for name, ftype in info.files if ftype == 'script']
-            configs = [(name, ftype) for name, ftype in info.files if ftype == 'config']
-            docs = [(name, ftype) for name, ftype in info.files if ftype == 'doc']
-            
+            # Normalize to 3-tuples (name, ftype, dest_or_none)
+            _nf = [(t[0], t[1], t[2] if len(t) > 2 else None) for t in info.files]
+            hooks   = [(n, ft, d) for n, ft, d in _nf if ft == 'hook']
+            scripts = [(n, ft, d) for n, ft, d in _nf if ft == 'script']
+            configs = [(n, ft, d) for n, ft, d in _nf if ft == 'config']
+            docs    = [(n, ft, d) for n, ft, d in _nf if ft == 'doc']
+
+            def _dest_path(filename, dir_var, dest):
+                """Return shell dest path: custom (~ expanded) or type-based dir."""
+                if dest:
+                    return dest.replace('~', '$HOME')
+                return f'{dir_var}/{filename}'
+
             # Download hooks
-            for filename, _ in hooks:
-                # NO NAME CHANGES! File keeps exact same name in installation
-                # Use -x suffix OR _hook path marker to determine if we skip chmod +x
-                # - Files ending in -x.py or -x.sh are explicitly marked non-executable
-                # - Files with _hook path marker (like recurrence_common_hook.py) are libraries
+            for filename, _, dest in hooks:
                 is_executable = not (
-                    filename.endswith('-x.py') or 
+                    filename.endswith('-x.py') or
                     filename.endswith('-x.sh') or
                     ('_hook' in filename and not filename.startswith('on-'))
                 )
-                
+                dp = _dest_path(filename, '$HOOKS_DIR', dest)
+                if dest:
+                    f.write(f'    mkdir -p "$(dirname "{dp}")"\n')
                 f.write(f'    debug_msg "Downloading hook: {filename}" 2\n')
-                f.write(f'    curl -fsSL "$BASE_URL/{filename}" -o "$HOOKS_DIR/{filename}" || {{\n')
+                f.write(f'    curl -fsSL "$BASE_URL/{filename}" -o "{dp}" || {{\n')
                 f.write(f'        tw_error "Failed to download {filename}"\n')
                 f.write(f'        debug_msg "Download failed: {filename}" 1\n')
                 f.write('        return 1\n')
                 f.write('    }\n')
                 if is_executable:
-                    f.write(f'    chmod +x "$HOOKS_DIR/{filename}"\n')
-                f.write(f'    debug_msg "Installed hook: $HOOKS_DIR/{filename}" 2\n\n')
-            
+                    f.write(f'    chmod +x "{dp}"\n')
+                f.write(f'    debug_msg "Installed hook: {dp}" 2\n\n')
+
             # Download scripts
-            for filename, _ in scripts:
-                # NO NAME CHANGES! File keeps exact same name in installation
-                # Scripts are normally executable unless they have -x suffix
+            for filename, _, dest in scripts:
                 is_executable = not (filename.endswith('-x.sh') or filename.endswith('-x.py'))
-                
+                dp = _dest_path(filename, '$SCRIPTS_DIR', dest)
+                if dest:
+                    f.write(f'    mkdir -p "$(dirname "{dp}")"\n')
                 f.write(f'    debug_msg "Downloading script: {filename}" 2\n')
-                f.write(f'    curl -fsSL "$BASE_URL/{filename}" -o "$SCRIPTS_DIR/{filename}" || {{\n')
+                f.write(f'    curl -fsSL "$BASE_URL/{filename}" -o "{dp}" || {{\n')
                 f.write(f'        tw_error "Failed to download {filename}"\n')
                 f.write(f'        debug_msg "Download failed: {filename}" 1\n')
                 f.write('        return 1\n')
                 f.write('    }\n')
                 if is_executable:
-                    f.write(f'    chmod +x "$SCRIPTS_DIR/{filename}"\n')
-                f.write(f'    debug_msg "Installed script: $SCRIPTS_DIR/{filename}" 2\n\n')
-            
+                    f.write(f'    chmod +x "{dp}"\n')
+                f.write(f'    debug_msg "Installed script: {dp}" 2\n\n')
+
             # Download configs
-            for filename, _ in configs:
-                # NO NAME CHANGES! File keeps exact same name in installation
-                
+            for filename, _, dest in configs:
+                dp = _dest_path(filename, '$CONFIG_DIR', dest)
+                if dest:
+                    f.write(f'    mkdir -p "$(dirname "{dp}")"\n')
                 f.write(f'    debug_msg "Downloading config: {filename}" 2\n')
-                f.write(f'    curl -fsSL "$BASE_URL/{filename}" -o "$CONFIG_DIR/{filename}" || {{\n')
+                f.write(f'    curl -fsSL "$BASE_URL/{filename}" -o "{dp}" || {{\n')
                 f.write(f'        tw_error "Failed to download {filename}"\n')
                 f.write(f'        debug_msg "Download failed: {filename}" 1\n')
                 f.write('        return 1\n')
                 f.write('    }\n')
-                f.write(f'    debug_msg "Installed config: $CONFIG_DIR/{filename}" 2\n\n')
-            
-            # Add config to .taskrc if needed
-            if configs:
-                first_config = configs[0][0]
-                # NO NAME CHANGES! Use actual filename
-                # Grep for filename only (path-format-agnostic: handles both ~ and $HOME)
-                # Write with tilde form to match .taskrc convention
+                f.write(f'    debug_msg "Installed config: {dp}" 2\n\n')
+
+            # Add config to .taskrc if needed (standard dest only)
+            std_configs = [(n, ft, d) for n, ft, d in configs if not d]
+            if std_configs:
+                first_config = std_configs[0][0]
                 f.write('    # Add config to .taskrc\n')
                 f.write('    tw_msg "Checking .taskrc for existing config include..."\n')
                 f.write(f'    if ! grep -q "{first_config}" "$TASKRC" 2>/dev/null; then\n')
@@ -1227,37 +1271,41 @@ def generate_installer(info: ProjectInfo) -> bool:
                 f.write('        tw_msg "Config already in .taskrc"\n')
                 f.write(f'        debug_msg "Config already present in .taskrc: {first_config}" 2\n')
                 f.write('    fi\n\n')
-            
+
             # Download docs
-            for filename, _ in docs:
+            for filename, _, dest in docs:
                 docname = f"{info.name}_{filename}"
+                dp = _dest_path(docname, '$DOCS_DIR', dest)
+                if dest:
+                    f.write(f'    mkdir -p "$(dirname "{dp}")"\n')
                 f.write('    tw_msg "Downloading documentation..."\n')
-                f.write(f'    curl -fsSL "$BASE_URL/{filename}" -o "$DOCS_DIR/{docname}" 2>/dev/null || true\n')
-                f.write(f'    debug_msg "Downloaded doc: $DOCS_DIR/{docname}" 2\n\n')
-            
+                f.write(f'    curl -fsSL "$BASE_URL/{filename}" -o "{dp}" 2>/dev/null || true\n')
+                f.write(f'    debug_msg "Downloaded doc: {dp}" 2\n\n')
+
             # Manifest tracking
             f.write('    # Track in manifest\n')
             f.write('    debug_msg "Writing to manifest" 2\n')
             f.write('    MANIFEST_FILE="${HOME}/.task/config/.tw_manifest"\n')
             f.write('    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")\n')
             f.write('    mkdir -p "$(dirname "$MANIFEST_FILE")"\n\n')
-            
+
             # Add manifest entries for each file
-            for filename, ftype in info.files:
-                # NO NAME CHANGES! Use actual filename in manifest
-                
-                if ftype == 'hook':
-                    dir_var = '$HOOKS_DIR'
+            for filename, ftype, dest in _nf:
+                if dest:
+                    manifest_path = dest.replace('~', '$HOME')
+                elif ftype == 'hook':
+                    manifest_path = f'$HOOKS_DIR/{filename}'
                 elif ftype == 'script':
-                    dir_var = '$SCRIPTS_DIR'
+                    manifest_path = f'$SCRIPTS_DIR/{filename}'
                 elif ftype == 'config':
-                    dir_var = '$CONFIG_DIR'
+                    manifest_path = f'$CONFIG_DIR/{filename}'
                 elif ftype == 'doc':
-                    dir_var = '$DOCS_DIR'
-                    filename = f"{info.name}_{filename}"  # Only docs get project name prefix
-                
-                f.write(f'    echo "$APPNAME|$VERSION|{dir_var}/{filename}||$TIMESTAMP" >> "$MANIFEST_FILE"\n')
-                f.write(f'    debug_msg "Manifest entry: {dir_var}/{filename}" 3\n')
+                    manifest_path = f'$DOCS_DIR/{info.name}_{filename}'
+                else:
+                    manifest_path = f'$TASK_DIR/{filename}'
+
+                f.write(f'    echo "$APPNAME|$VERSION|{manifest_path}||$TIMESTAMP" >> "$MANIFEST_FILE"\n')
+                f.write(f'    debug_msg "Manifest entry: {manifest_path}" 3\n')
             
             # Finish install function
             f.write('\n')
@@ -1375,7 +1423,7 @@ def cmd_meta(args, info=None) -> tuple:
         info = detect_project_info()
         print()
 
-        info.files = detect_files()
+        info.files = _load_or_detect_files()
         if not info.files:
             return 1, None
         print()
@@ -1417,7 +1465,7 @@ def cmd_install(args, info=None) -> int:
         return 0
 
     if standalone:
-        info.files = detect_files()
+        info.files = _load_or_detect_files()
         if not info.files:
             return 1
         print()
