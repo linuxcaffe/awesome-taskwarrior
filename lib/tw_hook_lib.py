@@ -22,6 +22,73 @@ from typing import Optional, Union
 
 
 # ============================================================================
+# Verbosity profiles
+# Always set rc.verbose= explicitly in scripts — never rely on the user's
+# default. The 'override' token (which announces rc.X=Y command-line
+# overrides) is excluded from all profiles; it belongs only in interactive use.
+#
+#   VERBOSE_NOTHING  — hooks and mutations where silence is correct
+#   VERBOSE_AFFECTED — mutations where "N tasks affected" is useful feedback
+#   VERBOSE_REPORT   — report display: column headers + spacing, no noise
+# ============================================================================
+
+VERBOSE_NOTHING  = 'nothing'
+VERBOSE_AFFECTED = 'affected'
+VERBOSE_REPORT   = 'label,blank'
+
+
+# ============================================================================
+# Terminal helpers (for interactive scripts, not hooks)
+# Save terminal state once at import time; restore_terminal() always returns
+# to that known-good snapshot, even after readline or tty.setraw() interference.
+# ============================================================================
+
+_SAVED_TC = None
+try:
+    import termios as _termios
+    _SAVED_TC = _termios.tcgetattr(sys.stdin.fileno())
+except Exception:
+    pass
+
+
+def restore_terminal() -> None:
+    """Restore terminal to the clean state saved at import time."""
+    if _SAVED_TC is not None:
+        try:
+            import termios
+            termios.tcsetattr(sys.stdin.fileno(), termios.TCSAFLUSH, _SAVED_TC)
+        except Exception:
+            pass
+
+
+def getch() -> str:
+    """Read one keypress in raw mode without requiring Enter.
+
+    Returns the character pressed. Ctrl-C returns '\\x03', Escape '\\x1b'.
+    Falls back to line input if stdin is not a TTY or tty/termios unavailable.
+    Terminal state is always restored after the read.
+    """
+    if not sys.stdin.isatty():
+        line = sys.stdin.readline()
+        return line.strip()[:1] if line.strip() else '\r'
+    try:
+        import tty, termios
+    except ImportError:
+        ch = input().strip()
+        return ch[:1] if ch else '\r'
+    fd  = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        ch = sys.stdin.read(1)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+    sys.stdout.write('\n')
+    sys.stdout.flush()
+    return ch
+
+
+# ============================================================================
 # Task subprocess wrappers
 # rc.hooks=off rc.confirmation=off rc.verbose=nothing baked in (the fix from
 # the annn performance work — prevents cascading hook invocations).

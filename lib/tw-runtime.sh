@@ -28,15 +28,57 @@ warn() {
 }
 
 # ============================================================================
-# Task subprocess wrapper
+# Verbosity profiles
+# Always set rc.verbose= explicitly — never rely on the user's default.
+# The 'override' token (announces rc.X=Y overrides) belongs only in
+# interactive use; exclude it from all script/hook calls.
+#
+#   VERBOSE_NOTHING  — hooks and silent mutations
+#   VERBOSE_AFFECTED — mutations where "N tasks affected" is useful
+#   VERBOSE_REPORT   — report display: headers + spacing, no noise
+# ============================================================================
+
+VERBOSE_NOTHING='nothing'
+VERBOSE_AFFECTED='affected'
+VERBOSE_REPORT='label,blank'
+
+
+# ============================================================================
+# Task subprocess wrappers
 # rc.hooks=off prevents cascading hook invocations — the key performance fix
 # from the annn work (each bare `task _get` was firing all on-exit hooks).
 # ============================================================================
+
+task_run() {
+    # Safe task wrapper: hooks off, confirmation off, verbose nothing.
+    # Usage: task_run [filter] subcommand [mods]
+    # For report display use: task_run rc.verbose="$VERBOSE_REPORT" ...
+    task rc.hooks=off rc.confirmation=off rc.verbose=nothing "$@"
+}
 
 task_get() {
     # Read a single task DOM attribute via 'task _get'.
     # Usage: task_get <attr>   e.g. task_get "42.description"
     task rc.hooks=off rc.verbose=nothing _get "$@" 2>/dev/null
+}
+
+
+# ============================================================================
+# on-exit hook helper
+# on-exit hooks receive the full task command as 'command:<verb>' in $@.
+# ============================================================================
+
+get_tw_command() {
+    # Extract the command verb from on-exit hook arguments.
+    # Usage: cmd=$(get_tw_command "$@")
+    # Returns e.g. "start", "stop", "done", "modify", ""
+    local arg
+    for arg in "$@"; do
+        if [[ "${arg:0:8}" == "command:" ]]; then
+            echo "${arg:8}"
+            return
+        fi
+    done
 }
 
 # ============================================================================
