@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# HANDCRAFTED
+set -euo pipefail
+
+# ============================================================================
+# tw-sanity-check — Standalone Installer
+# Version: 0.1.0
+# ============================================================================
+
+VERSION="0.1.0"
+APPNAME="sanity-check"
+
+RED='\033[0;31m'; GREEN='\033[0;32m'; BLUE='\033[0;34m'; NC='\033[0m'
+tw_msg()     { echo -e "${BLUE}[tw]${NC} $*"; }
+tw_success() { echo -e "${GREEN}[tw] [OK]${NC} $*"; }
+tw_error()   { echo -e "${RED}[tw] [FAIL]${NC} $*" >&2; }
+
+TASK_DIR="${HOME}/.task"
+SCRIPTS_DIR="${TASK_DIR}/scripts"
+CONFIG_DIR="${TASK_DIR}/config"
+MANIFEST_FILE="${TASK_DIR}/config/.tw_manifest"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+install() {
+    tw_msg "Installing ${APPNAME} v${VERSION}..."
+    mkdir -p "$SCRIPTS_DIR" "$CONFIG_DIR"
+
+    cp "${SCRIPT_DIR}/sanity-check" "${SCRIPTS_DIR}/sanity-check"
+    chmod +x "${SCRIPTS_DIR}/sanity-check"
+    tw_msg "Installed: ${SCRIPTS_DIR}/sanity-check"
+
+    if [[ -f "${CONFIG_DIR}/sanity.rc" ]]; then
+        tw_msg "Config already exists: ${CONFIG_DIR}/sanity.rc (not overwritten)"
+    else
+        cp "${SCRIPT_DIR}/sanity.rc" "${CONFIG_DIR}/sanity.rc"
+        tw_msg "Installed: ${CONFIG_DIR}/sanity.rc"
+    fi
+
+    TASKRC="${HOME}/.taskrc"
+    if ! grep -q "sanity.rc" "$TASKRC" 2>/dev/null; then
+        echo "include ~/.task/config/sanity.rc" >> "$TASKRC"
+        tw_msg "Added include to .taskrc"
+    else
+        tw_msg "Config include already in .taskrc"
+    fi
+
+    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    if [[ -f "$MANIFEST_FILE" ]]; then
+        grep -v "^${APPNAME}|" "$MANIFEST_FILE" > "${MANIFEST_FILE}.tmp" || true
+        mv "${MANIFEST_FILE}.tmp" "$MANIFEST_FILE"
+    fi
+    echo "${APPNAME}|${VERSION}|${SCRIPTS_DIR}/sanity-check||${TIMESTAMP}" >> "$MANIFEST_FILE"
+    echo "${APPNAME}|${VERSION}|${CONFIG_DIR}/sanity.rc||${TIMESTAMP}"        >> "$MANIFEST_FILE"
+
+    tw_success "Installed ${APPNAME} v${VERSION}"
+    tw_msg "Next steps:"
+    tw_msg "  1. Edit ${CONFIG_DIR}/sanity.rc"
+    tw_msg "  2. Run:  sanity-check"
+    tw_msg "  3. Or:   tw checkup"
+}
+
+remove() {
+    tw_msg "Removing ${APPNAME}..."
+    if [[ ! -f "$MANIFEST_FILE" ]]; then
+        tw_error "Manifest not found: $MANIFEST_FILE"; return 1
+    fi
+    grep "^${APPNAME}|" "$MANIFEST_FILE" | cut -d'|' -f3 | while read -r file; do
+        [[ -f "$file" ]] && rm "$file" && tw_msg "Removed: $(basename "$file")"
+    done
+    grep -v "^${APPNAME}|" "$MANIFEST_FILE" > "${MANIFEST_FILE}.tmp" || true
+    mv "${MANIFEST_FILE}.tmp" "$MANIFEST_FILE"
+    TASKRC="${HOME}/.taskrc"
+    grep -q "sanity.rc" "$TASKRC" 2>/dev/null && sed -i "/sanity.rc/d" "$TASKRC" \
+        && tw_msg "Removed config include from .taskrc"
+    tw_success "Removed ${APPNAME}"
+}
+
+case "${1:-install}" in
+    install)          install ;;
+    remove|uninstall) remove  ;;
+    *) echo "Usage: $0 {install|remove}"; exit 1 ;;
+esac
