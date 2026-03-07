@@ -3,12 +3,13 @@
 set -euo pipefail
 
 # ============================================================================
-# tw-sanity-check — Standalone Installer
-# Version: 0.1.0
+# tw-sanity-check — Installer
+# Version: 0.1.1
 # ============================================================================
 
-VERSION="0.1.0"
+VERSION="0.1.1"
 APPNAME="sanity-check"
+BASE_URL="https://raw.githubusercontent.com/linuxcaffe/tw-sanity-check/master"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; BLUE='\033[0;34m'; NC='\033[0m'
 tw_msg()     { echo -e "${BLUE}[tw]${NC} $*"; }
@@ -19,20 +20,24 @@ TASK_DIR="${HOME}/.task"
 SCRIPTS_DIR="${TASK_DIR}/scripts"
 CONFIG_DIR="${TASK_DIR}/config"
 MANIFEST_FILE="${TASK_DIR}/config/.tw_manifest"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 install() {
     tw_msg "Installing ${APPNAME} v${VERSION}..."
     mkdir -p "$SCRIPTS_DIR" "$CONFIG_DIR"
 
-    cp "${SCRIPT_DIR}/sanity-check" "${SCRIPTS_DIR}/sanity-check"
+    curl -fsSL "${BASE_URL}/sanity-check" -o "${SCRIPTS_DIR}/sanity-check" || {
+        tw_error "Failed to download sanity-check"; return 1
+    }
     chmod +x "${SCRIPTS_DIR}/sanity-check"
     tw_msg "Installed: ${SCRIPTS_DIR}/sanity-check"
 
+    # Don't overwrite existing user config
     if [[ -f "${CONFIG_DIR}/sanity.rc" ]]; then
         tw_msg "Config already exists: ${CONFIG_DIR}/sanity.rc (not overwritten)"
     else
-        cp "${SCRIPT_DIR}/sanity.rc" "${CONFIG_DIR}/sanity.rc"
+        curl -fsSL "${BASE_URL}/sanity.rc" -o "${CONFIG_DIR}/sanity.rc" || {
+            tw_error "Failed to download sanity.rc"; return 1
+        }
         tw_msg "Installed: ${CONFIG_DIR}/sanity.rc"
     fi
 
@@ -50,13 +55,11 @@ install() {
         mv "${MANIFEST_FILE}.tmp" "$MANIFEST_FILE"
     fi
     echo "${APPNAME}|${VERSION}|${SCRIPTS_DIR}/sanity-check||${TIMESTAMP}" >> "$MANIFEST_FILE"
-    echo "${APPNAME}|${VERSION}|${CONFIG_DIR}/sanity.rc||${TIMESTAMP}"        >> "$MANIFEST_FILE"
+    echo "${APPNAME}|${VERSION}|${CONFIG_DIR}/sanity.rc||${TIMESTAMP}"     >> "$MANIFEST_FILE"
 
     tw_success "Installed ${APPNAME} v${VERSION}"
-    tw_msg "Next steps:"
-    tw_msg "  1. Edit ${CONFIG_DIR}/sanity.rc"
-    tw_msg "  2. Run:  sanity-check"
-    tw_msg "  3. Or:   tw checkup"
+    tw_msg "  Edit:  ${CONFIG_DIR}/sanity.rc"
+    tw_msg "  Run:   sanity-check  or  tw checkup"
 }
 
 remove() {
@@ -70,7 +73,8 @@ remove() {
     grep -v "^${APPNAME}|" "$MANIFEST_FILE" > "${MANIFEST_FILE}.tmp" || true
     mv "${MANIFEST_FILE}.tmp" "$MANIFEST_FILE"
     TASKRC="${HOME}/.taskrc"
-    grep -q "sanity.rc" "$TASKRC" 2>/dev/null && sed -i "/sanity.rc/d" "$TASKRC" \
+    grep -q "sanity.rc" "$TASKRC" 2>/dev/null \
+        && sed -i "/sanity.rc/d" "$TASKRC" \
         && tw_msg "Removed config include from .taskrc"
     tw_success "Removed ${APPNAME}"
 }
