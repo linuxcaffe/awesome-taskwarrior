@@ -29,7 +29,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
 
-VERSION = "4.10.1"
+VERSION = "4.10.2"
 
 # ANSI color codes
 class Colors:
@@ -539,10 +539,10 @@ if _os_timing.environ.get('TW_TIMING'):
     import atexit as _atexit
     _t0 = _time_module.perf_counter()
 
-    def _report_timing():
+    def _report_timing(_f=__file__):
         elapsed = (_time_module.perf_counter() - _t0) * 1000
         import os.path as _osp
-        print(f"[timing] {_osp.basename(__file__)}: {elapsed:.1f}ms", file=__import__('sys').stderr)
+        print(f"[timing] {_osp.basename(_f)}: {elapsed:.1f}ms", file=__import__('sys').stderr)
 
     _atexit.register(_report_timing)
 
