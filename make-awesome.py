@@ -29,7 +29,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
 
-VERSION = "4.10.0"
+VERSION = "4.10.1"
 
 # ANSI color codes
 class Colors:
@@ -1457,11 +1457,19 @@ def cmd_install(args, info=None) -> int:
         info = detect_project_info()
         print()
 
-    # Respect hand-crafted installers — skip generation if sentinel is present
+    # Respect hand-crafted installers — skip generation if sentinel is present,
+    # but still sync VERSION= from .meta so the manifest records the right version.
     install_file = Path(f"{info.name}.install")
     if install_file.exists() and 'HANDCRAFTED' in install_file.read_text():
         warn(f"{install_file} is marked HANDCRAFTED — skipping installer generation")
-        warn("Remove the HANDCRAFTED marker to let make-awesome.py manage this installer")
+        old_text = install_file.read_text()
+        new_text = re.sub(r'^VERSION="[^"]*"', f'VERSION="{info.version}"',
+                          old_text, count=1, flags=re.MULTILINE)
+        if new_text != old_text:
+            install_file.write_text(new_text)
+            msg(f"Synced VERSION=\"{info.version}\" in {install_file}")
+        else:
+            msg(f"VERSION already \"{info.version}\" in {install_file}")
         return 0
 
     if standalone:
