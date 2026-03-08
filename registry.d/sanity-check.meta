@@ -2,7 +2,7 @@
 # Interactively review and fix common Taskwarrior problems (overdue, stale deps, date conflicts) with hotkeys to select (configurable) options, or edit the task directly.
 
 name=sanity-check
-version=0.1.1
+version=0.5.6
 type=script
 description=Interactively review and fix common Taskwarrior problems (overdue, stale deps, date conflicts) with hotkeys to select (configurable) options, or edit the task directly.
 repo=https://github.com/linuxcaffe/tw-sanity-check
@@ -10,7 +10,7 @@ base_url=https://raw.githubusercontent.com/linuxcaffe/tw-sanity-check/master
 files=sanity-check:script,sanity.rc:config,README.md:doc
 tags=sanity, conditions, review, fix, maintenance, dates, dependencies
 
-checksums=6ef063510d880cd98baaef946770647f3a573ae152f03767d7518428e747d826,1205f54faf1134b8bf3ca674a4694d899e08fe9ff66e136fd26e1f350ca04338,523834f1e5d151cc3e801d0d39038be19e7f9c82837728fdd679c3d09e263432
+checksums=2e7a2473a7e32b89a787ed2f42d0bc51f422ada919c4552a9a4ef309a9ab5570,abcc110ef31cad2c24faf1abbcd17308f758dd6de4755f1a4d1f278e955db31b,523834f1e5d151cc3e801d0d39038be19e7f9c82837728fdd679c3d09e263432
 
 author=Designed by linuxcaffe, implemented by Claude Code
 license=MIT
