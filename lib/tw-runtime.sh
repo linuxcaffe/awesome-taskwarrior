@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # tw-runtime.sh - Shared runtime utilities for Taskwarrior Bash scripts
-# Version: 0.1.0
+# Version: 0.2.0
 #
 # Installation:
 #   Each extension's .install script runs:
@@ -41,6 +41,16 @@ warn() {
 VERBOSE_NOTHING='nothing'
 VERBOSE_AFFECTED='affected'
 VERBOSE_REPORT='label,blank'
+
+# Path to the cmx stale marker.  Any app that modifies a context definition
+# should call cmx_mark_stale so tw rebuilds the combined filter on next run.
+CMX_STALE_MARKER="${HOME}/.task/config/.cmx_stale"
+
+cmx_mark_stale() {
+    # Signal tw to rebuild the cmx combined filter.
+    # Call this after writing any context.X.read / context.X.write definition.
+    touch "${CMX_STALE_MARKER}" 2>/dev/null || true
+}
 
 
 # ============================================================================
@@ -117,4 +127,42 @@ sanitize_for_filename() {
     echo "$1" | tr '[:upper:]' '[:lower:]' \
               | sed 's/[^a-z0-9]/-/g; s/--*/-/g; s/^-//; s/-$//' \
               | cut -c1-40
+}
+
+
+# ============================================================================
+# Interactive terminal helpers (for scripts with menus or keypresses)
+# ============================================================================
+
+# _SAVED_STTY: captured at source time so getch() can always restore cleanly.
+_SAVED_STTY="$(stty -g 2>/dev/null)"
+
+getch() {
+    # Read a single keypress from /dev/tty without echoing it.
+    # Stores result in global _GETCH_KEY.
+    # Returns 0 always (safe to use in conditions).
+    # Handles Enter variants (empty, \r, \n) uniformly — all stored as ''.
+    #
+    # Usage:
+    #   getch
+    #   case "$_GETCH_KEY" in
+    #     '')  : enter ;;
+    #     'q') : quit ;;
+    #   esac
+    local _raw_key
+    stty raw -echo </dev/tty
+    _raw_key=$(dd bs=1 count=1 2>/dev/null </dev/tty)
+    stty "$_SAVED_STTY" </dev/tty
+    # Normalise Enter variants to empty string
+    case "$_raw_key" in
+        $'\r'|$'\n') _GETCH_KEY='' ;;
+        *) _GETCH_KEY="$_raw_key" ;;
+    esac
+    return 0
+}
+
+restore_terminal() {
+    # Restore terminal to the state captured at source time.
+    # Call in EXIT trap or after any raw-mode block.
+    [[ -n "$_SAVED_STTY" ]] && stty "$_SAVED_STTY" </dev/tty 2>/dev/null || true
 }

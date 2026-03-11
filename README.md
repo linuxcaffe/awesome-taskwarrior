@@ -228,7 +228,31 @@ the working version is restored automatically.
 
 Run `tw -l` to see the current registry, or browse:
 
-- [tw-recurrence](https://github.com/linuxcaffe/tw-recurrence_overhaul-hook) — Advanced recurrence with chained and periodic patterns
+### Hooks
+
+- [agenda-edate](https://github.com/linuxcaffe/tw-agenda-hook) v1.0.0 — Creates an "effective date" from `due`, `sched`, `wait`, and `until`; adds agenda reports
+- [deps-mgmt](https://github.com/linuxcaffe/tw-deps-mgmt-hook) v0.2.0 — Manage completion and deletion of tasks with dependencies; display dependency trees
+- [hledger-add](https://github.com/linuxcaffe/tw-hledger-add-hook) v0.1.0 — Fires `hledger add` interactively when a transaction-tagged task is completed
+- [need-priority](https://github.com/linuxcaffe/tw-need_priority-hook) v0.4.6 — Replaces `pri:H/M/L` with `pri:1–6` based on Maslow's Human Needs hierarchy
+- [recurrence-overhaul](https://github.com/linuxcaffe/tw-recurrence_overhaul-hook) v2.7.4 — Replaces native recurrence with periodic and chain-type patterns supporting `due`, `sched`, `wait`, and `until`
+- [smart-nag](https://github.com/linuxcaffe/tw-smart-nag-hook) v1.0.0 — Dynamically generated nag messages based on configurable task conditions
+- [subtask](https://github.com/linuxcaffe/tw-subtask-hook) v1.2.4 — Activates `- [ ] …` annotations as real dependent tasks when a parent task is started
+- [timelog](https://github.com/linuxcaffe/tw-timelog-hook) v2.0.1 — Records task start/stop times to an hledger-compatible timeclock file
+- [tod-filter](https://github.com/linuxcaffe/tod-filter) v0.1.2 — Defines time-of-day blocks and applies matching tag filters automatically
+- [tw2nb](https://github.com/linuxcaffe/tw2nb) v0.1.0 — Archives completed/deleted task events to nb as todos and running journal entries
+- [wikitags](https://github.com/linuxcaffe/tw-wikitags-hook) v1.0.0 — Allows `:tag:` wiki-style inline tags when adding tasks
+
+### Wrappers
+
+- [annn](https://github.com/linuxcaffe/tw-ann-hook) v0.7.0 — Manage annotations in your editor: add, list, label, and remove with concise syntax
+- [nicedates](https://github.com/linuxcaffe/tw-nicedates-hook) v1.0.2 — Transforms report dates to human-readable form: Today, Friday, Feb 20, etc.
+
+### Scripts
+
+- [resched](https://github.com/linuxcaffe/tw-sched-sh) v1.0.0 — Review and update stale-dated tasks interactively
+- [sanity-check](https://github.com/linuxcaffe/tw-sanity-check) v0.5.7 — Interactively review and fix common problems: overdue tasks, date conflicts, broken dependencies
+- [t](https://github.com/linuxcaffe/t) v2.0.2 — CLI for hledger timeclock files: clock in/out, check status, query periods
+- [urgency-tweaker](https://github.com/linuxcaffe/urgency-tweaker) v1.0.0 — Interactive ncurses tool to understand and tune your urgency coefficients
 
 ---
 
