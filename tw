@@ -2067,7 +2067,7 @@ def validate_first_arg_flag(args):
         return (False, None)
     
     # Known tw flags
-    known_short = ['-I', '-r', '-u', '-l', '-i', '-v', '-h', '-s', '-p', '-A']
+    known_short = ['-I', '-r', '-u', '-l', '-i', '-v', '-h', '-s', '-p', '-A', '-g']
     known_long = ['--install', '--remove', '--update', '--list', '--info', 
                   '--verify', '--tags', '--dry-run', '--debug', '--timing',
                   '--version', '--help', '--shell', '--pager', '--attach', '--generate-completion', '--install-completion']
@@ -2903,7 +2903,7 @@ _tw() {
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     
     # tw-specific flags
-    local tw_flags="-I --install -r --remove -u --update -l --list -i --info --verify --tags --dry-run --debug -v --version -h --help -s --shell -p --pager -A --attach --generate-completion"
+    local tw_flags="-I --install -r --remove -u --update -l --list -i --info --verify --tags --dry-run --debug -v --version -h --help -s --shell -p --pager -A --attach --generate-completion -g --gtk"
     
     # Check if we're completing a tw command or should pass through to task
     local i=1
@@ -3555,6 +3555,7 @@ def main():
     parser.add_argument('--install-completion', metavar='SHELL', help='Install completion script (bash|zsh|fish)')
     
     parser.add_argument('--timing', action='store_true', help='Show per-hook timing after task command')
+    parser.add_argument('-g', '--gtk', action='store_true', help='Launch GTK GUI (requires yad, jq)')
     
     # Parse ONLY the consecutive flags from the beginning
     # Use our pre-split args_for_parser instead of letting argparse scan everything
@@ -3620,6 +3621,7 @@ def main():
             ("",   "",         "--debug",               "[LEVEL]", "Enable debug output (1-3)"),
             ("",   "",         "--dry-run",             "",        "Show what would be done"),
             ("",   "",         "--generate-completion",  "SHELL",  "Generate shell completion script"),
+            ("-g", "[subcmd]",  "--gtk",                "[subcmd]", "Launch GTK GUI (add|context|triage|active)"),
             ("-h", "[TOPIC]",  "--help",                "[TOPIC]", "Show help or help on a topic"),
             ("-i", "[APP]",    "--info",                "[APP]",   "Show app info (all if no name)"),
             ("-I", "APP",      "--install",             "APP",     "Install an application"),
@@ -3682,6 +3684,14 @@ def main():
         cmd_row("@: <name> [args]",        "One-shot context override")
         cmd_row("@_ [args]",               "One-shot no-context override")
         cmd_row("@?",                       "Show active context details")
+        print("\nGTK GUI (requires: tw -I gtk):")
+        cmd_row("-g",                       "Task manager (+READY list)")
+        cmd_row("-g add",                   "Quick-add task form")
+        cmd_row("-g context",               "Context switcher")
+        cmd_row("-g triage",                "Urgency triage loop")
+        cmd_row("-g active",                "Active task dashboard")
+        cmd_row("-g +work",                 "Task manager with filter")
+        cmd_row("-g triage project:home",   "Triage with filter")
         print("\nDot Shortcuts:")
         cmd_row(".    [cmd]",               "Most recently added task (by ID)")
         cmd_row("..   [cmd]",              "Most recently modified task (by ID)")
@@ -3785,6 +3795,28 @@ def main():
         shell.run()
         return 0
     
+    if args.gtk:
+        scripts_dir = Path.home() / '.task' / 'scripts'
+        gtk_dispatch = {
+            'add':     'gtk-add.sh',
+            'context': 'gtk-context.sh',
+            'triage':  'gtk-triage.sh',
+            'active':  'gtk-active.sh',
+        }
+        subcommand = remaining[0] if remaining else None
+        if subcommand in gtk_dispatch:
+            script = scripts_dir / gtk_dispatch[subcommand]
+            extra = remaining[1:]
+        else:
+            script = scripts_dir / 'gtk-task.sh'
+            extra = remaining
+        if not script.exists():
+            print(f"[tw] GTK extension not found: {script}")
+            print("[tw] Install with: tw -I gtk")
+            return 1
+        import subprocess
+        return subprocess.call([str(script)] + extra)
+
     # Package management commands
     app_manager = AppManager(paths)
     
