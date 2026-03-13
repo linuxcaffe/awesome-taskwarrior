@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# gtk.install — installer for tw-gtk
+# HANDCRAFTED
+
+PACKAGE=gtk
+VERSION=0.1.0
+REPO_URL="https://raw.githubusercontent.com/linuxcaffe/tw-gtk/main"
+SCRIPTS_DIR="${HOME}/.task/scripts"
+CONFIG_DIR="${HOME}/.task/config"
+
+_die() { echo "[${PACKAGE}.install] ERROR: $*" >&2; exit 1; }
+_msg() { echo "[${PACKAGE}.install] $*"; }
+
+_check_deps() {
+    local ok=1
+    command -v yad &>/dev/null || { echo "  yad not found — install: sudo apt install yad" >&2; ok=0; }
+    command -v jq  &>/dev/null || { echo "  jq  not found — install: sudo apt install jq"  >&2; ok=0; }
+    [[ $ok -eq 1 ]]
+}
+
+_fetch() {
+    local src="$1" dst="$2"
+    curl -fsSL "${REPO_URL}/${src}" -o "$dst" \
+        || _die "Failed to download ${src}"
+}
+
+install() {
+    _check_deps || _die "Missing dependencies — install them and retry"
+
+    mkdir -p "$SCRIPTS_DIR" "$CONFIG_DIR"
+
+    _msg "Installing library: tw-gtk.sh"
+    _fetch tw-gtk.sh "${SCRIPTS_DIR}/tw-gtk.sh"
+    chmod +x "${SCRIPTS_DIR}/tw-gtk.sh"
+
+    _msg "Installing extension: gtk-add.sh"
+    _fetch gtk-add.sh "${SCRIPTS_DIR}/gtk-add.sh"
+    chmod +x "${SCRIPTS_DIR}/gtk-add.sh"
+
+    _msg "Installing extension: gtk-task.sh"
+    _fetch gtk-task.sh "${SCRIPTS_DIR}/gtk-task.sh"
+    chmod +x "${SCRIPTS_DIR}/gtk-task.sh"
+
+    # Config — install only if not already present (preserve user edits)
+    if [[ ! -f "${CONFIG_DIR}/gtk.rc" ]]; then
+        _msg "Installing config: gtk.rc"
+        _fetch gtk.rc "${CONFIG_DIR}/gtk.rc"
+    else
+        _msg "Config ${CONFIG_DIR}/gtk.rc already exists — skipping (use --force to overwrite)"
+    fi
+
+    # Record manifest for clean removal
+    cat > "${CONFIG_DIR}/.gtk_manifest" <<EOF
+${SCRIPTS_DIR}/tw-gtk.sh
+${SCRIPTS_DIR}/gtk-add.sh
+${SCRIPTS_DIR}/gtk-task.sh
+EOF
+
+    _msg "Done. Test with: gtk-add.sh"
+    _msg "           or:  gtk-task.sh"
+}
+
+uninstall() {
+    local manifest="${CONFIG_DIR}/.gtk_manifest"
+    if [[ -f "$manifest" ]]; then
+        while IFS= read -r f; do
+            [[ -f "$f" ]] && { rm -f "$f"; _msg "Removed $f"; }
+        done < "$manifest"
+        rm -f "$manifest"
+    else
+        # Fallback: remove known files
+        rm -f "${SCRIPTS_DIR}/tw-gtk.sh" \
+              "${SCRIPTS_DIR}/gtk-add.sh" \
+              "${SCRIPTS_DIR}/gtk-task.sh"
+    fi
+    # Leave gtk.rc — user may have customised it
+    _msg "Uninstalled. gtk.rc preserved (remove manually if desired)."
+}
+
+case "${1:-install}" in
+    install)   install   ;;
+    uninstall) uninstall ;;
+    update)    uninstall; install ;;
+    *)         echo "Usage: $0 [install|uninstall|update]" >&2; exit 1 ;;
+esac
