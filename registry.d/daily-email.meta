@@ -1,0 +1,17 @@
+# daily-email.meta
+# Send a daily Taskwarrior report by email via msmtp and systemd timer
+
+name=daily-email
+version=0.1.0
+type=hook
+description=Send a daily Taskwarrior report by email via msmtp and systemd timer
+repo=https://github.com/linuxcaffe/tw-daily-email
+base_url=https://raw.githubusercontent.com/linuxcaffe/tw-daily-email/master
+files=daily-email:script,daily-email.rc:config,daily-email.service:config,daily-email.timer:config,README.md:doc
+tags=email,daily,report,notification,systemd
+
+checksums=cacc8da5f7bdee6ca5960566ef102ec1667a487bde067f23e4189dffd267cf91,d63327b01de62d403be9fb4e2f33372375c52418071baae069611c3b498a930d,dcacd5db9fd65ab92ea2fed9b5eca8234d5d2ae762a2aa2e4c898077d8395f20,c3cfdd4af2a1fc8c55f0580a9041d9180f257e37facb58571461f733cacba779,96df8114162ae853e611707d1fb286f644b1e4c58c3d3ac22e8cde105cd612a5
+
+author=Designed by linuxcaffe, implemented by Claude Sonnet 4.6
+license=MIT
+requires_taskwarrior=2.6.0
