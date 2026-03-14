@@ -61,7 +61,7 @@ install() {
         _msg "Config ${CONFIG_DIR}/gtk.rc already exists — skipping (use --force to overwrite)"
     fi
 
-    # Record manifest for clean removal
+    # Record manifest for clean removal (gtk-specific)
     cat > "${CONFIG_DIR}/.gtk_manifest" <<EOF
 ${SCRIPTS_DIR}/tw-gtk.sh
 ${SCRIPTS_DIR}/gtk-add.sh
@@ -70,6 +70,25 @@ ${SCRIPTS_DIR}/gtk-context.sh
 ${SCRIPTS_DIR}/gtk-triage.sh
 ${SCRIPTS_DIR}/gtk-active.sh
 EOF
+
+    # Also register in the tw manifest so 'tw -l' shows gtk as installed.
+    # tw's AppManager.install() runs the bash installer but doesn't update
+    # .tw_manifest itself (HANDCRAFTED installers manage their own files).
+    local TW_MANIFEST="${CONFIG_DIR}/.tw_manifest"
+    local TIMESTAMP
+    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    # Remove any stale gtk entries first, then append current ones
+    if [[ -f "$TW_MANIFEST" ]]; then
+        sed -i "/^${PACKAGE}|/d" "$TW_MANIFEST"
+    fi
+    {
+        echo "${PACKAGE}|${VERSION}|${SCRIPTS_DIR}/tw-gtk.sh||${TIMESTAMP}"
+        echo "${PACKAGE}|${VERSION}|${SCRIPTS_DIR}/gtk-add.sh||${TIMESTAMP}"
+        echo "${PACKAGE}|${VERSION}|${SCRIPTS_DIR}/gtk-task.sh||${TIMESTAMP}"
+        echo "${PACKAGE}|${VERSION}|${SCRIPTS_DIR}/gtk-context.sh||${TIMESTAMP}"
+        echo "${PACKAGE}|${VERSION}|${SCRIPTS_DIR}/gtk-triage.sh||${TIMESTAMP}"
+        echo "${PACKAGE}|${VERSION}|${SCRIPTS_DIR}/gtk-active.sh||${TIMESTAMP}"
+    } >> "$TW_MANIFEST"
 
     _msg "Done. Test with: gtk-add.sh"
     _msg "           or:  gtk-task.sh"
@@ -91,6 +110,9 @@ uninstall() {
               "${SCRIPTS_DIR}/gtk-triage.sh" \
               "${SCRIPTS_DIR}/gtk-active.sh"
     fi
+    # Remove from tw manifest
+    local TW_MANIFEST="${CONFIG_DIR}/.tw_manifest"
+    [[ -f "$TW_MANIFEST" ]] && sed -i "/^${PACKAGE}|/d" "$TW_MANIFEST"
     # Leave gtk.rc — user may have customised it
     _msg "Uninstalled. gtk.rc preserved (remove manually if desired)."
 }
