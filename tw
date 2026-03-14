@@ -3556,6 +3556,7 @@ def main():
     
     parser.add_argument('--timing', action='store_true', help='Show per-hook timing after task command')
     parser.add_argument('-g', '--gtk', action='store_true', help='Launch GTK GUI (requires yad, jq)')
+    parser.add_argument('--gen', nargs='*', metavar='REPORT', help=argparse.SUPPRESS)
     
     # Parse ONLY the consecutive flags from the beginning
     # Use our pre-split args_for_parser instead of letting argparse scan everything
@@ -3685,11 +3686,14 @@ def main():
         cmd_row("@_ [args]",               "One-shot no-context override")
         cmd_row("@?",                       "Show active context details")
         print("\nGTK GUI (requires: tw -I gtk):")
-        cmd_row("-g",                       "Task manager (+READY list)")
+        cmd_row("-g",                       "Run default report (next) or +READY")
+        cmd_row("-g next",                  "Run cached 'next' report")
         cmd_row("-g add",                   "Quick-add task form")
         cmd_row("-g context",               "Context switcher")
         cmd_row("-g triage",                "Urgency triage loop")
         cmd_row("-g active",                "Active task dashboard")
+        cmd_row("-g --gen next list",       "Generate/cache reports")
+        cmd_row("-g --gen",                 "Regenerate all cached reports")
         cmd_row("-g +work",                 "Task manager with filter")
         cmd_row("-g triage project:home",   "Triage with filter")
         print("\nDot Shortcuts:")
@@ -3804,7 +3808,11 @@ def main():
             'active':  'gtk-active.sh',
         }
         subcommand = remaining[0] if remaining else None
-        if subcommand in gtk_dispatch:
+        # --gen parsed by argparse to avoid prefix-matching --generate-completion
+        if args.gen is not None:
+            script = scripts_dir / 'gtk-task.sh'
+            extra = ['--gen'] + (args.gen or []) + remaining
+        elif subcommand in gtk_dispatch:
             script = scripts_dir / gtk_dispatch[subcommand]
             extra = remaining[1:]
         else:
@@ -3814,7 +3822,6 @@ def main():
             print(f"[tw] GTK extension not found: {script}")
             print("[tw] Install with: tw -I gtk")
             return 1
-        import subprocess
         return subprocess.call([str(script)] + extra)
 
     # Package management commands

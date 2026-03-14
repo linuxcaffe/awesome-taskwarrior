@@ -245,7 +245,6 @@ Run `tw -l` to see the current registry, or browse:
 ### Wrappers
 
 - [annn](https://github.com/linuxcaffe/tw-ann-hook) v0.7.0 — Manage annotations in your editor: add, list, label, and remove with concise syntax
-- [nicedates](https://github.com/linuxcaffe/tw-nicedates-hook) v1.0.2 — Transforms report dates to human-readable form: Today, Friday, Feb 20, etc.
 
 ### Scripts
 

@@ -936,10 +936,11 @@ def prompt_for_metadata(info: ProjectInfo) -> bool:
     if response:
         info.version = response
     
-    print("Type: (1) hook, (2) script, (3) config, (4) theme, (5) wrapper")
-    response = input("Select [1]: ").strip()
     type_map = {'1': 'hook', '2': 'script', '3': 'config', '4': 'theme', '5': 'wrapper'}
-    info.type = type_map.get(response, 'hook')
+    type_default = {v: k for k, v in type_map.items()}.get(info.type, '1')
+    print("Type: (1) hook, (2) script, (3) config, (4) theme, (5) wrapper")
+    response = input(f"Select [{type_default}]: ").strip()
+    info.type = type_map.get(response, info.type)
     
     # Wrapper-specific prompts
     if info.type == 'wrapper':
