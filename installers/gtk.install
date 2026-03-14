@@ -41,6 +41,18 @@ install() {
     _fetch gtk-task.sh "${SCRIPTS_DIR}/gtk-task.sh"
     chmod +x "${SCRIPTS_DIR}/gtk-task.sh"
 
+    _msg "Installing extension: gtk-context.sh"
+    _fetch gtk-context.sh "${SCRIPTS_DIR}/gtk-context.sh"
+    chmod +x "${SCRIPTS_DIR}/gtk-context.sh"
+
+    _msg "Installing extension: gtk-triage.sh"
+    _fetch gtk-triage.sh "${SCRIPTS_DIR}/gtk-triage.sh"
+    chmod +x "${SCRIPTS_DIR}/gtk-triage.sh"
+
+    _msg "Installing extension: gtk-active.sh"
+    _fetch gtk-active.sh "${SCRIPTS_DIR}/gtk-active.sh"
+    chmod +x "${SCRIPTS_DIR}/gtk-active.sh"
+
     # Config — install only if not already present (preserve user edits)
     if [[ ! -f "${CONFIG_DIR}/gtk.rc" ]]; then
         _msg "Installing config: gtk.rc"
@@ -54,6 +66,9 @@ install() {
 ${SCRIPTS_DIR}/tw-gtk.sh
 ${SCRIPTS_DIR}/gtk-add.sh
 ${SCRIPTS_DIR}/gtk-task.sh
+${SCRIPTS_DIR}/gtk-context.sh
+${SCRIPTS_DIR}/gtk-triage.sh
+${SCRIPTS_DIR}/gtk-active.sh
 EOF
 
     _msg "Done. Test with: gtk-add.sh"
@@ -71,7 +86,10 @@ uninstall() {
         # Fallback: remove known files
         rm -f "${SCRIPTS_DIR}/tw-gtk.sh" \
               "${SCRIPTS_DIR}/gtk-add.sh" \
-              "${SCRIPTS_DIR}/gtk-task.sh"
+              "${SCRIPTS_DIR}/gtk-task.sh" \
+              "${SCRIPTS_DIR}/gtk-context.sh" \
+              "${SCRIPTS_DIR}/gtk-triage.sh" \
+              "${SCRIPTS_DIR}/gtk-active.sh"
     fi
     # Leave gtk.rc — user may have customised it
     _msg "Uninstalled. gtk.rc preserved (remove manually if desired)."
