@@ -3369,9 +3369,16 @@ def readme_cmd(docs_dir, query):
             print(f"  {app:35s}  {rel}")
         return 0
 
-    # Open mode — find first match
+    # Open mode — match priority: exact appname > prefix > substring
     q = query.lower()
-    matches = [f for f in docs if q in f.name.lower() or q in str(f.relative_to(docs_dir)).lower()]
+
+    def appname(f):
+        return f.name.lower().replace('_readme.md', '').replace('readme.md', '').replace('.md', '').replace('.txt', '').replace('.rst', '')
+
+    exact    = [f for f in docs if appname(f) == q]
+    prefix   = [f for f in docs if appname(f).startswith(q) and f not in exact]
+    substr   = [f for f in docs if q in appname(f) and f not in exact and f not in prefix]
+    matches  = exact or prefix or substr
 
     if not matches:
         print(f"[tw] No doc matching '{query}' in {docs_dir}")

@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# awesome-taskwarrior.install — installer for awesome-taskwarrior
+# HANDCRAFTED
+
+PACKAGE=awesome-taskwarrior
+VERSION=4.10.2
+REPO_URL="https://github.com/linuxcaffe/awesome-taskwarrior"
+BASE_URL="https://raw.githubusercontent.com/linuxcaffe/awesome-taskwarrior/master"
+SCRIPTS_DIR="${HOME}/.task/scripts"
+CONFIG_DIR="${HOME}/.task/config"
+DOCS_DIR="${HOME}/.task/docs"
+
+_die() { echo "[${PACKAGE}.install] ERROR: $*" >&2; exit 1; }
+_msg() { echo "[${PACKAGE}.install] $*"; }
+
+_fetch() {
+    local src="$1" dst="$2"
+    curl -fsSL "${BASE_URL}/${src}" -o "${dst}" \
+        || _die "Failed to fetch: ${src}"
+}
+
+install() {
+    mkdir -p "${SCRIPTS_DIR}" "${CONFIG_DIR}" "${DOCS_DIR}"
+
+    _msg "Installing: tw (main wrapper)"
+    _fetch "tw" "${SCRIPTS_DIR}/tw"
+    chmod +x "${SCRIPTS_DIR}/tw"
+
+    _msg "Installing: tw_hook_lib.py"
+    _fetch "lib/tw_hook_lib.py" "${SCRIPTS_DIR}/tw_hook_lib.py"
+
+    _msg "Installing: tw_condition_lib.py"
+    _fetch "lib/tw_condition_lib.py" "${SCRIPTS_DIR}/tw_condition_lib.py"
+
+    _msg "Installing: tw-runtime.sh"
+    _fetch "lib/tw-runtime.sh" "${SCRIPTS_DIR}/tw-runtime.sh"
+
+    _msg "Installing: tw-common.sh"
+    _fetch "lib/tw-common.sh" "${SCRIPTS_DIR}/tw-common.sh"
+
+    _msg "Installing: README"
+    _fetch "README.md" "${DOCS_DIR}/awesome-taskwarrior_README.md"
+
+    # Record in tw manifest
+    local TW_MANIFEST="${CONFIG_DIR}/.tw_manifest"
+    local TIMESTAMP
+    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    [[ -f "${TW_MANIFEST}" ]] && sed -i "/^${PACKAGE}|/d" "${TW_MANIFEST}"
+    echo "${PACKAGE}|${VERSION}|${SCRIPTS_DIR}/tw||${TIMESTAMP}" >> "${TW_MANIFEST}"
+
+    _msg "Done. Ensure ~/.task/scripts is on PATH:"
+    _msg "  export PATH=\"\$HOME/.task/scripts:\$PATH\""
+}
+
+uninstall() {
+    _msg "Removing installed files..."
+    rm -f "${SCRIPTS_DIR}/tw"
+    rm -f "${SCRIPTS_DIR}/tw_hook_lib.py"
+    rm -f "${SCRIPTS_DIR}/tw_condition_lib.py"
+    rm -f "${SCRIPTS_DIR}/tw-runtime.sh"
+    rm -f "${SCRIPTS_DIR}/tw-common.sh"
+
+    local TW_MANIFEST="${CONFIG_DIR}/.tw_manifest"
+    [[ -f "${TW_MANIFEST}" ]] && sed -i "/^${PACKAGE}|/d" "${TW_MANIFEST}"
+
+    _msg "Docs preserved — remove manually if desired: ${DOCS_DIR}/awesome-taskwarrior_README.md"
+}
+
+case "${1:-install}" in
+    install)            install   ;;
+    uninstall|remove)   uninstall ;;
+    update)             uninstall; install ;;
+    *)  echo "Usage: $0 [install|uninstall|update]" >&2; exit 1 ;;
+esac

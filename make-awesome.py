@@ -1616,6 +1616,11 @@ def push_registry(project_name: str) -> bool:
     try:
         import shutil
 
+        # Self-referential: cwd IS the registry — project commit already done, nothing more to do
+        if original_dir.resolve() == registry_path.resolve():
+            msg("Self-push: registry sync skipped (awesome-taskwarrior is not a managed app)")
+            return True
+
         # Copy to registry directories
         msg("Copying to registry...")
         shutil.copy(install_file, registry_path / 'installers' / install_file.name)
@@ -1700,7 +1705,7 @@ def cmd_push(args, commit_msg: str = None) -> int:
         return 1
     print()
 
-    # Step 2: Copy to registry and push
+    # Step 2: Copy to registry and push (no-op when self-push)
     msg("--- Registry ---")
     if not push_registry(project_name):
         return 1
