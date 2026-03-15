@@ -2,15 +2,15 @@
 # Dynamically generated nag massages, based on configurable conditions
 
 name=smart-nag
-version=1.0.0
+version=1.1.0
 type=hook
 description=Dynamically generated nag massages, based on configurable conditions
 repo=https://github.com/linuxcaffe/tw-smart-nag-hook
 base_url=https://raw.githubusercontent.com/linuxcaffe/tw-smart-nag-hook/master
-files=on-launch_smart-nag.py:hook,smart-nag.rc:config,README.md:doc
-tags=smart, nag, message, conditions, hook
+files=on-launch_smart-nag.py:hook,smart-nag-popup.py:script,tw-smart-nag-popup.service:systemd,tw-smart-nag-popup.timer:systemd,smart-nag.rc:config,README.md:doc
+tags=smart, nag, message, gtk, conditions, hook
 
-checksums=5a9b327c6aa71c10bc734e4f3340c4f5c2f9bacf6b901fbd752051ecd746ac8f,a21d7636df635f46e16351b281c1e9549e71366b2c9120cc86d3b2a3a4fa21a1,55be89cbb480ca8d9cdee83be6eb3ea0767011557025e4e1d09bf09de4498930
+checksums=d9a05312478ae07ad4b1e4dca55f27661a2453afa6604d97311468435d2c22c0,981579a2939d9f818814e874dafeb7369cd7900c7613118f5fcc9fe167bafc67,60ad38b9acdbe6a28e06648dabfccf3744798dfde3c3dc04de43c122f70803d3,ef8d0dfb3c504f72725e790ebbfd58aa0d2402d1f636eaa9a1c05172d860a41c,1bfa5baaf01e041607878d1adb37fd4378f767dd0d5ff439076ac3da854ba607,03a9148a10bc82c9f59871091a820f1db88e06a7e2cd12868601cfbb0611d1a6
 
 author=Designed by linuxcaffe, implemented by Claude Sonnet
 license=MIT
