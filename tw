@@ -2070,8 +2070,8 @@ def validate_first_arg_flag(args):
         return (False, None)
     
     # Known tw flags
-    known_short = ['-I', '-r', '-u', '-l', '-i', '-v', '-h', '-s', '-p', '-A', '-g']
-    known_long = ['--install', '--remove', '--update', '--list', '--info', 
+    known_short = ['-I', '-r', '-R', '-u', '-l', '-i', '-v', '-h', '-s', '-p', '-A', '-g']
+    known_long = ['--install', '--remove', '--readme', '--update', '--list', '--info',
                   '--verify', '--tags', '--dry-run', '--debug', '--timing',
                   '--version', '--help', '--shell', '--pager', '--attach', '--generate-completion', '--install-completion']
     
@@ -2906,7 +2906,7 @@ _tw() {
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     
     # tw-specific flags
-    local tw_flags="-I --install -r --remove -u --update -l --list -i --info --verify --tags --dry-run --debug -v --version -h --help -s --shell -p --pager -A --attach --generate-completion -g --gtk"
+    local tw_flags="-I --install -r --remove -R --readme -u --update -l --list -i --info --verify --tags --dry-run --debug -v --version -h --help -s --shell -p --pager -A --attach --generate-completion -g --gtk"
     
     # Check if we're completing a tw command or should pass through to task
     local i=1
@@ -2915,7 +2915,7 @@ _tw() {
     # Look for tw-specific flags in the command line
     while [[ $i -lt $COMP_CWORD ]]; do
         case "${COMP_WORDS[$i]}" in
-            -I|--install|-r|--remove|-u|--update|-l|--list|-i|--info|--verify|--tags|--dry-run|--debug|-v|--version|-h|--help|-s|--shell|-p|--pager|-A|--attach|--generate-completion)
+            -I|--install|-r|--remove|-R|--readme|-u|--update|-l|--list|-i|--info|--verify|--tags|--dry-run|--debug|-v|--version|-h|--help|-s|--shell|-p|--pager|-A|--attach|--generate-completion)
                 found_tw_cmd=1
                 break
                 ;;
@@ -3338,6 +3338,62 @@ def install_completion(shell):
     except Exception as e:
         return (False, f"Failed to install completion: {e}")
 
+def readme_cmd(docs_dir, query):
+    """List or open README/doc files from ~/.task/docs/.
+
+    tw -R          — list all doc files
+    tw -R <query>  — open first file whose name contains query (case-insensitive)
+    """
+    docs_dir = Path(docs_dir)
+    if not docs_dir.exists():
+        print(f"[tw] No docs directory: {docs_dir}")
+        return 1
+
+    # Collect all files (README.md, *_README.md, *.md, *.txt)
+    docs = sorted(
+        [f for f in docs_dir.rglob('*') if f.is_file() and f.suffix in ('.md', '.txt', '.rst')],
+        key=lambda f: f.name.lower()
+    )
+
+    if not docs:
+        print(f"[tw] No docs found in {docs_dir}")
+        return 0
+
+    if not query:
+        # List mode
+        print(f"[tw] Docs in {docs_dir}:")
+        for f in docs:
+            rel = f.relative_to(docs_dir)
+            # Strip leading path to show cleanly
+            app = str(rel).replace('_README.md', '').replace('README.md', '').replace('.md', '').replace('/', ' / ')
+            print(f"  {app:35s}  {rel}")
+        return 0
+
+    # Open mode — find first match
+    q = query.lower()
+    matches = [f for f in docs if q in f.name.lower() or q in str(f.relative_to(docs_dir)).lower()]
+
+    if not matches:
+        print(f"[tw] No doc matching '{query}' in {docs_dir}")
+        print(f"[tw] Try: tw -R  (to list all)")
+        return 1
+
+    target = matches[0]
+    if len(matches) > 1:
+        print(f"[tw] Multiple matches — opening first: {target.name}")
+
+    # Choose viewer: bat (with markdown) > PAGER > less > cat
+    import shutil as _shutil
+    if _shutil.which('bat'):
+        os.execvp('bat', ['bat', '--style=plain', '--language=md', str(target)])
+    else:
+        pager = os.environ.get('PAGER', 'less')
+        if _shutil.which(pager):
+            os.execvp(pager, [pager, str(target)])
+        else:
+            os.execvp('cat', ['cat', str(target)])
+
+
 def main():
     """Main entry point"""
     # Rebuild cmx combined filter if a context definition was changed externally.
@@ -3499,8 +3555,8 @@ def main():
     # CRITICAL: Only let argparse see consecutive flags from the start
     # Once we hit a non-flag argument, everything after should pass through
     # Special handling: flags that take arguments need their arg included
-    flags_with_args = ['-I', '-r', '-u', '-i', '-A', '--install', '--remove', 
-                      '--update', '--info', '--attach', '--verify', '--generate-completion', '--install-completion']
+    flags_with_args = ['-I', '-r', '-u', '-i', '-R', '-A', '--install', '--remove',
+                      '--update', '--info', '--readme', '--attach', '--verify', '--generate-completion', '--install-completion']
     
     args_for_parser = []
     remaining_args = []
@@ -3558,6 +3614,7 @@ def main():
     parser.add_argument('--install-completion', metavar='SHELL', help='Install completion script (bash|zsh|fish)')
     
     parser.add_argument('--timing', action='store_true', help='Show per-hook timing after task command')
+    parser.add_argument('-R', '--readme', nargs='?', const='', metavar='APP', help='List or open README docs')
     parser.add_argument('-g', '--gtk', action='store_true', help='Launch GTK GUI (requires yad, jq)')
     parser.add_argument('--gen', nargs='*', metavar='REPORT', help=argparse.SUPPRESS)
     
@@ -3632,6 +3689,7 @@ def main():
             ("",   "",         "--install-completion",   "SHELL",  "Install shell completion script"),
             ("-l", "[+/-tags]","--list",                "",        "List installed/available applications"),
             ("-p", "",         "--pager",               "",        "Use pager for task output"),
+            ("-R", "[APP]",    "--readme",              "[APP]",   "List docs or open README for app"),
             ("-r", "APP",      "--remove",              "APP",     "Remove an application"),
             ("-s", "",         "--shell",               "",        "Start interactive shell"),
             ("",   "",         "--tags",                "[APP..]", "List all available tags"),
@@ -3919,7 +3977,10 @@ def main():
     if args.verify:
         show_dev_mode_if_needed()
         return 0 if app_manager.verify(args.verify) else 1
-    
+
+    if args.readme is not None:
+        return readme_cmd(paths.docs_dir, args.readme)
+
     # If no tw commands, pass through to task
     if remaining or (not any(vars(args).values())):
         task_args = remaining if remaining else sys.argv[1:]
