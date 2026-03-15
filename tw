@@ -1171,7 +1171,10 @@ class AppManager:
         
         if old_version == new_version:
             print(f"[tw] Already at v{new_version}")
-            response = input("[tw] Reinstall anyway? [y/N]: ").strip().lower()
+            try:
+                response = input("[tw] Reinstall anyway? [y/N]: ").strip().lower()
+            except EOFError:
+                response = 'n'
             if response != 'y':
                 return True
         
