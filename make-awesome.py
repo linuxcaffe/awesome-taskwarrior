@@ -871,7 +871,9 @@ def load_files_from_meta(meta_file: Path) -> list:
 
 
 def _load_or_detect_files() -> list:
-    """Use files= from existing .meta if available, else detect from filesystem."""
+    """Use files= from existing .meta if available, else detect from filesystem.
+    Always supplements with any doc files (README.md etc.) present on disk but
+    missing from files= — ensures they're not silently dropped on re-generation."""
     meta_files = list(Path('.').glob('*.meta'))
     if meta_files:
         files = load_files_from_meta(meta_files[0])
@@ -880,6 +882,12 @@ def _load_or_detect_files() -> list:
             for t in files:
                 dest = f" → {t[2]}" if len(t) > 2 else ""
                 msg(f"    {t[0]}:{t[1]}{dest}")
+            # Supplement with doc files present on disk but absent from files=
+            existing_names = {t[0] for t in files}
+            for doc in ['README.md', 'USAGE.md', 'INSTALL.md']:
+                if doc not in existing_names and Path(doc).exists():
+                    files.append((doc, 'doc'))
+                    msg(f"  Doc (auto-added): {doc}")
             return files
     return detect_files()
 
