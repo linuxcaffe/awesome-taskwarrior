@@ -106,6 +106,25 @@ _setup_powerline_config() {
 
     mkdir -p "${PL_CONFIG}/colorschemes" "${PL_CONFIG}/themes/shell"
 
+    # Main config.json — required for powerline to find the shell extension + our theme
+    if [[ ! -f "${PL_CONFIG}/config.json" ]]; then
+        _msg "Creating powerline config.json: ${PL_CONFIG}/config.json"
+        cat > "${PL_CONFIG}/config.json" <<'EOF'
+{
+  "ext": {
+    "shell": {
+      "colorscheme": "default",
+      "theme": "default",
+      "local_themes": {
+        "continuation": "continuation",
+        "select": "select"
+      }
+    }
+  }
+}
+EOF
+    fi
+
     # Colorscheme — create if absent, otherwise note what to add
     if [[ ! -f "$cs" ]]; then
         _msg "Creating starter powerline colorscheme: ${cs}"
