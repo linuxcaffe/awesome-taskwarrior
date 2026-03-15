@@ -3,7 +3,7 @@
 # HANDCRAFTED
 
 PACKAGE=gtk
-VERSION=1.2.1
+VERSION=1.2.2
 REPO_URL="https://raw.githubusercontent.com/linuxcaffe/tw-gtk/main"
 SCRIPTS_DIR="${HOME}/.task/scripts"
 HOOKS_DIR="${HOME}/.task/hooks"
@@ -126,8 +126,8 @@ uninstall() {
 }
 
 case "${1:-install}" in
-    install)   install   ;;
-    uninstall) uninstall ;;
-    update)    uninstall; install ;;
+    install)            install   ;;
+    uninstall|remove)   uninstall ;;
+    update)             uninstall; install ;;
     *)         echo "Usage: $0 [install|uninstall|update]" >&2; exit 1 ;;
 esac
