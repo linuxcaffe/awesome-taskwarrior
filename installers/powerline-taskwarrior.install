@@ -3,7 +3,7 @@
 # HANDCRAFTED
 
 PACKAGE=powerline-taskwarrior
-VERSION=2.0.1
+VERSION=2.0.2
 FORK_URL="https://github.com/linuxcaffe/powerline-taskwarrior.git"
 SCRIPTS_DIR="${HOME}/.task/scripts"
 CONFIG_DIR="${HOME}/.task/config"
