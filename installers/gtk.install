@@ -3,9 +3,10 @@
 # HANDCRAFTED
 
 PACKAGE=gtk
-VERSION=0.1.0
+VERSION=1.2.1
 REPO_URL="https://raw.githubusercontent.com/linuxcaffe/tw-gtk/main"
 SCRIPTS_DIR="${HOME}/.task/scripts"
+HOOKS_DIR="${HOME}/.task/hooks"
 CONFIG_DIR="${HOME}/.task/config"
 
 _die() { echo "[${PACKAGE}.install] ERROR: $*" >&2; exit 1; }
@@ -53,6 +54,11 @@ install() {
     _fetch gtk-active.sh "${SCRIPTS_DIR}/gtk-active.sh"
     chmod +x "${SCRIPTS_DIR}/gtk-active.sh"
 
+    mkdir -p "$HOOKS_DIR"
+    _msg "Installing hook: on-modify_gtk-notify.sh"
+    _fetch on-modify_gtk-notify.sh "${HOOKS_DIR}/on-modify_gtk-notify.sh"
+    chmod +x "${HOOKS_DIR}/on-modify_gtk-notify.sh"
+
     # Config — install only if not already present (preserve user edits)
     if [[ ! -f "${CONFIG_DIR}/gtk.rc" ]]; then
         _msg "Installing config: gtk.rc"
@@ -69,6 +75,7 @@ ${SCRIPTS_DIR}/gtk-task.sh
 ${SCRIPTS_DIR}/gtk-context.sh
 ${SCRIPTS_DIR}/gtk-triage.sh
 ${SCRIPTS_DIR}/gtk-active.sh
+${HOOKS_DIR}/on-modify_gtk-notify.sh
 EOF
 
     # Also register in the tw manifest so 'tw -l' shows gtk as installed.
@@ -88,6 +95,7 @@ EOF
         echo "${PACKAGE}|${VERSION}|${SCRIPTS_DIR}/gtk-context.sh||${TIMESTAMP}"
         echo "${PACKAGE}|${VERSION}|${SCRIPTS_DIR}/gtk-triage.sh||${TIMESTAMP}"
         echo "${PACKAGE}|${VERSION}|${SCRIPTS_DIR}/gtk-active.sh||${TIMESTAMP}"
+        echo "${PACKAGE}|${VERSION}|${HOOKS_DIR}/on-modify_gtk-notify.sh||${TIMESTAMP}"
     } >> "$TW_MANIFEST"
 
     _msg "Done. Test with: gtk-add.sh"

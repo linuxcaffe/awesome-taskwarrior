@@ -2,15 +2,15 @@
 # GTK GUI library and extensions for Taskwarrior, powered by YAD
 
 name=gtk
-version=1.1.4
+version=1.2.1
 type=script
 description=GTK GUI library and extensions for Taskwarrior, powered by YAD
 repo=https://github.com/linuxcaffe/tw-gtk
 base_url=https://raw.githubusercontent.com/linuxcaffe/tw-gtk/main
-files=tw-gtk.sh:script:scripts,gtk-add.sh:script:scripts,gtk-task.sh:script:scripts,gtk-context.sh:script:scripts,gtk-triage.sh:script:scripts,gtk-active.sh:script:scripts
-tags=gui gtk yad desktop
+files=tw-gtk.sh:script:scripts,gtk-add.sh:script:scripts,gtk-task.sh:script:scripts,gtk-context.sh:script:scripts,gtk-triage.sh:script:scripts,gtk-active.sh:script:scripts,on-modify_gtk-notify.sh:hook:hooks,README.md:doc
+tags=gui gtk yad desktop notifications
 
-checksums=4ac4214c0e2d0aba6f9c4eb58ba367fda7cbe6d0cf945d970225c5025151873f,0b81f8c03a1cfe28e0b0449881809a13764b115f8f4de5459f67751b488daa8a,f78d401fd1f4796639dd2808ea7d3f46e3180d0bec48263da5001840bd8d1116,3ede8e4cf0896ef55f2acf20b84ce31d7b84b7ec91480bb17721f8d6a3e4f606,960a196395d997e90ea6f528425bd3c2d1fe8cb8d91cbf1e73b9d09946d8656f,06f7e5bf4770d428ebfa20804eb68b845fa5f89f3fa36987fd7fd192546ce08c
+checksums=362b0c4df244428f52bbddff23411e7abb5818ab97028f9f1814c22ca2e171e7,0b81f8c03a1cfe28e0b0449881809a13764b115f8f4de5459f67751b488daa8a,b3d57844c497728c9e1026d0614536ba28e3dfd6f501cc2dd3246add3f133d62,3ede8e4cf0896ef55f2acf20b84ce31d7b84b7ec91480bb17721f8d6a3e4f606,960a196395d997e90ea6f528425bd3c2d1fe8cb8d91cbf1e73b9d09946d8656f,06f7e5bf4770d428ebfa20804eb68b845fa5f89f3fa36987fd7fd192546ce08c,c00cef1eb1afdfa48ee9a44f36150f5c42cf20b9cb1048246de91a7231658210,9f7d6e77708c56b4f2ae20f0ce769dc0e4d176251da1eff6825c1073ad3975c2
 
 author=Designed by linuxcaffe, coded by claude
 license=MIT
