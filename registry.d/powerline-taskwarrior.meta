@@ -7,7 +7,7 @@ type=script
 description=Powerline segments for Taskwarrior — context, active task, next task, pending count
 repo=https://github.com/linuxcaffe/powerline-taskwarrior
 base_url=https://raw.githubusercontent.com/linuxcaffe/powerline-taskwarrior/master
-files=powerline-taskwarrior.install:script,README.md:doc
+files=powerline-taskwarrior.install:script,README.md:doc:docs/powerline-taskwarrior_README.md
 tags=powerline,shell,prompt,context,segments
 
 author=German Lashevich (upstream), linuxcaffe (fork)

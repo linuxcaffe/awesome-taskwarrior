@@ -5,8 +5,10 @@
 PACKAGE=powerline-taskwarrior
 VERSION=2.0.0
 FORK_URL="https://github.com/linuxcaffe/powerline-taskwarrior.git"
-DOCS_DIR="${HOME}/.task/docs/powerline-taskwarrior"
+SCRIPTS_DIR="${HOME}/.task/scripts"
 CONFIG_DIR="${HOME}/.task/config"
+DOCS_DIR="${HOME}/.task/docs"
+PL_CONFIG="${HOME}/.config/powerline"
 
 _die() { echo "[${PACKAGE}.install] ERROR: $*" >&2; exit 1; }
 _msg() { echo "[${PACKAGE}.install] $*"; }
@@ -14,7 +16,8 @@ _msg() { echo "[${PACKAGE}.install] $*"; }
 _check_deps() {
     local ok=1
     command -v python3 &>/dev/null || { echo "  python3 not found" >&2; ok=0; }
-    python3 -m pip --version &>/dev/null || { echo "  pip not found — install: sudo apt install python3-pip" >&2; ok=0; }
+    python3 -m pip --version &>/dev/null \
+        || { echo "  pip not found — install: sudo apt install python3-pip" >&2; ok=0; }
     python3 -c "import powerline" &>/dev/null \
         || { echo "  powerline-status not found — install: pip install --user powerline-status" >&2; ok=0; }
     [[ $ok -eq 1 ]]
@@ -28,58 +31,123 @@ install() {
         "git+${FORK_URL}" \
         || _die "pip install failed"
 
-    _msg "Writing sample config snippets to ${DOCS_DIR}/"
-    mkdir -p "$DOCS_DIR"
+    # Install this script to scripts/ so tw can find it for updates
+    mkdir -p "$SCRIPTS_DIR"
+    local self_url="https://raw.githubusercontent.com/linuxcaffe/powerline-taskwarrior/master/powerline-taskwarrior.install"
+    curl -fsSL "$self_url" -o "${SCRIPTS_DIR}/powerline-taskwarrior.install" \
+        || cp "$0" "${SCRIPTS_DIR}/powerline-taskwarrior.install"
+    chmod +x "${SCRIPTS_DIR}/powerline-taskwarrior.install"
 
-    cat > "${DOCS_DIR}/colorscheme-groups.json" <<'EOF'
+    # Config snippets → ~/.task/config/
+    mkdir -p "$CONFIG_DIR"
+    _msg "Writing config snippets to ${CONFIG_DIR}/"
+
+    cat > "${CONFIG_DIR}/powerline-taskwarrior-colorscheme.json" <<'EOF'
 {
   "groups": {
     "taskwarrior:context":             "information:regular",
     "taskwarrior:pending_tasks_count": "information:priority",
-    "taskwarrior:active_id":   { "bg": "mediumgreen",   "fg": "black", "attrs": [] },
-    "taskwarrior:active_desc": { "bg": "green",         "fg": "black", "attrs": [] },
-    "taskwarrior:next_id":     { "bg": "brightyellow",  "fg": "black", "attrs": [] },
-    "taskwarrior:next_desc":   { "bg": "yellow",        "fg": "black", "attrs": [] }
+    "taskwarrior:active_id":   { "bg": "mediumgreen",  "fg": "black", "attrs": [] },
+    "taskwarrior:active_desc": { "bg": "green",        "fg": "black", "attrs": [] },
+    "taskwarrior:next_id":     { "bg": "brightyellow", "fg": "black", "attrs": [] },
+    "taskwarrior:next_desc":   { "bg": "yellow",       "fg": "black", "attrs": [] }
   }
 }
 EOF
 
-    cat > "${DOCS_DIR}/theme-segments.json" <<'EOF'
+    cat > "${CONFIG_DIR}/powerline-taskwarrior-segments.json" <<'EOF'
 {
-  "_comment": "Add the segments you want to the right (or left) array in your theme file.",
-  "segments": {
-    "right": [
-      { "function": "powerline_taskwarrior.context",            "priority": 70 },
-      { "function": "powerline_taskwarrior.active_task",        "priority": 70 },
-      { "function": "powerline_taskwarrior.next_task",          "priority": 60 },
-      { "function": "powerline_taskwarrior.pending_tasks_count","priority": 50 }
-    ]
-  }
+  "_comment": "Paste chosen segments into the right[] or left[] array of your theme file.",
+  "available_segments": [
+    { "function": "powerline_taskwarrior.context",             "priority": 70 },
+    { "function": "powerline_taskwarrior.active_task",         "priority": 70 },
+    { "function": "powerline_taskwarrior.next_task",           "priority": 60 },
+    { "function": "powerline_taskwarrior.pending_tasks_count", "priority": 50 }
+  ]
 }
 EOF
+
+    # Powerline config — create starter files if absent
+    _setup_powerline_config
 
     # Record in tw manifest
     local TW_MANIFEST="${CONFIG_DIR}/.tw_manifest"
     local TIMESTAMP
     TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-    if [[ -f "$TW_MANIFEST" ]]; then
-        sed -i "/^${PACKAGE}|/d" "$TW_MANIFEST"
-    fi
-    echo "${PACKAGE}|${VERSION}|pip:powerline-taskwarrior||${TIMESTAMP}" >> "$TW_MANIFEST"
+    [[ -f "$TW_MANIFEST" ]] && sed -i "/^${PACKAGE}|/d" "$TW_MANIFEST"
+    echo "${PACKAGE}|${VERSION}|${SCRIPTS_DIR}/powerline-taskwarrior.install||${TIMESTAMP}" >> "$TW_MANIFEST"
 
     _msg ""
-    _msg "Done. Python package installed."
+    # Find powerline.sh — location varies by install method
+    local pl_sh
+    pl_sh=$(find /usr/share/powerline /usr/local/share/powerline \
+        ~/.local/lib/python*/site-packages/powerline \
+        -name "powerline.sh" -path "*/bash/*" 2>/dev/null | head -1)
+
+    _msg "Done."
     _msg ""
-    _msg "Next steps:"
-    _msg "  1. Merge colorscheme groups into your powerline colorscheme:"
-    _msg "       cat ${DOCS_DIR}/colorscheme-groups.json"
-    _msg "     → add the 'groups' keys to ~/.config/powerline/colorschemes/default.json"
+    _msg "Activate in ~/.bashrc:"
+    _msg "  powerline-daemon -q"
+    _msg "  POWERLINE_BASH_CONTINUATION=1"
+    _msg "  POWERLINE_BASH_SELECT=1"
+    if [[ -n "$pl_sh" ]]; then
+        _msg "  source ${pl_sh}"
+    else
+        _msg "  source \$(find /usr /usr/local ~/.local -name 'powerline.sh' -path '*/bash/*' 2>/dev/null | head -1)"
+    fi
     _msg ""
-    _msg "  2. Add segments to your powerline theme:"
-    _msg "       cat ${DOCS_DIR}/theme-segments.json"
-    _msg "     → add chosen segments to ~/.config/powerline/themes/shell/default.json"
-    _msg ""
-    _msg "  3. Reload powerline:  powerline-daemon --replace"
+    _msg "Then: source ~/.bashrc"
+    _msg "To reload after config changes: powerline-daemon --replace"
+}
+
+_setup_powerline_config() {
+    local cs="${PL_CONFIG}/colorschemes/default.json"
+    local th="${PL_CONFIG}/themes/shell/default.json"
+
+    mkdir -p "${PL_CONFIG}/colorschemes" "${PL_CONFIG}/themes/shell"
+
+    # Colorscheme — create if absent, otherwise note what to add
+    if [[ ! -f "$cs" ]]; then
+        _msg "Creating starter powerline colorscheme: ${cs}"
+        cat > "$cs" <<'EOF'
+{
+  "groups": {
+    "taskwarrior:context":             "information:regular",
+    "taskwarrior:pending_tasks_count": "information:priority",
+    "taskwarrior:active_id":   { "bg": "mediumgreen",  "fg": "black", "attrs": [] },
+    "taskwarrior:active_desc": { "bg": "green",        "fg": "black", "attrs": [] },
+    "taskwarrior:next_id":     { "bg": "brightyellow", "fg": "black", "attrs": [] },
+    "taskwarrior:next_desc":   { "bg": "yellow",       "fg": "black", "attrs": [] }
+  }
+}
+EOF
+    else
+        _msg "Colorscheme exists — merge groups from:"
+        _msg "  ${CONFIG_DIR}/powerline-taskwarrior-colorscheme.json"
+        _msg "  into: ${cs}"
+    fi
+
+    # Theme — create if absent, otherwise note what to add
+    if [[ ! -f "$th" ]]; then
+        _msg "Creating starter powerline shell theme: ${th}"
+        cat > "$th" <<'EOF'
+{
+  "segments": {
+    "left": [
+      { "function": "powerline.segments.shell.cwd", "priority": 10 }
+    ],
+    "right": [
+      { "function": "powerline_taskwarrior.context",    "priority": 70 },
+      { "function": "powerline_taskwarrior.active_task","priority": 70 }
+    ]
+  }
+}
+EOF
+    else
+        _msg "Theme exists — add chosen segments from:"
+        _msg "  ${CONFIG_DIR}/powerline-taskwarrior-segments.json"
+        _msg "  into: ${th}"
+    fi
 }
 
 uninstall() {
@@ -88,11 +156,14 @@ uninstall() {
         && _msg "Package removed" \
         || _msg "Package not found in pip (may have been removed already)"
 
-    # Remove from tw manifest
+    rm -f "${SCRIPTS_DIR}/powerline-taskwarrior.install"
+
     local TW_MANIFEST="${CONFIG_DIR}/.tw_manifest"
     [[ -f "$TW_MANIFEST" ]] && sed -i "/^${PACKAGE}|/d" "$TW_MANIFEST"
 
-    _msg "Sample configs preserved at ${DOCS_DIR}/ (remove manually if desired)"
+    _msg "Powerline config files preserved — remove manually if desired:"
+    _msg "  ${PL_CONFIG}/colorschemes/default.json"
+    _msg "  ${PL_CONFIG}/themes/shell/default.json"
 }
 
 case "${1:-install}" in
