@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# powerline-taskwarrior.install — installer for powerline-taskwarrior
+# HANDCRAFTED
+
+PACKAGE=powerline-taskwarrior
+VERSION=2.0.0
+FORK_URL="https://github.com/linuxcaffe/powerline-taskwarrior.git"
+DOCS_DIR="${HOME}/.task/docs/powerline-taskwarrior"
+CONFIG_DIR="${HOME}/.task/config"
+
+_die() { echo "[${PACKAGE}.install] ERROR: $*" >&2; exit 1; }
+_msg() { echo "[${PACKAGE}.install] $*"; }
+
+_check_deps() {
+    local ok=1
+    command -v python3 &>/dev/null || { echo "  python3 not found" >&2; ok=0; }
+    python3 -m pip --version &>/dev/null || { echo "  pip not found — install: sudo apt install python3-pip" >&2; ok=0; }
+    python3 -c "import powerline" &>/dev/null \
+        || { echo "  powerline-status not found — install: pip install --user powerline-status" >&2; ok=0; }
+    [[ $ok -eq 1 ]]
+}
+
+install() {
+    _check_deps || _die "Missing dependencies — install them and retry"
+
+    _msg "Installing Python package from fork..."
+    python3 -m pip install --user --quiet \
+        "git+${FORK_URL}" \
+        || _die "pip install failed"
+
+    _msg "Writing sample config snippets to ${DOCS_DIR}/"
+    mkdir -p "$DOCS_DIR"
+
+    cat > "${DOCS_DIR}/colorscheme-groups.json" <<'EOF'
+{
+  "groups": {
+    "taskwarrior:context":             "information:regular",
+    "taskwarrior:pending_tasks_count": "information:priority",
+    "taskwarrior:active_id":   { "bg": "mediumgreen",   "fg": "black", "attrs": [] },
+    "taskwarrior:active_desc": { "bg": "green",         "fg": "black", "attrs": [] },
+    "taskwarrior:next_id":     { "bg": "brightyellow",  "fg": "black", "attrs": [] },
+    "taskwarrior:next_desc":   { "bg": "yellow",        "fg": "black", "attrs": [] }
+  }
+}
+EOF
+
+    cat > "${DOCS_DIR}/theme-segments.json" <<'EOF'
+{
+  "_comment": "Add the segments you want to the right (or left) array in your theme file.",
+  "segments": {
+    "right": [
+      { "function": "powerline_taskwarrior.context",            "priority": 70 },
+      { "function": "powerline_taskwarrior.active_task",        "priority": 70 },
+      { "function": "powerline_taskwarrior.next_task",          "priority": 60 },
+      { "function": "powerline_taskwarrior.pending_tasks_count","priority": 50 }
+    ]
+  }
+}
+EOF
+
+    # Record in tw manifest
+    local TW_MANIFEST="${CONFIG_DIR}/.tw_manifest"
+    local TIMESTAMP
+    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    if [[ -f "$TW_MANIFEST" ]]; then
+        sed -i "/^${PACKAGE}|/d" "$TW_MANIFEST"
+    fi
+    echo "${PACKAGE}|${VERSION}|pip:powerline-taskwarrior||${TIMESTAMP}" >> "$TW_MANIFEST"
+
+    _msg ""
+    _msg "Done. Python package installed."
+    _msg ""
+    _msg "Next steps:"
+    _msg "  1. Merge colorscheme groups into your powerline colorscheme:"
+    _msg "       cat ${DOCS_DIR}/colorscheme-groups.json"
+    _msg "     → add the 'groups' keys to ~/.config/powerline/colorschemes/default.json"
+    _msg ""
+    _msg "  2. Add segments to your powerline theme:"
+    _msg "       cat ${DOCS_DIR}/theme-segments.json"
+    _msg "     → add chosen segments to ~/.config/powerline/themes/shell/default.json"
+    _msg ""
+    _msg "  3. Reload powerline:  powerline-daemon --replace"
+}
+
+uninstall() {
+    _msg "Uninstalling Python package..."
+    python3 -m pip uninstall -y powerline-taskwarrior 2>/dev/null \
+        && _msg "Package removed" \
+        || _msg "Package not found in pip (may have been removed already)"
+
+    # Remove from tw manifest
+    local TW_MANIFEST="${CONFIG_DIR}/.tw_manifest"
+    [[ -f "$TW_MANIFEST" ]] && sed -i "/^${PACKAGE}|/d" "$TW_MANIFEST"
+
+    _msg "Sample configs preserved at ${DOCS_DIR}/ (remove manually if desired)"
+}
+
+case "${1:-install}" in
+    install)          install   ;;
+    uninstall|remove) uninstall ;;
+    update)           uninstall; install ;;
+    *)  echo "Usage: $0 [install|uninstall|update]" >&2; exit 1 ;;
+esac

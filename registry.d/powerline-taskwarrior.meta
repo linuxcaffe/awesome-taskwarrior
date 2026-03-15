@@ -1,0 +1,16 @@
+# powerline-taskwarrior.meta
+# Powerline segments for Taskwarrior — context, active task, next task, pending count
+
+name=powerline-taskwarrior
+version=2.0.0
+type=script
+description=Powerline segments for Taskwarrior — context, active task, next task, pending count
+repo=https://github.com/linuxcaffe/powerline-taskwarrior
+base_url=https://raw.githubusercontent.com/linuxcaffe/powerline-taskwarrior/master
+files=powerline-taskwarrior.install:script,README.md:doc
+tags=powerline,shell,prompt,context,segments
+
+author=German Lashevich (upstream), linuxcaffe (fork)
+license=MIT
+requires_taskwarrior=2.4.2
+requires_python=3.8
