@@ -2070,7 +2070,7 @@ def validate_first_arg_flag(args):
         return (False, None)
     
     # Known tw flags
-    known_short = ['-I', '-r', '-R', '-u', '-l', '-i', '-v', '-h', '-s', '-p', '-A', '-g']
+    known_short = ['-I', '-r', '-R', '-u', '-l', '-i', '-v', '-h', '-s', '-p', '-A', '-g', '-t']
     known_long = ['--install', '--remove', '--readme', '--update', '--list', '--info',
                   '--verify', '--tags', '--dry-run', '--debug', '--timing',
                   '--version', '--help', '--shell', '--pager', '--attach', '--generate-completion', '--install-completion']
@@ -2906,7 +2906,7 @@ _tw() {
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     
     # tw-specific flags
-    local tw_flags="-I --install -r --remove -R --readme -u --update -l --list -i --info --verify --tags --dry-run --debug -v --version -h --help -s --shell -p --pager -A --attach --generate-completion -g --gtk"
+    local tw_flags="-I --install -r --remove -R --readme -u --update -l --list -i --info --verify --tags --dry-run --debug -v --version -h --help -s --shell -p --pager -A --attach --generate-completion -g --gtk -t --tui"
     
     # Check if we're completing a tw command or should pass through to task
     local i=1
@@ -3623,6 +3623,7 @@ def main():
     parser.add_argument('--timing', action='store_true', help='Show per-hook timing after task command')
     parser.add_argument('-R', '--readme', nargs='?', const='', metavar='APP', help='List or open README docs')
     parser.add_argument('-g', '--gtk', action='store_true', help='Launch GTK GUI (requires yad, jq)')
+    parser.add_argument('-t', '--tui', action='store_true', help='Launch terminal UI (tw-tui)')
     parser.add_argument('--gen', nargs='*', metavar='REPORT', help=argparse.SUPPRESS)
     
     # Parse ONLY the consecutive flags from the beginning
@@ -3891,6 +3892,13 @@ def main():
             print("[tw] Install with: tw -I gtk")
             return 1
         return subprocess.call([str(script)] + extra)
+
+    if args.tui:
+        tui = Path.home() / '.task' / 'scripts' / 'tw-tui'
+        if not tui.exists():
+            print("[tw] tw-tui not found. Install with: tw -I tw-tui")
+            return 1
+        return subprocess.call([str(tui)] + remaining)
 
     # Package management commands
     app_manager = AppManager(paths)

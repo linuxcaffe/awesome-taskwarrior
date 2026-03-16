@@ -1479,6 +1479,31 @@ def cmd_install(args, info=None) -> int:
             msg(f"Synced VERSION=\"{info.version}\" in {install_file}")
         else:
             msg(f"VERSION already \"{info.version}\" in {install_file}")
+        # Recalculate checksums in .meta — VERSION sync changed the file content
+        meta_file = Path(f"{info.name}.meta")
+        if meta_file.exists():
+            meta_text = meta_file.read_text()
+            if 'checksums=' in meta_text:
+                # Reload files= list from meta to recalculate in correct order
+                files_line = next((l for l in meta_text.splitlines() if l.startswith('files=')), None)
+                if files_line:
+                    file_entries = [e.split(':')[0] for e in files_line[6:].split(',')]
+                    new_checksums = []
+                    ok = True
+                    for fname in file_entries:
+                        try:
+                            sha = hashlib.sha256(Path(fname).read_bytes()).hexdigest()
+                            new_checksums.append(sha)
+                        except Exception as e:
+                            warn(f"Could not checksum {fname}: {e}")
+                            ok = False
+                            break
+                    if ok:
+                        new_cs_line = 'checksums=' + ','.join(new_checksums)
+                        new_meta = re.sub(r'^checksums=.*$', new_cs_line,
+                                          meta_text, flags=re.MULTILINE)
+                        meta_file.write_text(new_meta)
+                        msg(f"Updated checksums in {meta_file}")
         return 0
 
     if standalone:
@@ -1554,7 +1579,12 @@ def push_project_repo(commit_msg: str) -> bool:
         msg("Files to be committed:")
         print(result.stdout)
 
-        response = input("Commit and push these files? [Y/n]: ").strip().lower()
+        try:
+            response = input("Commit and push these files? [Y/n]: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            msg("Cancelled")
+            return False
         if response == 'n':
             msg("Skipping project commit")
             return True  # Not an error - user chose to skip
@@ -1855,4 +1885,8 @@ def main():
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        print()
+        sys.exit(1)
