@@ -1,0 +1,17 @@
+# stop-started.meta
+# Stop other active tasks when a new task is started — enforces one active task at a time
+
+name=stop-started
+version=1.1.0
+type=hook
+description=Stop other active tasks when a new task is started — enforces one active task at a time
+repo=https://github.com/linuxcaffe/tw-stop-started-hook
+base_url=https://raw.githubusercontent.com/linuxcaffe/tw-stop-started-hook/master
+files=on-modify_stop-started.sh:hook
+tags=hook,start,active,single,focus
+
+checksums=a8b2aae4957ecf17875a91de2a20c42be8024f0b18035f76e2c2c38262f7237b
+
+author=tba
+license=MIT
+requires_taskwarrior=2.6.0

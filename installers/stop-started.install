@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# stop-started.install — installer for tw-stop-started-hook
+# HANDCRAFTED
+
+PACKAGE=stop-started
+VERSION=1.1.0
+BASE_URL="https://raw.githubusercontent.com/linuxcaffe/tw-stop-started-hook/master"
+HOOKS_DIR="${HOME}/.task/hooks"
+CONFIG_DIR="${HOME}/.task/config"
+
+_die() { echo "[${PACKAGE}.install] ERROR: $*" >&2; exit 1; }
+_msg() { echo "[${PACKAGE}.install] $*"; }
+
+_fetch() {
+    local src="$1" dst="$2"
+    curl -fsSL "${BASE_URL}/${src}" -o "${dst}" \
+        || _die "Failed to fetch: ${src}"
+}
+
+install() {
+    mkdir -p "${HOOKS_DIR}" "${CONFIG_DIR}"
+
+    _msg "Installing: on-modify_stop-started.sh"
+    _fetch "on-modify_stop-started.sh" "${HOOKS_DIR}/on-modify_stop-started.sh"
+    chmod +x "${HOOKS_DIR}/on-modify_stop-started.sh"
+
+    local TW_MANIFEST="${CONFIG_DIR}/.tw_manifest"
+    local TIMESTAMP
+    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    [[ -f "${TW_MANIFEST}" ]] && sed -i "/^${PACKAGE}|/d" "${TW_MANIFEST}"
+    echo "${PACKAGE}|${VERSION}|${HOOKS_DIR}/on-modify_stop-started.sh||${TIMESTAMP}" >> "${TW_MANIFEST}"
+
+    _msg "Done. One active task at a time — others are stopped when a new task is started."
+}
+
+uninstall() {
+    rm -f "${HOOKS_DIR}/on-modify_stop-started.sh"
+
+    local TW_MANIFEST="${CONFIG_DIR}/.tw_manifest"
+    [[ -f "${TW_MANIFEST}" ]] && sed -i "/^${PACKAGE}|/d" "${TW_MANIFEST}"
+
+    _msg "Uninstalled."
+}
+
+case "${1:-install}" in
+    install)            install   ;;
+    uninstall|remove)   uninstall ;;
+    update)             uninstall; install ;;
+    *)  echo "Usage: $0 [install|uninstall|update]" >&2; exit 1 ;;
+esac
