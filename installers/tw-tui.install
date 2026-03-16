@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# tw-tui.install — installer for tw-tui
+# HANDCRAFTED
+
+PACKAGE=tw-tui
+VERSION=0.25.4
+RELEASE_TAG="25.4-tw26"
+REPO="linuxcaffe/tw-tui"
+BASE_URL="https://raw.githubusercontent.com/${REPO}/master"
+RELEASE_URL="https://github.com/${REPO}/releases/download/${RELEASE_TAG}"
+SCRIPTS_DIR="${HOME}/.task/scripts"
+CONFIG_DIR="${HOME}/.task/config"
+DOCS_DIR="${HOME}/.task/docs"
+
+_die() { echo "[${PACKAGE}.install] ERROR: $*" >&2; exit 1; }
+_msg() { echo "[${PACKAGE}.install] $*"; }
+
+_fetch() {
+    local src="$1" dst="$2"
+    curl -fsSL "${BASE_URL}/${src}" -o "${dst}" \
+        || _die "Failed to fetch: ${src}"
+}
+
+install() {
+    mkdir -p "${SCRIPTS_DIR}" "${CONFIG_DIR}" "${DOCS_DIR}"
+
+    _msg "Downloading binary from release ${RELEASE_TAG}..."
+    curl -fsSL "${RELEASE_URL}/taskwarrior-tui" -o "${SCRIPTS_DIR}/taskwarrior-tui" \
+        || _die "Failed to download binary — does release ${RELEASE_TAG} exist?"
+    chmod +x "${SCRIPTS_DIR}/taskwarrior-tui"
+    _msg "Installed: taskwarrior-tui"
+
+    _msg "Installing: tw-tui (wrapper)"
+    _fetch "tw-tui" "${SCRIPTS_DIR}/tw-tui"
+    chmod +x "${SCRIPTS_DIR}/tw-tui"
+
+    if [[ -f "${CONFIG_DIR}/tui.rc" ]]; then
+        _msg "Skipping tui.rc — already exists (user config preserved)"
+    else
+        _msg "Installing: tui.rc (config template)"
+        _fetch "tui.rc" "${CONFIG_DIR}/tui.rc"
+    fi
+
+    _fetch "README.md" "${DOCS_DIR}/tw-tui_README.md"
+
+    local TW_MANIFEST="${CONFIG_DIR}/.tw_manifest"
+    local TIMESTAMP
+    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    [[ -f "${TW_MANIFEST}" ]] && sed -i "/^${PACKAGE}|/d" "${TW_MANIFEST}"
+    echo "${PACKAGE}|${VERSION}|${SCRIPTS_DIR}/taskwarrior-tui||${TIMESTAMP}" >> "${TW_MANIFEST}"
+    echo "${PACKAGE}|${VERSION}|${SCRIPTS_DIR}/tw-tui||${TIMESTAMP}" >> "${TW_MANIFEST}"
+
+    _msg ""
+    _msg "Done. Launch with: tw -t"
+    _msg "Or directly:       tw-tui"
+    _msg ""
+    _msg "Tab switching inside tui: ] / ["
+    _msg "Config: ${CONFIG_DIR}/tui.rc"
+}
+
+uninstall() {
+    _msg "Removing installed files..."
+    rm -f "${SCRIPTS_DIR}/taskwarrior-tui"
+    rm -f "${SCRIPTS_DIR}/tw-tui"
+
+    local TW_MANIFEST="${CONFIG_DIR}/.tw_manifest"
+    [[ -f "${TW_MANIFEST}" ]] && sed -i "/^${PACKAGE}|/d" "${TW_MANIFEST}"
+
+    _msg "Config and docs preserved — remove manually if desired:"
+    _msg "  ${CONFIG_DIR}/tui.rc"
+    _msg "  ${DOCS_DIR}/tw-tui_README.md"
+}
+
+case "${1:-install}" in
+    install)            install   ;;
+    uninstall|remove)   uninstall ;;
+    update)             uninstall; install ;;
+    *)  echo "Usage: $0 [install|uninstall|update]" >&2; exit 1 ;;
+esac

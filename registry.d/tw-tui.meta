@@ -1,0 +1,17 @@
+# tw-tui.meta
+# Terminal UI for Taskwarrior 2.6.x — fork of taskwarrior-tui pinned to last TW2 compatible version
+
+name=tw-tui
+version=0.25.4
+type=script
+description=Terminal UI for Taskwarrior 2.6.x — fork of taskwarrior-tui pinned to last TW2 compatible version
+repo=https://github.com/linuxcaffe/tw-tu
+base_url=https://raw.githubusercontent.com/linuxcaffe/tw-tu/master
+files=tw-tui:script:scripts,tui.rc:config:config,README.md:doc
+tags=tui,terminal,ui,interface,vim
+
+checksums=77279222e5e15f388b264eea7d66e7cf86ad2f56d3a272459a7589a05a57f682,4fab0e667df02e299df634c0fec34ef2678a1c5251669f8083059aeb4a91850f,b70aafaf68d9315655e9faf9f6b81b9d41bd154a361088966d81d5d6347a1c76
+
+author=linuxcaffe (fork of kdheepak/taskwarrior-tui)
+license=MIT
+requires_taskwarrior=2.6.0
