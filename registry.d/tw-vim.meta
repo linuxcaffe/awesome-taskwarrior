@@ -1,0 +1,17 @@
+# tw-vim.meta
+# Interactive Taskwarrior interface for Vim and Neovim
+
+name=tw-vim
+version=1.0.0
+type=script
+description=Interactive Taskwarrior interface for Vim and Neovim
+repo=https://github.com/linuxcaffe/taskwarrior.vim
+base_url=https://raw.githubusercontent.com/linuxcaffe/taskwarrior.vim/master
+files=tw-vim.install:install:installers,README.md:doc
+tags=vim, neovim, plugin, ui
+
+checksums=356807e98abbfc38095a1731fba31781587ca8e9505d8ff53cd8b1c8f42504ce,79dd739ebd9b3c82f6c421604906780fade1584994eae045e8299cab66766621
+
+author=blindFS, xarthurx, linuxcaffe
+license=MIT
+requires_taskwarrior=2.6.0

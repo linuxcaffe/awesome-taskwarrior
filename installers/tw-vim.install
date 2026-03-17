@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# taskwarrior.vim.install — installer for taskwarrior.vim
+# HANDCRAFTED
+
+PACKAGE=taskwarrior.vim
+VERSION=1.0.0
+REPO="linuxcaffe/taskwarrior.vim"
+REPO_URL="https://github.com/${REPO}.git"
+CONFIG_DIR="${HOME}/.task/config"
+
+_die() { echo "[${PACKAGE}.install] ERROR: $*" >&2; exit 1; }
+_msg() { echo "[${PACKAGE}.install] $*"; }
+
+_pack_dirs() {
+    # Emit pack base dirs for all installed editors (vim and/or nvim)
+    if command -v nvim &>/dev/null; then
+        echo "${HOME}/.local/share/nvim/site/pack"
+    fi
+    if command -v vim &>/dev/null; then
+        echo "${HOME}/.vim/pack"
+    fi
+}
+
+_helptags() {
+    local doc_dir="$1"
+    [[ -d "${doc_dir}" ]] || return
+    if command -v nvim &>/dev/null; then
+        nvim --headless -c "helptags ${doc_dir}" -c quit 2>/dev/null
+    elif command -v vim &>/dev/null; then
+        vim --not-a-term -c "helptags ${doc_dir}" -c quit 2>/dev/null
+    fi
+}
+
+install() {
+    local found=0
+    while IFS= read -r pack_base; do
+        local pack_dir="${pack_base}/taskwarrior/start"
+        local install_dir="${pack_dir}/${PACKAGE}"
+        mkdir -p "${pack_dir}"
+        if [[ -d "${install_dir}/.git" ]]; then
+            _msg "Updating ${install_dir}..."
+            git -C "${install_dir}" pull --ff-only \
+                || _die "git pull failed in ${install_dir}"
+        else
+            _msg "Installing to ${install_dir}..."
+            git clone --depth=1 "${REPO_URL}" "${install_dir}" \
+                || _die "git clone failed"
+        fi
+        _msg "Generating helptags..."
+        _helptags "${install_dir}/doc"
+        found=1
+    done < <(_pack_dirs)
+
+    [[ "${found}" -eq 1 ]] || _die "No vim or nvim found — cannot determine pack directory"
+
+    local TW_MANIFEST="${CONFIG_DIR}/.tw_manifest"
+    local TIMESTAMP
+    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    mkdir -p "${CONFIG_DIR}"
+    [[ -f "${TW_MANIFEST}" ]] && sed -i "/^${PACKAGE}|/d" "${TW_MANIFEST}"
+    echo "${PACKAGE}|${VERSION}|${REPO_URL}||${TIMESTAMP}" >> "${TW_MANIFEST}"
+
+    _msg "Done."
+    _msg ""
+    _msg "Open vim/nvim and run:  :TWOpen"
+}
+
+uninstall() {
+    _msg "Removing installed files..."
+    while IFS= read -r pack_base; do
+        local install_dir="${pack_base}/taskwarrior/start/${PACKAGE}"
+        if [[ -d "${install_dir}" ]]; then
+            rm -rf "${install_dir}"
+            _msg "Removed ${install_dir}"
+        fi
+    done < <(_pack_dirs)
+
+    local TW_MANIFEST="${CONFIG_DIR}/.tw_manifest"
+    [[ -f "${TW_MANIFEST}" ]] && sed -i "/^${PACKAGE}|/d" "${TW_MANIFEST}"
+}
+
+case "${1:-install}" in
+    install)           install   ;;
+    uninstall|remove)  uninstall ;;
+    update)            uninstall; install ;;
+    *) echo "Usage: $0 [install|uninstall|update]" >&2; exit 1 ;;
+esac
