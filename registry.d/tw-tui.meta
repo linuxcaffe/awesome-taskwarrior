@@ -5,8 +5,8 @@ name=tw-tui
 version=25.4-tw26
 type=script
 description=Terminal UI for Taskwarrior 2.6.x — fork of taskwarrior-tui pinned to last TW2 compatible version
-repo=https://github.com/linuxcaffe/tw-tu
-base_url=https://raw.githubusercontent.com/linuxcaffe/tw-tu/v2-maintenance
+repo=https://github.com/linuxcaffe/tw-tui
+base_url=https://raw.githubusercontent.com/linuxcaffe/tw-tui/v2-maintenance
 files=tw-tui:script:scripts,tui.rc:config:config,README.md:doc
 tags=tui,terminal,ui,interface,vim
 
