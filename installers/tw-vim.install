@@ -1,15 +1,24 @@
 #!/usr/bin/env bash
-# taskwarrior.vim.install — installer for taskwarrior.vim
+# tw-vim.install — installer for tw-vim (taskwarrior.vim)
 # HANDCRAFTED
 
-PACKAGE=taskwarrior.vim
+PACKAGE=tw-vim
 VERSION=1.0.0
 REPO="linuxcaffe/taskwarrior.vim"
 REPO_URL="https://github.com/${REPO}.git"
+BASE_URL="https://raw.githubusercontent.com/${REPO}/master"
+SCRIPTS_DIR="${HOME}/.task/scripts"
+DOCS_DIR="${HOME}/.task/docs"
 CONFIG_DIR="${HOME}/.task/config"
 
 _die() { echo "[${PACKAGE}.install] ERROR: $*" >&2; exit 1; }
 _msg() { echo "[${PACKAGE}.install] $*"; }
+
+_fetch() {
+    local src="$1" dst="$2"
+    curl -fsSL "${BASE_URL}/${src}" -o "${dst}" \
+        || _die "Failed to fetch: ${src}"
+}
 
 _pack_dirs() {
     # Emit pack base dirs for all installed editors (vim and/or nvim)
@@ -32,6 +41,14 @@ _helptags() {
 }
 
 install() {
+    mkdir -p "${SCRIPTS_DIR}" "${DOCS_DIR}"
+
+    _msg "Installing: tw-vim launcher"
+    _fetch "tw-vim" "${SCRIPTS_DIR}/tw-vim"
+    chmod +x "${SCRIPTS_DIR}/tw-vim"
+
+    _fetch "README.md" "${DOCS_DIR}/tw-vim_README.md"
+
     local found=0
     while IFS= read -r pack_base; do
         local pack_dir="${pack_base}/taskwarrior/start"
@@ -58,17 +75,19 @@ install() {
     TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     mkdir -p "${CONFIG_DIR}"
     [[ -f "${TW_MANIFEST}" ]] && sed -i "/^${PACKAGE}|/d" "${TW_MANIFEST}"
-    echo "${PACKAGE}|${VERSION}|${REPO_URL}||${TIMESTAMP}" >> "${TW_MANIFEST}"
+    echo "${PACKAGE}|${VERSION}|${SCRIPTS_DIR}/tw-vim||${TIMESTAMP}" >> "${TW_MANIFEST}"
 
     _msg "Done."
     _msg ""
-    _msg "Open vim/nvim and run:  :TWOpen"
+    _msg "Launch with:  tw-vim"
 }
 
 uninstall() {
     _msg "Removing installed files..."
+    rm -f "${SCRIPTS_DIR}/tw-vim"
+
     while IFS= read -r pack_base; do
-        local install_dir="${pack_base}/taskwarrior/start/${PACKAGE}"
+        local install_dir="${pack_base}/taskwarrior/start/taskwarrior.vim"
         if [[ -d "${install_dir}" ]]; then
             rm -rf "${install_dir}"
             _msg "Removed ${install_dir}"
