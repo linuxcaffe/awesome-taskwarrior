@@ -51,7 +51,7 @@ install() {
 
     local found=0
     while IFS= read -r pack_base; do
-        local pack_dir="${pack_base}/taskwarrior/start"
+        local pack_dir="${pack_base}/taskwarrior/opt"
         local install_dir="${pack_dir}/${PACKAGE}"
         mkdir -p "${pack_dir}"
         if [[ -d "${install_dir}/.git" ]]; then
@@ -87,7 +87,7 @@ uninstall() {
     rm -f "${SCRIPTS_DIR}/tw-vim"
 
     while IFS= read -r pack_base; do
-        local install_dir="${pack_base}/taskwarrior/start/taskwarrior.vim"
+        local install_dir="${pack_base}/taskwarrior/opt/taskwarrior.vim"
         if [[ -d "${install_dir}" ]]; then
             rm -rf "${install_dir}"
             _msg "Removed ${install_dir}"
