@@ -103,14 +103,21 @@ Three options, in this order. Use consistent heading style:
 ### Option 3 — Manual
 ```
 
-**Option 1** runs the bundled `.install` file. Include the two
-commands (chmod + run) and one line saying what it installs where.
+**Option 1** curls the `.install` file and runs it. Use this form:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/linuxcaffe/<name>/main/<name>.install | bash
+```
+
+One line saying what it installs where. The pipe-to-bash form is
+preferred for brevity; show the two-step form (save then run) only if
+the script requires user review or has interactive prompts.
 
 **Option 2** is the `tw -I <name>` one-liner. Nothing else needed.
 
 **Option 3** is the manual steps, with inline comments in the code
 block. End with the `~/.taskrc` include line and a verification
-command if one exists.
+command if one exists, and task diag, if applicable.
 
 ---
 
