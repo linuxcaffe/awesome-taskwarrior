@@ -7,7 +7,7 @@ type=hook
 description=Apply configurable default times to date-only due, scheduled, wait, and until fields
 repo=https://github.com/linuxcaffe/tw-time-defaults-hook
 base_url=https://raw.githubusercontent.com/linuxcaffe/tw-time-defaults-hook/main
-files=on-add_time-defaults.py:hook:hooks,on-modify_time-defaults.py:hook:hooks,time-defaults.rc:config:config,README.md:doc
+files=on-add_time-defaults.py:hook:hooks,on-modify_time-defaults.py:hook:hooks,time-defaults.rc:config:config,README.md:doc:docs/time-defaults_README.md
 tags=time, defaults, hook
 
 checksums=bd054974ee32960a4d30256fe646232e565761c2001278b8da72bba9f52594c7,f0a155925244397a8dcf42c9957e4de4999fbfea3dac337997101e8fead1deb1,8e365df63eedebf507d0810dd6ab53e235f5363b0829a27dda83b1d83d63885e,229102faf87f29e398209c637536e59e25df9a7cfb049726ad753dae654b82f3

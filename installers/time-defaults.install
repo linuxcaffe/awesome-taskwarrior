@@ -8,6 +8,7 @@ REPO="linuxcaffe/tw-time-defaults-hook"
 BASE_URL="https://raw.githubusercontent.com/${REPO}/main"
 HOOKS_DIR="${HOME}/.task/hooks"
 CONFIG_DIR="${HOME}/.task/config"
+DOCS_DIR="${HOME}/.task/docs"
 
 _die() { echo "[${PACKAGE}.install] ERROR: $*" >&2; exit 1; }
 _msg() { echo "[${PACKAGE}.install] $*"; }
@@ -19,7 +20,7 @@ _fetch() {
 }
 
 install() {
-    mkdir -p "${HOOKS_DIR}" "${CONFIG_DIR}"
+    mkdir -p "${HOOKS_DIR}" "${CONFIG_DIR}" "${DOCS_DIR}"
 
     _msg "Installing: on-add_time-defaults.py"
     _fetch "on-add_time-defaults.py" "${HOOKS_DIR}/on-add_time-defaults.py"
@@ -45,6 +46,8 @@ install() {
     [[ -f "${TW_MANIFEST}" ]] && sed -i "/^${PACKAGE}|/d" "${TW_MANIFEST}"
     echo "${PACKAGE}|${VERSION}|${HOOKS_DIR}/on-add_time-defaults.py||${TIMESTAMP}" >> "${TW_MANIFEST}"
     echo "${PACKAGE}|${VERSION}|${HOOKS_DIR}/on-modify_time-defaults.py||${TIMESTAMP}" >> "${TW_MANIFEST}"
+
+    _fetch "README.md" "${DOCS_DIR}/time-defaults_README.md"
 
     _msg "Done."
 }
