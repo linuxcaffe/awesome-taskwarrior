@@ -10,7 +10,7 @@ base_url=https://raw.githubusercontent.com/linuxcaffe/tw-tui/v2-maintenance
 files=tw-tui:script:scripts,tui.rc:config:config,README.md:doc
 tags=tui,terminal,ui,interface,vim
 
-checksums=77279222e5e15f388b264eea7d66e7cf86ad2f56d3a272459a7589a05a57f682,8bdeedeacaa67bff8027c34b05f432dd06ba569b5fddc75fce09503b3c3d16fa,6b66576c5f5ab1c9255f36adbcf2c01bbcc99d6e0624e767afb0f3003852dad7
+checksums=77279222e5e15f388b264eea7d66e7cf86ad2f56d3a272459a7589a05a57f682,8bdeedeacaa67bff8027c34b05f432dd06ba569b5fddc75fce09503b3c3d16fa,4de9ac8d92a77ffa1089b795ac7d496bb4aac18321b88df7974407de92017216
 
 author=linuxcaffe (fork of kdheepak/taskwarrior-tui)
 license=MIT
