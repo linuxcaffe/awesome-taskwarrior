@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# time-defaults.install — installer for tw-time-defaults
+# HANDCRAFTED
+
+PACKAGE=time-defaults
+VERSION=1.0.0
+REPO="linuxcaffe/tw-time-defaults-hook"
+BASE_URL="https://raw.githubusercontent.com/${REPO}/main"
+HOOKS_DIR="${HOME}/.task/hooks"
+CONFIG_DIR="${HOME}/.task/config"
+
+_die() { echo "[${PACKAGE}.install] ERROR: $*" >&2; exit 1; }
+_msg() { echo "[${PACKAGE}.install] $*"; }
+
+_fetch() {
+    local src="$1" dst="$2"
+    curl -fsSL "${BASE_URL}/${src}" -o "${dst}" \
+        || _die "Failed to fetch: ${src}"
+}
+
+install() {
+    mkdir -p "${HOOKS_DIR}" "${CONFIG_DIR}"
+
+    _msg "Installing: on-add_time-defaults.py"
+    _fetch "on-add_time-defaults.py" "${HOOKS_DIR}/on-add_time-defaults.py"
+    chmod +x "${HOOKS_DIR}/on-add_time-defaults.py"
+
+    _msg "Installing: on-modify_time-defaults.py"
+    _fetch "on-modify_time-defaults.py" "${HOOKS_DIR}/on-modify_time-defaults.py"
+    chmod +x "${HOOKS_DIR}/on-modify_time-defaults.py"
+
+    if [[ -f "${CONFIG_DIR}/time-defaults.rc" ]]; then
+        _msg "Skipping time-defaults.rc — already exists (user config preserved)"
+    else
+        _msg "Installing: time-defaults.rc"
+        _fetch "time-defaults.rc" "${CONFIG_DIR}/time-defaults.rc"
+        _msg ""
+        _msg "Add to ~/.taskrc:"
+        _msg "  include ~/.task/config/time-defaults.rc"
+    fi
+
+    local TW_MANIFEST="${CONFIG_DIR}/.tw_manifest"
+    local TIMESTAMP
+    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    [[ -f "${TW_MANIFEST}" ]] && sed -i "/^${PACKAGE}|/d" "${TW_MANIFEST}"
+    echo "${PACKAGE}|${VERSION}|${HOOKS_DIR}/on-add_time-defaults.py||${TIMESTAMP}" >> "${TW_MANIFEST}"
+    echo "${PACKAGE}|${VERSION}|${HOOKS_DIR}/on-modify_time-defaults.py||${TIMESTAMP}" >> "${TW_MANIFEST}"
+
+    _msg "Done."
+}
+
+uninstall() {
+    _msg "Removing installed files..."
+    rm -f "${HOOKS_DIR}/on-add_time-defaults.py"
+    rm -f "${HOOKS_DIR}/on-modify_time-defaults.py"
+
+    local TW_MANIFEST="${CONFIG_DIR}/.tw_manifest"
+    [[ -f "${TW_MANIFEST}" ]] && sed -i "/^${PACKAGE}|/d" "${TW_MANIFEST}"
+
+    _msg "Config preserved — remove manually if desired:"
+    _msg "  ${CONFIG_DIR}/time-defaults.rc"
+}
+
+case "${1:-install}" in
+    install)           install   ;;
+    uninstall|remove)  uninstall ;;
+    update)            uninstall; install ;;
+    *) echo "Usage: $0 [install|uninstall|update]" >&2; exit 1 ;;
+esac
