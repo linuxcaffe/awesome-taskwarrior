@@ -2,7 +2,7 @@
 # Interactive Taskwarrior interface for Vim and Neovim
 
 name=tw-vim
-version=1.2.1
+version=1.2.2
 type=script
 description=Interactive Taskwarrior interface for Vim and Neovim
 repo=https://github.com/linuxcaffe/taskwarrior.vim
