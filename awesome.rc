@@ -1,0 +1,127 @@
+# awesome.rc — fleet manifest for make-awesome.py --fleet
+# One section per managed app.
+#
+# Fields:
+#   path    = local dev directory (required)
+#   type    = hook | script | wrapper | ui | core
+#   timing  = yes | no  — eligible for --timing injection
+#   debug   = yes | no  — eligible for --debug injection
+#   skip    = yes       — exclude from all fleet ops (omit or no to include)
+
+[recurrence-overhaul]
+path    = ~/dev/tw-recurrence_overhaul-hook
+type    = hook
+timing  = yes
+debug   = yes
+
+[timelog]
+path    = ~/dev/tw-timelog-hook
+type    = hook
+timing  = yes
+debug   = yes
+
+[subtask]
+path    = ~/dev/tw-subtask-hook
+type    = hook
+timing  = yes
+debug   = yes
+
+[need-priority]
+path    = ~/dev/tw-need_priority-hook
+type    = hook
+timing  = yes
+debug   = yes
+
+[agenda-edate]
+path    = ~/dev/tw-agenda-hook
+type    = hook
+timing  = yes
+debug   = yes
+
+[smart-nag]
+path    = ~/dev/tw-smart-nag-hook
+type    = hook
+timing  = yes
+debug   = yes
+
+[wikitags]
+path    = ~/dev/tw-wikitags-hook
+type    = hook
+timing  = yes
+debug   = yes
+
+[hledger-add]
+path    = ~/dev/tw-hledger-add-hook
+type    = hook
+timing  = yes
+debug   = yes
+
+[tod-filter]
+path    = ~/dev/tod-filter
+type    = hook
+timing  = yes
+debug   = yes
+
+[deps-mgmt]
+path    = ~/dev/tw-deps-mgmt-hook
+type    = hook
+timing  = yes
+debug   = yes
+
+[tw2nb]
+path    = ~/dev/tw2nb
+type    = hook
+timing  = yes
+debug   = yes
+
+[annn]
+path    = ~/dev/tw-ann-hook
+type    = wrapper
+timing  = no
+debug   = yes
+
+[nicedates]
+path    = ~/dev/tw-nicedates-hook
+type    = wrapper
+timing  = no
+debug   = yes
+skip    = yes
+
+[sanity-check]
+path    = ~/dev/tw-sanity-check
+type    = script
+timing  = no
+debug   = yes
+
+[resched]
+path    = ~/dev/tw-sched-sh
+type    = script
+timing  = no
+debug   = yes
+
+[urgency-tweaker]
+path    = ~/dev/urgency-tweaker
+type    = script
+timing  = no
+debug   = yes
+
+[tw-gtk]
+path    = ~/dev/tw-gtk
+type    = ui
+timing  = no
+debug   = yes
+skip    = yes
+
+[tw-tui]
+path    = ~/dev/tw-tui
+type    = ui
+timing  = no
+debug   = no
+skip    = yes
+
+[tw]
+path    = ~/dev/awesome-taskwarrior
+type    = core
+timing  = no
+debug   = no
+skip    = yes

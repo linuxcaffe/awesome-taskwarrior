@@ -1802,6 +1802,104 @@ def cmd_pipeline(commit_msg: str) -> int:
 
 
 # ============================================================================
+# Fleet
+# ============================================================================
+
+def load_fleet_config() -> list:
+    """Load awesome.rc from same directory as this script.
+
+    Returns list of dicts, one per non-skipped app, with keys:
+      name, path, type, timing, debug, skip
+    """
+    import configparser
+    rc_path = Path(__file__).parent / 'awesome.rc'
+    if not rc_path.exists():
+        error(f"awesome.rc not found at {rc_path}")
+        return []
+
+    cfg = configparser.ConfigParser()
+    cfg.read(rc_path)
+
+    apps = []
+    for name in cfg.sections():
+        s = cfg[name]
+        path = Path(s.get('path', '')).expanduser()
+        skip = s.get('skip', 'no').strip().lower() == 'yes'
+        apps.append({
+            'name':   name,
+            'path':   path,
+            'type':   s.get('type', 'unknown'),
+            'timing': s.get('timing', 'no').strip().lower() == 'yes',
+            'debug':  s.get('debug', 'no').strip().lower() == 'yes',
+            'skip':   skip,
+        })
+    return apps
+
+
+def cmd_fleet(args) -> int:
+    """Apply pipeline stage(s) across all fleet repos defined in awesome.rc."""
+    import os
+
+    apps = load_fleet_config()
+    if not apps:
+        return 1
+
+    # Determine which stages were requested
+    do_timing = getattr(args, 'timing', False)
+    do_debug  = getattr(args, 'debug', False)
+
+    if not do_timing and not do_debug:
+        error("--fleet requires at least one stage flag (e.g. --timing, --debug)")
+        return 1
+
+    origin = Path.cwd()
+    results = []
+
+    for app in apps:
+        if app['skip']:
+            continue
+
+        # Filter by eligibility
+        if do_timing and not app['timing']:
+            continue
+        if do_debug and not app['debug']:
+            continue
+
+        if not app['path'].is_dir():
+            warn(f"[{app['name']}] path not found: {app['path']} -- skipping")
+            results.append((app['name'], 'SKIP', 'path not found'))
+            continue
+
+        msg(f"\n--- [{app['name']}] {app['path']} ---")
+        os.chdir(app['path'])
+
+        rc = 0
+        if do_timing:
+            rc = cmd_timing(args)
+        if rc == 0 and do_debug:
+            rc = cmd_debug(args)
+
+        results.append((app['name'], 'OK' if rc == 0 else 'FAIL', ''))
+
+    os.chdir(origin)
+
+    # Summary
+    print()
+    msg("Fleet summary:")
+    for name, status, note in results:
+        note_str = f"  ({note})" if note else ''
+        if status == 'OK':
+            success(f"  {name}: {status}{note_str}")
+        elif status == 'SKIP':
+            warn(f"  {name}: {status}{note_str}")
+        else:
+            error(f"  {name}: {status}{note_str}")
+
+    failed = [r for r in results if r[1] == 'FAIL']
+    return 1 if failed else 0
+
+
+# ============================================================================
 # Main
 # ============================================================================
 
@@ -1839,6 +1937,8 @@ def main():
                        help='Git push + registry (message optional)')
     parser.add_argument('--force', action='store_true',
                        help='Force re-enhancement of already enhanced files')
+    parser.add_argument('--fleet', action='store_true',
+                       help='Apply stage(s) across all repos in awesome.rc')
     parser.add_argument('--version', action='version',
                        version=f'v{VERSION}')
 
@@ -1846,6 +1946,9 @@ def main():
 
     if args.commit_message:
         return cmd_pipeline(args.commit_message)
+
+    if args.fleet:
+        return cmd_fleet(args)
 
     # Collect requested steps in pipeline order
     def flag_set(name):
