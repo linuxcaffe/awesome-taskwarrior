@@ -1,0 +1,16 @@
+Shared
+======
+
+The 'shared' library is a set of reusable objects to be shared as-is between
+various programs, including Taskwarrior, Taskserver, Tasksh and Timewarrior.
+
+In order to be reusable, and therefore a member of libshared, conditions must
+be met:
+
+  - Shared objects may only make use of other shared objects, or external
+    dependencies (libuuid, gettext, readline etc), but no objects from the
+    project directories.
+
+  - Shared objects may assume only one external 'cmake.h' that defines
+    platform/portability constants.
+

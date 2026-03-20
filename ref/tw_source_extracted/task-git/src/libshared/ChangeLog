@@ -1,0 +1,110 @@
+master/HEAD
+
+- Fixed bug where the isIPv4Address() port value could be left uninitialized.
+- Removed CMake CMP0037.
+- TI-91 Timewarrior does not compile on DragonFly
+          (thanks to Michael Neumann)
+- TI #112 Add timeRelative flag to initialization of day names
+          (thanks to Thomas Lauf)
+- TW-1936 Tweak tests to have fuller TAP compliance
+          (thanks to Paul J. Fenwick)
+- Datetime::timeRelative now controls whether "0:00:01" means today or is
+  projected to tomorrow if before the current time.
+- LI #5 Several Path:: methods fail on a broken symlink
+- LI #7 Path::expand() doesn't correctly expand some paths
+          (thanks to Laurence)
+- Corrected initialization order of struct flock for DARWIN. This may address
+  file locking prboelms on MacOS.
+- Libshared now supports datetime values up to year 9999.
+- Bump minimal required standard to C++17 and minimal cmake version to 3.1.
+- Started calling fsync/fdatasync on File::close for better durability.
+
+tasksh-1.2.0 (2017-05-10)
+
+- TI-53 Fix musl-libc compatibility
+          (thanks to Toyam Cox).
+- Define PATH_MAX if it's not defined
+          (thanks to Iain R. Learmonth).
+- Removed 'std::' from stdtoimax call.
+          (thanks to fornwall).
+- When Lexer::noOperator () is called, prevent ::isWord boundaries from being
+  comprised of operators.
+- Added Pig::getCharacter, which was oddly missing.
+- Added 'Tree' class.
+- Added FS error handling for POSIX call failure.
+- Updated Timer class to use std::chrono.
+- Args now tolerates undeclared option queries.
+- Added case (in)sentitive find functions.
+- Pig no longer makes a copy of the input string.
+- Fixed bug where Pig::getUntil included the terminator if it was the last
+  character.
+- Table now uses the correct include latch.
+- Migrated obfuscateText from Taskwarrior.
+- Added unicodeHorizontalWhitespace and unicodeVerticalWhitespace.
+- Added unicodePunctuation.
+- Added unicodeAlpha.
+- Added osName.
+- Duration::formatVague can now pad all values to the same length.
+- Combined JSON.h, JSON2.h, eliminated duplicate encode/decode implementations.
+- Table::addRow{,Odd,Even} allows a user-specified notion of 'odd' row.
+- Added isIPv4Address and isIPv6Address.
+- Added PEG parser.
+- Added Packrat parser.
+- Datetime/Duration can now parse dates from an embedded string, with negative
+  lookahead.
+- Table supports unwrapped columns.
+- Table supports colored columns.
+
+tasksh-1.1.0 (2016-09-05)
+anomaly-1.1.0 (2016-09-04)
+
+- TD-120  Missing cmakedefine for HAVE_GET_CURRENT_DIR_NAME
+          (Thanks to Jörg Krause, Ben Boeckel).
+- TW-1845 Cygwin build fails, missing get_current_dir_name
+          (thanks to hosaka).
+- Lexer can now disable individual token types.
+- Pig is more careful about string bounds in ::peek.
+- Pig can extract substrings.
+- FS now has strict error handling, requiring that file existence is checked before
+  readability.
+
+timew-1.0.0 (2016-08-17)
+
+- TI-30   10:00am isn't recognized as date
+          (thanks to Yurї Videneev).
+- Datetime::weekStart set to 1 (Monday), per ISO-8601.
+- Datetime no longer users 23:59:59 as EOD, but 24:00:00. All date ranges should
+  therefore be [...) instead of [...].
+- Datetime now uses whole days, not 86400 seconds for calculating date offsets.
+- Datetime now properly calculates day names when looking backwards.
+- Datetime considerѕ forwards/backwards when calculating informal time.
+
+clog-1.3.0 (2016-06-27)
+
+- TW-1741 Warning "ignoring return value of ‘int ftruncate" while doing make on
+          xubuntu15.10
+          (thanks to Sunil Joshi).
+- TW-1807 dateformat lacks a flag to display day of week
+          (thanks to Ellington Santos).
+- Bug   '12pm' was getting 12 hours added because of the 'pm', which is wrong.
+- Added 'juhannus' as a synonym for 'midsommarafton'
+          (thanks to Lynoure Braakman).
+- Added 'join' function.
+- Added 'str_replace' function.
+- Added Datetime support for informal time, '8am', '2:30p'.
+- Added 'JSON2' SAX parser.
+- Introduced the new shared submodule.
+- Added Datetime support for 'socq', 'eocq', 'socy', 'eocy'.
+- Added Composite object.
+- Added Palette object.
+- Added Lexer object.
+- Added Msg::set overload.
+
+Design completed 2015-12-XX
+Project started  2015-11-29
+
+------ current release ---------------------------
+
+Note: There are no releases. There are tags applied when a project is released.
+
+------ start -----------------------------------
