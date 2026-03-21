@@ -219,6 +219,12 @@ This ensures sessions can be cross-referenced even when resume fails.
   pattern before proposing changes.
 - **Standalone installers first.** Any new extension must have a working
   `bash myapp.install install` path that doesn't depend on `tw`.
+- **Never `git clone` into `~/.task/`.** `~/.task` must not contain nested
+  git repos — Taskwarrior owns that directory. All installers use `cp` to
+  place files there. `git clone` is fine for nb plugins (`~/.nb/.plugins/`)
+  and vim plugins, but not for anything going under `~/.task/`. The
+  `#HANDCRAFTED` installer pattern exists precisely to enforce this: files
+  are fetched/copied from outside, then installed via plain file copy.
 - **No TW 3.x code, ever.** Not even a comment about it unless asked.
 - **ASCII over unicode** in user-facing output. Past unicode corruption forced a
   full pass replacing `✓` with `[+]`, `✗` with `[X]`, etc.
