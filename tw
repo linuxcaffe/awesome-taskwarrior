@@ -1002,12 +1002,20 @@ class AppManager:
         self.manifest = Manifest(paths.manifest_file)
         self.registry = RegistryManager(paths)
     
-    def install(self, app_name, dry_run=False):
+    def install(self, app_name, dry_run=False, stage_dir=None):
         """Install an application using its installer script"""
         debug(f"AppManager.install: Getting installer for {app_name}", 2)
-        installer_path = self.registry.get_installer(app_name)
-        is_temp_file = not self.paths.is_dev_mode
-        
+        if stage_dir:
+            # Files already staged — run installer from stage_dir so SCRIPT_DIR resolves correctly
+            installer_path = stage_dir / f"{app_name}.install"
+            is_temp_file = False  # stage_dir cleaned up by caller
+            if not installer_path.exists():
+                print(f"[tw] [X] Installer not in stage dir: {app_name}")
+                return False
+        else:
+            installer_path = self.registry.get_installer(app_name)
+            is_temp_file = not self.paths.is_dev_mode
+
         if not installer_path:
             print(f"[tw] [X] Installer not found: {app_name}")
             return False
@@ -1211,7 +1219,7 @@ class AppManager:
         
         # Step 4: Install new version via real .install script
         print(f"[tw] Installing v{new_version}...")
-        if self.install(app_name):
+        if self.install(app_name, stage_dir=stage_dir):
             # Success - clean up staging and backup
             shutil.rmtree(stage_dir, ignore_errors=True)
             shutil.rmtree(backup_dir, ignore_errors=True)
@@ -1299,6 +1307,29 @@ class AppManager:
                 debug(f"Checksum verified: {filename}", 2)
         
         print(f"[tw] [+] All {len(files)} files staged and verified")
+
+        # Also stage the installer script so install() can run it from stage_dir
+        if not self.paths.is_dev_mode:
+            installer_url = f"{GITHUB_RAW_BASE}/installers/{app_name}.install"
+            installer_staged = stage_dir / f"{app_name}.install"
+            try:
+                result = subprocess.run(
+                    ['curl', '-fsSL', installer_url, '-o', str(installer_staged)],
+                    capture_output=True, text=True, timeout=30
+                )
+                if result.returncode == 0:
+                    installer_staged.chmod(0o755)
+                    debug(f"Staged installer: {installer_staged}", 2)
+                else:
+                    debug(f"Could not stage installer (non-fatal): {result.stderr}", 1)
+            except Exception as e:
+                debug(f"Could not stage installer (non-fatal): {e}", 1)
+        else:
+            # Dev mode: copy local installer into stage_dir so SCRIPT_DIR works
+            local_installer = self.paths.local_installers / f"{app_name}.install"
+            if local_installer.exists():
+                shutil.copy2(local_installer, stage_dir / f"{app_name}.install")
+
         return stage_dir
     
     def _restore_backup(self, app_name, backup_dir, backup_manifest):
