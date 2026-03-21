@@ -15,7 +15,7 @@ set -euo pipefail
 #   ~/.nb/.plugins/tw.nb-plugin      (nb plugin, if nb is present)
 # ============================================================================
 
-VERSION="0.1.0"
+VERSION="1.2.0"
 APPNAME="tw2nb"
 
 RED='\033[0;31m'

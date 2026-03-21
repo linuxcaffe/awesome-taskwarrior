@@ -1,14 +1,16 @@
 # tw2nb.meta
-# Archives completed Taskwarrior tasks to nb as todos and journal entries
+# Archives Taskwarrior task events (done, log, delete, annotate) to nb as todos and running journal entries. Transfers annn tasknotes on completion.
 
 name=tw2nb
-version=0.1.0
+version=1.2.0
 type=hook
 description=Archives Taskwarrior task events (done, log, delete, annotate) to nb as todos and running journal entries. Transfers annn tasknotes on completion.
 repo=https://github.com/linuxcaffe/tw2nb
 base_url=https://raw.githubusercontent.com/linuxcaffe/tw2nb/master
 files=on-add_tw2nb.py:hook,on-modify_tw2nb.py:hook,tw2nb_lib.py:script,tw2nb-retro:script,tw2nb.rc:config,README.md:doc
 tags=nb, archive, journal, notes, completed, hook
+
+checksums=f08d7fdd98fc275cb249d12fab559d90feb8daf1d6877519e9b8ec7cd0d25760,fadeb00c3e812d7ebc6d09e5ab77978819eee0902a23f2406cfd60ca692574a0,dd7afaace290c3c53b7b41035de4d73b62ec85ef234c02fd17a2ec485b241c45,71e2cc6854658099284650ccac8b94761dfb7c7e664e95fd03cdd0477738298b,115cc409412fe132f71c4f6403c044128a8a727b8d08c1fdf188250fd2df6cf1,2cbd3165cada0fd07379950707e9704217e75004830aff27cd568272a44ed393
 
 author=Designed by linuxcaffe, implemented by Claude Code
 license=MIT
