@@ -9,7 +9,7 @@ set -euo pipefail
 
 VERSION="0.1.1"
 APPNAME="matrix-taskbot"
-BASE_URL="https://raw.githubusercontent.com/linuxcaffe/tw-matrix-bot/master"
+BASE_URL="https://raw.githubusercontent.com/linuxcaffe/tw-matrix-bot/main"
 
 # Colors
 RED='\033[0;31m'
