@@ -752,7 +752,7 @@ def detect_project_info() -> ProjectInfo:
         url = result.stdout.strip()
         match = re.search(r'github\.com[:/](.+?)(\.git)?$', url)
         if match:
-            info.repo = match.group(1).rstrip('.git')
+            info.repo = match.group(1)
             msg(f"GitHub: {info.repo}")
     except:
         pass
