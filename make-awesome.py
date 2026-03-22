@@ -234,7 +234,10 @@ class DebugEnhancer:
         for line in parsed['imports']:
             is_duplicate = False
             for skip in skip_imports:
-                if f'import {skip}' in line or f'from {skip} ' in line:
+                stripped = line.strip()
+                if (stripped == f'import {skip}'
+                        or stripped.startswith(f'from {skip} ')
+                        or stripped.startswith(f'from {skip}.')):
                     is_duplicate = True
                     break
             if not is_duplicate and line.strip():
@@ -350,7 +353,10 @@ class DebugEnhancer:
         for line in parsed['imports']:
             is_duplicate = False
             for skip in skip_imports:
-                if f'import {skip}' in line or f'from {skip} ' in line:
+                stripped = line.strip()
+                if (stripped == f'import {skip}'
+                        or stripped.startswith(f'from {skip} ')
+                        or stripped.startswith(f'from {skip}.')):
                     is_duplicate = True
                     break
             if not is_duplicate and line.strip():
