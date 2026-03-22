@@ -10,7 +10,7 @@ base_url=https://raw.githubusercontent.com/linuxcaffe/tw-matrix-bot/main
 files=matrix-taskbot.py:script,matrix-taskbot.rc:config,README.md:doc
 tags=matrix, bot, remote, mobile, query, add
 
-checksums=7bbac65b7724769e7e710a8bf66137cdf77fd55043b2bce88247dbd535b0e9fc,f7cf7880927096145adfe57fdb76dba7a3a569446375289d78aeafc0fe0f0887,758a8f36b6d0febf154d2b4275cd5d0c02663ca57629fcfa79c09c16435e4946
+checksums=be9816c11ab2bf7795449b1ad3c7929e2b2415b11bfc382aaac9c7a81e0e8dd5,f7cf7880927096145adfe57fdb76dba7a3a569446375289d78aeafc0fe0f0887,758a8f36b6d0febf154d2b4275cd5d0c02663ca57629fcfa79c09c16435e4946
 
 author=linuxcaffe + Claude Sonnet 4.6
 license=MIT
