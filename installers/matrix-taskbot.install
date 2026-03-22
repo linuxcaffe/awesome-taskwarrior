@@ -58,32 +58,32 @@ install() {
     tw_msg "Downloading files..."
     debug_msg "Using BASE_URL: $BASE_URL" 2
 
-    debug_msg "Downloading script: tw-matrix-bot.py" 2
-    curl -fsSL "$BASE_URL/tw-matrix-bot.py" -o "$SCRIPTS_DIR/tw-matrix-bot.py" || {
-        tw_error "Failed to download tw-matrix-bot.py"
-        debug_msg "Download failed: tw-matrix-bot.py" 1
+    debug_msg "Downloading script: matrix-taskbot.py" 2
+    curl -fsSL "$BASE_URL/matrix-taskbot.py" -o "$SCRIPTS_DIR/matrix-taskbot.py" || {
+        tw_error "Failed to download matrix-taskbot.py"
+        debug_msg "Download failed: matrix-taskbot.py" 1
         return 1
     }
-    chmod +x "$SCRIPTS_DIR/tw-matrix-bot.py"
-    debug_msg "Installed script: $SCRIPTS_DIR/tw-matrix-bot.py" 2
+    chmod +x "$SCRIPTS_DIR/matrix-taskbot.py"
+    debug_msg "Installed script: $SCRIPTS_DIR/matrix-taskbot.py" 2
 
-    debug_msg "Downloading config: tw-matrix-bot.rc" 2
-    curl -fsSL "$BASE_URL/tw-matrix-bot.rc" -o "$CONFIG_DIR/tw-matrix-bot.rc" || {
-        tw_error "Failed to download tw-matrix-bot.rc"
-        debug_msg "Download failed: tw-matrix-bot.rc" 1
+    debug_msg "Downloading config: matrix-taskbot.rc" 2
+    curl -fsSL "$BASE_URL/matrix-taskbot.rc" -o "$CONFIG_DIR/matrix-taskbot.rc" || {
+        tw_error "Failed to download matrix-taskbot.rc"
+        debug_msg "Download failed: matrix-taskbot.rc" 1
         return 1
     }
-    debug_msg "Installed config: $CONFIG_DIR/tw-matrix-bot.rc" 2
+    debug_msg "Installed config: $CONFIG_DIR/matrix-taskbot.rc" 2
 
     # Add config to .taskrc
     tw_msg "Checking .taskrc for existing config include..."
-    if ! grep -q "tw-matrix-bot.rc" "$TASKRC" 2>/dev/null; then
-        echo "include ~/.task/config/tw-matrix-bot.rc" >> "$TASKRC"
+    if ! grep -q "matrix-taskbot.rc" "$TASKRC" 2>/dev/null; then
+        echo "include ~/.task/config/matrix-taskbot.rc" >> "$TASKRC"
         tw_msg "Added config include to .taskrc"
-        debug_msg "Added to .taskrc: include ~/.task/config/tw-matrix-bot.rc" 2
+        debug_msg "Added to .taskrc: include ~/.task/config/matrix-taskbot.rc" 2
     else
         tw_msg "Config already in .taskrc"
-        debug_msg "Config already present in .taskrc: tw-matrix-bot.rc" 2
+        debug_msg "Config already present in .taskrc: matrix-taskbot.rc" 2
     fi
 
     # Track in manifest
@@ -92,10 +92,10 @@ install() {
     TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     mkdir -p "$(dirname "$MANIFEST_FILE")"
 
-    echo "$APPNAME|$VERSION|$SCRIPTS_DIR/tw-matrix-bot.py||$TIMESTAMP" >> "$MANIFEST_FILE"
-    debug_msg "Manifest entry: $SCRIPTS_DIR/tw-matrix-bot.py" 3
-    echo "$APPNAME|$VERSION|$CONFIG_DIR/tw-matrix-bot.rc||$TIMESTAMP" >> "$MANIFEST_FILE"
-    debug_msg "Manifest entry: $CONFIG_DIR/tw-matrix-bot.rc" 3
+    echo "$APPNAME|$VERSION|$SCRIPTS_DIR/matrix-taskbot.py||$TIMESTAMP" >> "$MANIFEST_FILE"
+    debug_msg "Manifest entry: $SCRIPTS_DIR/matrix-taskbot.py" 3
+    echo "$APPNAME|$VERSION|$CONFIG_DIR/matrix-taskbot.rc||$TIMESTAMP" >> "$MANIFEST_FILE"
+    debug_msg "Manifest entry: $CONFIG_DIR/matrix-taskbot.rc" 3
 
     debug_msg "Installation complete" 1
     tw_success "Installed matrix-taskbot v$VERSION"
@@ -133,10 +133,10 @@ remove() {
     debug_msg "Removed from manifest" 2
 
     # Remove config from .taskrc
-    if grep -q "tw-matrix-bot.rc" "$TASKRC" 2>/dev/null; then
-        sed -i.bak "/tw-matrix-bot.rc/d" "$TASKRC"
+    if grep -q "matrix-taskbot.rc" "$TASKRC" 2>/dev/null; then
+        sed -i.bak "/matrix-taskbot.rc/d" "$TASKRC"
         tw_msg "Removed config from .taskrc"
-        debug_msg "Removed from .taskrc: tw-matrix-bot.rc" 2
+        debug_msg "Removed from .taskrc: matrix-taskbot.rc" 2
     fi
 
     tw_success "Removed matrix-taskbot"
