@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# HANDCRAFTED
+set -euo pipefail
+
+# ============================================================================
+# tw-matrix-bot - Standalone Installer
+# Version: 0.1.0
+#
+# Installs:
+#   ~/.task/scripts/tw-matrix-bot.py
+#   ~/.task/config/tw-matrix-bot.rc  (only if not already present)
+# ============================================================================
+
+VERSION="0.1.0"
+APPNAME="tw-matrix-bot"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+tw_msg()     { echo -e "${BLUE}[tw]${NC} $*"; }
+tw_success() { echo -e "${GREEN}[tw] [OK]${NC} $*"; }
+tw_error()   { echo -e "${RED}[tw] [FAIL]${NC} $*" >&2; }
+
+TASK_DIR="${HOME}/.task"
+SCRIPTS_DIR="${TASK_DIR}/scripts"
+CONFIG_DIR="${TASK_DIR}/config"
+MANIFEST_FILE="${TASK_DIR}/config/.tw_manifest"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+install() {
+    tw_msg "Installing ${APPNAME} v${VERSION}..."
+
+    mkdir -p "$SCRIPTS_DIR" "$CONFIG_DIR"
+
+    cp "${SCRIPT_DIR}/tw-matrix-bot.py" "${SCRIPTS_DIR}/tw-matrix-bot.py"
+    chmod +x "${SCRIPTS_DIR}/tw-matrix-bot.py"
+    tw_msg "Installed: ${SCRIPTS_DIR}/tw-matrix-bot.py"
+
+    if [[ -f "${CONFIG_DIR}/tw-matrix-bot.rc" ]]; then
+        tw_msg "Config already exists: ${CONFIG_DIR}/tw-matrix-bot.rc (not overwritten)"
+    else
+        cp "${SCRIPT_DIR}/tw-matrix-bot.rc" "${CONFIG_DIR}/tw-matrix-bot.rc"
+        tw_msg "Installed: ${CONFIG_DIR}/tw-matrix-bot.rc"
+        tw_msg "EDIT ${CONFIG_DIR}/tw-matrix-bot.rc before first run."
+    fi
+
+    # Manifest
+    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    if [[ -f "$MANIFEST_FILE" ]]; then
+        grep -v "^${APPNAME}|" "$MANIFEST_FILE" > "${MANIFEST_FILE}.tmp" || true
+        mv "${MANIFEST_FILE}.tmp" "$MANIFEST_FILE"
+    fi
+    echo "${APPNAME}|${VERSION}|${SCRIPTS_DIR}/tw-matrix-bot.py||${TIMESTAMP}" >> "$MANIFEST_FILE"
+    echo "${APPNAME}|${VERSION}|${CONFIG_DIR}/tw-matrix-bot.rc||${TIMESTAMP}"  >> "$MANIFEST_FILE"
+
+    tw_success "Installed ${APPNAME} v${VERSION}"
+    echo ""
+    tw_msg "Next steps:"
+    tw_msg "  1. pip install matrix-nio"
+    tw_msg "  2. Create a bot account at https://app.element.io (or any Matrix homeserver)"
+    tw_msg "  3. Edit ${CONFIG_DIR}/tw-matrix-bot.rc"
+    tw_msg "  4. python3 ${SCRIPTS_DIR}/tw-matrix-bot.py --login"
+    tw_msg "  5. python3 ${SCRIPTS_DIR}/tw-matrix-bot.py"
+    echo ""
+}
+
+remove() {
+    tw_msg "Removing ${APPNAME}..."
+
+    if [[ ! -f "$MANIFEST_FILE" ]]; then
+        tw_error "Manifest not found: $MANIFEST_FILE"
+        return 1
+    fi
+
+    grep "^${APPNAME}|" "$MANIFEST_FILE" | cut -d'|' -f3 | while read -r file; do
+        if [[ -f "$file" ]]; then
+            rm "$file"
+            tw_msg "Removed: $(basename "$file")"
+        fi
+    done
+
+    grep -v "^${APPNAME}|" "$MANIFEST_FILE" > "${MANIFEST_FILE}.tmp" || true
+    mv "${MANIFEST_FILE}.tmp" "$MANIFEST_FILE"
+
+    tw_success "Removed ${APPNAME}"
+}
+
+case "${1:-install}" in
+    install)          install ;;
+    remove|uninstall) remove  ;;
+    *)
+        echo "Usage: $0 {install|remove}"
+        exit 1
+        ;;
+esac
