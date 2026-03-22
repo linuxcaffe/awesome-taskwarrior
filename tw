@@ -1005,6 +1005,7 @@ class AppManager:
     def install(self, app_name, dry_run=False, stage_dir=None):
         """Install an application using its installer script"""
         debug(f"AppManager.install: Getting installer for {app_name}", 2)
+        cleanup_stage = False  # True when we own stage_dir and must clean it up
         if stage_dir:
             # Files already staged — run installer from stage_dir so SCRIPT_DIR resolves correctly
             installer_path = stage_dir / f"{app_name}.install"
@@ -1012,9 +1013,21 @@ class AppManager:
             if not installer_path.exists():
                 print(f"[tw] [X] Installer not in stage dir: {app_name}")
                 return False
+        elif not self.paths.is_dev_mode:
+            # Non-dev mode: stage installer + companion files so SCRIPT_DIR resolves correctly
+            meta = self.registry.get_meta(app_name)
+            if not meta:
+                print(f"[tw] [X] Meta not found for: {app_name}")
+                return False
+            stage_dir = self._stage_downloads(app_name, meta)
+            if not stage_dir:
+                return False
+            installer_path = stage_dir / f"{app_name}.install"
+            is_temp_file = False
+            cleanup_stage = True
         else:
             installer_path = self.registry.get_installer(app_name)
-            is_temp_file = not self.paths.is_dev_mode
+            is_temp_file = False  # dev mode uses local file
 
         if not installer_path:
             print(f"[tw] [X] Installer not found: {app_name}")
@@ -1049,11 +1062,13 @@ class AppManager:
                         target_dir = self._get_target_dir(file_type)
                         print(f"[tw]   {filename} -> {target_dir}/")
             
-            # Clean up temp file if needed
+            # Clean up
             if is_temp_file and installer_path:
                 os.unlink(installer_path)
+            if cleanup_stage and stage_dir:
+                shutil.rmtree(stage_dir, ignore_errors=True)
             return True
-        
+
         # Execute installer
         try:
             result = subprocess.run(
@@ -1062,25 +1077,29 @@ class AppManager:
                 capture_output=False,
                 text=True
             )
-            
-            # Clean up temp file if needed
+
+            # Clean up
             if is_temp_file and installer_path:
                 os.unlink(installer_path)
-            
+            if cleanup_stage and stage_dir:
+                shutil.rmtree(stage_dir, ignore_errors=True)
+
             if result.returncode == 0:
                 print(f"[tw] [+] Installed: {app_name}")
                 return True
             else:
                 print(f"[tw] [X] Installation failed: {app_name}")
                 return False
-                
+
         except Exception as e:
-            # Clean up temp file if needed
+            # Clean up
             if is_temp_file and installer_path:
                 try:
                     os.unlink(installer_path)
                 except:
                     pass
+            if cleanup_stage and stage_dir:
+                shutil.rmtree(stage_dir, ignore_errors=True)
             print(f"[tw] [X] Error running installer: {e}")
             return False
     
