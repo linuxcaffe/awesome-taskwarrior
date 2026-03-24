@@ -2,7 +2,7 @@
 # Matrix bot for Taskwarrior — query and add tasks from any Matrix client
 
 name=matrix-taskbot
-version=0.1.5
+version=0.1.6
 type=script
 description=Matrix bot for Taskwarrior — query and add tasks from any Matrix client
 repo=https://github.com/linuxcaffe/tw-matrix-bot
