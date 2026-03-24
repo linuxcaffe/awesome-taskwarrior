@@ -2,7 +2,7 @@
 # Matrix bot for Taskwarrior — query and add tasks from any Matrix client
 
 name=matrix-taskbot
-version=0.1.3
+version=0.1.4
 type=script
 description=Matrix bot for Taskwarrior — query and add tasks from any Matrix client
 repo=https://github.com/linuxcaffe/tw-matrix-bot
@@ -10,7 +10,7 @@ base_url=https://raw.githubusercontent.com/linuxcaffe/tw-matrix-bot/main
 files=matrix-taskbot.py:script,matrix-taskbot.rc:config,README.md:doc
 tags=matrix, bot, remote, mobile, query, add
 
-checksums=e775e651a116ac1a0328919386024c0af7b2edf814da3b7baac730b0d209821b,f7cf7880927096145adfe57fdb76dba7a3a569446375289d78aeafc0fe0f0887,758a8f36b6d0febf154d2b4275cd5d0c02663ca57629fcfa79c09c16435e4946
+checksums=4cabd1bba405770debda0144c547c375a3100888bebe0541899131e54b5a5f71,f7cf7880927096145adfe57fdb76dba7a3a569446375289d78aeafc0fe0f0887,758a8f36b6d0febf154d2b4275cd5d0c02663ca57629fcfa79c09c16435e4946
 
 author=linuxcaffe + Claude Sonnet 4.6
 license=MIT
