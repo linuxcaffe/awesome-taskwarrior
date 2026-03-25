@@ -1,0 +1,17 @@
+# tw2ical.meta
+# Export Taskwarrior tasks to VTODO .ics files for CalDAV/khal/Radicale
+
+name=tw2ical
+version=0.1.0
+type=hook
+description=Export Taskwarrior tasks to VTODO .ics files for CalDAV/khal/Radicale
+repo=https://github.com/linuxcaffe/tw-ical-hook
+base_url=https://raw.githubusercontent.com/linuxcaffe/tw-ical-hook/main
+files=on-add_tw-ical.py:hook,on-modify_tw-ical.py:hook,tw_ical_lib.py:script,tw-ical-export.py:script,tw-ical.rc:config,README.md:doc
+tags=ical, caldav, calendar, vtodo, khal, radicale, sync
+
+checksums=ee77241ed872a31584851dd0e8308e28e76410dc8aa9daafcc429dd786128fb5,601f37bd2171714bfb6fab30986dfcdc49687638710231cc89c0aa1e5c1ceb66,02ed23f538acd12467c7ccd0344831988acd4655f71c4268fd458b34d7287fe5,627cfa5c78b017ccd9b606c9e62c251fd76dbaf9ab89142413f21426f1821f36,60f5f072d2020d34081957295ee81d4ded3ea269e7777b8709fe2696d278b54d,793c90c8699f0e90134a1621250edc74723ab6b8a3c495ac2655774e345a084c
+
+author=linuxcaffe + Claude Sonnet 4.6
+license=MIT
+requires_taskwarrior=2.6.0
