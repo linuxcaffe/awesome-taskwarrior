@@ -675,7 +675,8 @@ class WrapperManager:
             'rc.verbose=all,-override',
         ]
         task_proc = subprocess.Popen(
-            [task_bin] + rc_overrides + task_args,
+            ['task'] + rc_overrides + task_args,
+            executable=task_bin,
             stdin=slave_fd,
             stdout=slave_fd,
             stderr=slave_fd,
@@ -2898,8 +2899,13 @@ def pass_through_to_task(args, debug_wrapper=False):
             print("[tw] Error: task executable not found")
             return 1
 
-        # Execute task with arguments
-        result = subprocess.run([task_bin] + args, check=False)
+        # Execute task with arguments.
+        # Pass 'task' as argv[0] (not the full path) so that Taskwarrior
+        # can derive its own path correctly when spawning sub-processes
+        # (e.g. calendar --details=full). Using the full path as argv[0]
+        # causes Taskwarrior to mangle the path (bug: /usr/local/bin/task
+        # becomes /usr/lotask when the 'cal' substring is stripped).
+        result = subprocess.run(['task'] + args, executable=task_bin, check=False)
         return result.returncode
 
     except Exception as e:
