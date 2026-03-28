@@ -2014,7 +2014,7 @@ def cmd_fleet_add(name: str) -> int:
 
 
 def cmd_fleet_remove(name: str) -> int:
-    """Remove an app entry from awesome.rc."""
+    """Remove an app entry from awesome.rc, registry.d, installers, and manifest."""
     rc_path = SCRIPT_DIR / 'awesome.rc'
 
     with open(rc_path, 'r') as f:
@@ -2031,7 +2031,6 @@ def cmd_fleet_remove(name: str) -> int:
             continue
         if in_section:
             if line.startswith('[') and line.strip().endswith(']'):
-                # Start of next section — stop skipping
                 in_section = False
                 new_lines.append(line)
             # else: skip (belongs to removed section)
@@ -2044,8 +2043,38 @@ def cmd_fleet_remove(name: str) -> int:
 
     with open(rc_path, 'w') as f:
         f.writelines(new_lines)
-
     success(f"Removed '{name}' from awesome.rc")
+
+    # Remove from registry.d/
+    meta_path = SCRIPT_DIR / 'registry.d' / f'{name}.meta'
+    if meta_path.exists():
+        meta_path.unlink()
+        success(f"Removed registry.d/{name}.meta")
+    else:
+        msg(f"No registry.d/{name}.meta to remove")
+
+    # Remove from installers/
+    install_path = SCRIPT_DIR / 'installers' / f'{name}.install'
+    if install_path.exists():
+        install_path.unlink()
+        success(f"Removed installers/{name}.install")
+    else:
+        msg(f"No installers/{name}.install to remove")
+
+    # Remove from ~/.task/config/.tw_manifest (installed file records)
+    manifest_path = Path.home() / '.task' / 'config' / '.tw_manifest'
+    if manifest_path.exists():
+        manifest_lines = manifest_path.read_text().splitlines(keepends=True)
+        kept = [l for l in manifest_lines if not l.startswith(f'{name}|')]
+        removed_count = len(manifest_lines) - len(kept)
+        if removed_count:
+            manifest_path.write_text(''.join(kept))
+            success(f"Removed {removed_count} manifest entr{'y' if removed_count == 1 else 'ies'} for '{name}'")
+        else:
+            msg(f"No manifest entries for '{name}' (not installed)")
+    else:
+        msg("No .tw_manifest found — skipping")
+
     return 0
 
 

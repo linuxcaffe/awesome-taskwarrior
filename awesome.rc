@@ -80,13 +80,6 @@ type    = wrapper
 timing  = no
 debug   = yes
 
-[nicedates]
-path    = ~/dev/tw-nicedates-hook
-type    = wrapper
-timing  = no
-debug   = yes
-skip    = yes
-
 [sanity-check]
 path    = ~/dev/tw-sanity-check
 type    = script
