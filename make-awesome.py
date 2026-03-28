@@ -2015,19 +2015,22 @@ def cmd_fleet_add(name: str) -> int:
 
 def cmd_fleet_remove(name: str) -> int:
     """Remove an app entry from awesome.rc, registry.d, installers, and manifest."""
-    rc_path = SCRIPT_DIR / 'awesome.rc'
+    removed_anything = False
+    registry_files_removed = []  # track for git commit
 
+    # Remove from awesome.rc (optional — app may only be in registry.d)
+    rc_path = SCRIPT_DIR / 'awesome.rc'
     with open(rc_path, 'r') as f:
         lines = f.readlines()
 
     new_lines = []
     in_section = False
-    found = False
+    found_in_rc = False
 
     for line in lines:
         if line.strip() == f'[{name}]':
             in_section = True
-            found = True
+            found_in_rc = True
             continue
         if in_section:
             if line.startswith('[') and line.strip().endswith(']'):
@@ -2037,19 +2040,22 @@ def cmd_fleet_remove(name: str) -> int:
         else:
             new_lines.append(line)
 
-    if not found:
-        error(f"App '{name}' not found in awesome.rc")
-        return 1
-
-    with open(rc_path, 'w') as f:
-        f.writelines(new_lines)
-    success(f"Removed '{name}' from awesome.rc")
+    if found_in_rc:
+        with open(rc_path, 'w') as f:
+            f.writelines(new_lines)
+        success(f"Removed '{name}' from awesome.rc")
+        registry_files_removed.append('awesome.rc')
+        removed_anything = True
+    else:
+        msg(f"'{name}' not in awesome.rc (may be registry-only)")
 
     # Remove from registry.d/
     meta_path = SCRIPT_DIR / 'registry.d' / f'{name}.meta'
     if meta_path.exists():
         meta_path.unlink()
         success(f"Removed registry.d/{name}.meta")
+        registry_files_removed.append(f'registry.d/{name}.meta')
+        removed_anything = True
     else:
         msg(f"No registry.d/{name}.meta to remove")
 
@@ -2058,6 +2064,8 @@ def cmd_fleet_remove(name: str) -> int:
     if install_path.exists():
         install_path.unlink()
         success(f"Removed installers/{name}.install")
+        registry_files_removed.append(f'installers/{name}.install')
+        removed_anything = True
     else:
         msg(f"No installers/{name}.install to remove")
 
@@ -2070,10 +2078,26 @@ def cmd_fleet_remove(name: str) -> int:
         if removed_count:
             manifest_path.write_text(''.join(kept))
             success(f"Removed {removed_count} manifest entr{'y' if removed_count == 1 else 'ies'} for '{name}'")
+            removed_anything = True
         else:
             msg(f"No manifest entries for '{name}' (not installed)")
     else:
         msg("No .tw_manifest found — skipping")
+
+    if not removed_anything:
+        error(f"App '{name}' not found anywhere — nothing removed")
+        return 1
+
+    # Commit registry changes so a git push is all that remains
+    if registry_files_removed:
+        msg("Committing registry changes...")
+        _git(SCRIPT_DIR, 'add', '--', *registry_files_removed)
+        r = _git(SCRIPT_DIR, 'commit', '-m', f"Remove {name} from registry")
+        if r.returncode == 0:
+            success("Registry commit done — run 'git push' to publish removal")
+        else:
+            warn("Git commit failed — changes are on disk but not committed")
+            warn(r.stderr.strip() or r.stdout.strip())
 
     return 0
 
