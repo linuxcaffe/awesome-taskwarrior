@@ -6,7 +6,7 @@ version=0.1.0
 type=script
 description=ncurses TUI for toggling Taskwarrior hook permissions (enable/disable via chmod)
 repo=https://github.com/linuxcaffe/tw-hook-ctrl
-base_url=https://raw.githubusercontent.com/linuxcaffe/tw-hook-ctrl/main
+base_url=https://raw.githubusercontent.com/linuxcaffe/tw-hook-ctrl/master
 files=hook-ctrl.py:script
 tags=hooks,tui,ncurses,permissions,management
 

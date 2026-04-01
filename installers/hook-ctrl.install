@@ -9,7 +9,7 @@ set -euo pipefail
 
 VERSION="0.1.0"
 APPNAME="hook-ctrl"
-BASE_URL="https://raw.githubusercontent.com/linuxcaffe/tw-hook-ctrl/main"
+BASE_URL="https://raw.githubusercontent.com/linuxcaffe/tw-hook-ctrl/master"
 
 # Colors
 RED='\033[0;31m'
