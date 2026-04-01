@@ -1,0 +1,17 @@
+# hook-ctrl.meta
+# ncurses TUI for toggling Taskwarrior hook permissions (enable/disable via chmod)
+
+name=hook-ctrl
+version=0.1.0
+type=script
+description=ncurses TUI for toggling Taskwarrior hook permissions (enable/disable via chmod)
+repo=https://github.com/linuxcaffe/tw-hook-ctrl
+base_url=https://raw.githubusercontent.com/linuxcaffe/tw-hook-ctrl/main
+files=hook-ctrl.py:script
+tags=hooks,tui,ncurses,permissions,management
+
+checksums=4b05f660c00729327c356e3af9e86c96d2a1f17658797cbc989a6da4544e20f8
+
+author=linuxcaffe + claude sonnet
+license=MIT
+requires_taskwarrior=2.6.0
