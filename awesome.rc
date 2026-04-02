@@ -16,7 +16,7 @@ type        = hook
 timing      = yes
 debug       = yes
 status      = release
-envar_ready = no
+envar_ready = yes
 
 [timelog]
 path        = ~/dev/tw-timelog-hook
@@ -32,7 +32,7 @@ type        = hook
 timing      = yes
 debug       = yes
 status      = release
-envar_ready = no
+envar_ready = yes
 
 [need-priority]
 path        = ~/dev/tw-need_priority-hook
@@ -104,7 +104,7 @@ type        = wrapper
 timing      = no
 debug       = yes
 status      = release
-envar_ready = no
+envar_ready = yes
 
 [sanity-check]
 path        = ~/dev/tw-sanity-check

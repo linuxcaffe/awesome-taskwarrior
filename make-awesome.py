@@ -2100,6 +2100,53 @@ def cmd_testing(args) -> int:
 
 
 # ============================================================================
+# GITIGNORE — ensure fleet-standard .gitignore is present
+# ============================================================================
+
+# Patterns that every fleet project .gitignore should contain
+_REQUIRED_GITIGNORE_PATTERNS = ['logs/', 'dev/', 'claude/', '*.orig', '__pycache__/']
+
+def cmd_gitignore(args) -> int:
+    msg("=" * 70)
+    msg(f"make-awesome.py v{VERSION} --gitignore")
+    msg("=" * 70)
+    print()
+
+    report = StageReport('Gitignore')
+    project_dir = Path.cwd()
+    gitignore_path = project_dir / '.gitignore'
+    template_path = SCRIPT_DIR / 'templates' / 'fleet.gitignore'
+
+    if not gitignore_path.exists():
+        if template_path.exists():
+            import shutil
+            shutil.copy(template_path, gitignore_path)
+            report.changed.append(f"Created .gitignore from fleet template")
+            success(f"Created .gitignore (copied from templates/fleet.gitignore)")
+        else:
+            report.flagged.append("No .gitignore and no fleet template found")
+            warn("No .gitignore found and templates/fleet.gitignore is missing")
+            warn(f"Expected template at: {template_path}")
+    else:
+        content = gitignore_path.read_text()
+        missing = [p for p in _REQUIRED_GITIGNORE_PATTERNS if p not in content]
+        if missing:
+            for p in missing:
+                report.flagged.append(f"Missing pattern in .gitignore: {p}")
+            warn(f".gitignore exists but is missing {len(missing)} fleet pattern(s):")
+            for p in missing:
+                warn(f"  {p}")
+            warn(f"Add them manually or delete .gitignore and re-run --gitignore")
+        else:
+            success(".gitignore present with all required patterns")
+            report.skipped.append(".gitignore OK")
+
+    report.print_summary()
+    print()
+    return 0
+
+
+# ============================================================================
 # STDHELP (Stub)
 # ============================================================================
 
@@ -2312,6 +2359,7 @@ def cmd_pipeline(commit_msg: str) -> int:
 
     # Stages: (name, gated)  — stubs are not gated so pipeline continues
     stages = [
+        ('Gitignore', False),  # non-gated: copies template or flags gaps
         ('Debug',    True),
         ('Testing',  False),
         ('Timing',   True),
@@ -2326,7 +2374,9 @@ def cmd_pipeline(commit_msg: str) -> int:
     for i, (name, gated) in enumerate(stages, 1):
         msg(f"STAGE {i}/{len(stages)}: {name}")
 
-        if name == 'Debug':
+        if name == 'Gitignore':
+            rc = cmd_gitignore(None)
+        elif name == 'Debug':
             rc = cmd_debug(None)
         elif name == 'Testing':
             rc = cmd_testing(None)
@@ -3040,7 +3090,7 @@ def cmd_fleet(args) -> int:
 # Main
 # ============================================================================
 
-PIPELINE_ORDER = ['debug', 'testing', 'timing', 'envar', 'stdhelp', 'meta', 'install', 'push']
+PIPELINE_ORDER = ['gitignore', 'debug', 'testing', 'timing', 'envar', 'stdhelp', 'meta', 'install', 'push']
 
 
 def main():
@@ -3057,6 +3107,8 @@ def main():
 
     parser.add_argument('commit_message', nargs='?',
                        help='Commit message — runs full pipeline')
+    parser.add_argument('--gitignore', action='store_true',
+                       help='Ensure fleet-standard .gitignore is present')
     parser.add_argument('--debug', action='store_true',
                        help='Debug enhancement')
     parser.add_argument('--testing', action='store_true',
@@ -3097,9 +3149,9 @@ def main():
     # Mode banner + guardrails
     # -------------------------------------------------------------------------
     fleet_flags   = args.fleet or args.list is not None or args.add or args.remove
-    pipeline_flags = (args.commit_message or args.debug or args.testing or args.timing
-                      or args.envar or args.stdhelp or args.meta or args.install
-                      or args.push is not None)
+    pipeline_flags = (args.commit_message or args.gitignore or args.debug or args.testing
+                      or args.timing or args.envar or args.stdhelp or args.meta
+                      or args.install or args.push is not None)
 
     if IS_FLEET_MODE:
         msg(f"[fleet-mode] {SCRIPT_DIR}")
@@ -3137,7 +3189,9 @@ def main():
     # Run steps in pipeline order; meta passes its info to install
     meta_info = None
     for step in steps:
-        if step == 'debug':
+        if step == 'gitignore':
+            rc = cmd_gitignore(args)
+        elif step == 'debug':
             rc = cmd_debug(args)
         elif step == 'testing':
             rc = cmd_testing(args)
