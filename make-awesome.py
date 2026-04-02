@@ -1859,13 +1859,16 @@ def load_fleet_config() -> list:
         s = cfg[name]
         path = Path(s.get('path', '')).expanduser()
         skip = s.get('skip', 'no').strip().lower() == 'yes'
+        status = s.get('status', 'release').strip().lower()
         apps.append({
-            'name':   name,
-            'path':   path,
-            'type':   s.get('type', 'unknown'),
-            'timing': s.get('timing', 'no').strip().lower() == 'yes',
-            'debug':  s.get('debug', 'no').strip().lower() == 'yes',
-            'skip':   skip,
+            'name':        name,
+            'path':        path,
+            'type':        s.get('type', 'unknown'),
+            'timing':      s.get('timing', 'no').strip().lower() == 'yes',
+            'debug':       s.get('debug', 'no').strip().lower() == 'yes',
+            'skip':        skip,
+            'status':      status,
+            'envar_ready': s.get('envar_ready', 'no').strip().lower() == 'yes',
         })
     return apps
 
@@ -1889,11 +1892,23 @@ def cmd_fleet_status(apps) -> int:
         print(f"  {t:<12} {n}")
     print()
 
-    timing_elig = sum(1 for a in active if a['timing'])
-    debug_elig  = sum(1 for a in active if a['debug'])
+    timing_elig  = sum(1 for a in active if a['timing'])
+    debug_elig   = sum(1 for a in active if a['debug'])
+    envar_ready  = sum(1 for a in active if a['envar_ready'])
     msg("Eligibility:")
-    print(f"  --timing  {timing_elig} eligible")
-    print(f"  --debug   {debug_elig} eligible")
+    print(f"  --timing      {timing_elig} eligible")
+    print(f"  --debug       {debug_elig} eligible")
+    print()
+
+    from collections import Counter as _Counter2
+    status_counts = _Counter2(a['status'] for a in apps)
+    msg("Status breakdown:")
+    STATUS_ORDER = ['release', 'testing', 'wip', 'suspended', 'archived']
+    for st in STATUS_ORDER:
+        n = status_counts.get(st, 0)
+        if n:
+            print(f"  {st:<12} {n}")
+    print(f"  envar_ready  {envar_ready}/{len(active)} active apps")
     print()
 
     msg("App status:")
@@ -1938,9 +1953,16 @@ def cmd_fleet_status(apps) -> int:
         if app['debug']:
             flags.append(f"debug:[{'D' if has_debug else ' '}]")
         flags.append(cs_str)
+        flags.append(f"env:[{'✓' if app['envar_ready'] else ' '}]")
         flag_str = '  '.join(flags)
 
-        success(f"  OK    {name:<24} {atype:<10} git:{git_str}  {flag_str}")
+        status = app['status']
+        STATUS_WARN = {'wip', 'testing', 'suspended', 'archived'}
+        line = f"  {name:<24} {atype:<10} [{status:<9}] git:{git_str}  {flag_str}"
+        if status in STATUS_WARN:
+            warn(line)
+        else:
+            success(line)
 
     print()
     return 0
@@ -1956,14 +1978,15 @@ def cmd_fleet_list(apps, pattern: str = '') -> int:
         return 0
 
     home = str(Path.home())
-    print(f"\n{'NAME':<24} {'TYPE':<10} {'TIMING':<7} {'DEBUG':<7} {'SKIP':<6} PATH")
-    print("-" * 78)
+    print(f"\n{'NAME':<24} {'TYPE':<10} {'STATUS':<11} {'ENV':<5} {'TIME':<5} {'DBG':<5} {'SKIP':<5} PATH")
+    print("-" * 90)
     for a in apps:
-        skip_str   = 'yes' if a['skip']   else '-'
-        timing_str = 'yes' if a['timing'] else 'no'
-        debug_str  = 'yes' if a['debug']  else 'no'
+        skip_str   = 'yes' if a['skip']        else '-'
+        timing_str = 'yes' if a['timing']       else 'no'
+        debug_str  = 'yes' if a['debug']        else 'no'
+        envar_str  = 'yes' if a['envar_ready']  else 'no'
         path_str   = str(a['path']).replace(home, '~')
-        print(f"{a['name']:<24} {a['type']:<10} {timing_str:<7} {debug_str:<7} {skip_str:<6} {path_str}")
+        print(f"{a['name']:<24} {a['type']:<10} {a['status']:<11} {envar_str:<5} {timing_str:<5} {debug_str:<5} {skip_str:<5} {path_str}")
 
     print(f"\n{len(apps)} app(s)")
     return 0
@@ -1998,15 +2021,28 @@ def cmd_fleet_add(name: str) -> int:
     debug_in  = input("  Debug eligible? [Y/n]: ").strip().lower()
     debug_val = 'no' if debug_in in ('n', 'no') else 'yes'
 
+    valid_statuses = ['release', 'testing', 'wip', 'suspended', 'archived']
+    status_in = ''
+    while status_in not in valid_statuses:
+        status_in = input(f"  Status [{'|'.join(valid_statuses)}] (default: testing): ").strip().lower()
+        if not status_in:
+            status_in = 'testing'
+            break
+
+    envar_in  = input("  Envar-ready (TW_TASK_DIR)? [y/N]: ").strip().lower()
+    envar_val = 'yes' if envar_in in ('y', 'yes') else 'no'
+
     skip_in   = input("  Skip (exclude from fleet ops)? [y/N]: ").strip().lower()
-    skip_line = "skip    = yes\n" if skip_in in ('y', 'yes') else ''
+    skip_line = "skip        = yes\n" if skip_in in ('y', 'yes') else ''
 
     entry = (
         f"\n[{name}]\n"
-        f"path    = {path_in}\n"
-        f"type    = {type_in}\n"
-        f"timing  = {timing_val}\n"
-        f"debug   = {debug_val}\n"
+        f"path        = {path_in}\n"
+        f"type        = {type_in}\n"
+        f"timing      = {timing_val}\n"
+        f"debug       = {debug_val}\n"
+        f"status      = {status_in}\n"
+        f"envar_ready = {envar_val}\n"
         + skip_line
     )
 

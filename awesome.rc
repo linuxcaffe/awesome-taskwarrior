@@ -2,119 +2,165 @@
 # One section per managed app.
 #
 # Fields:
-#   path    = local dev directory (required)
-#   type    = hook | script | wrapper | ui | core
-#   timing  = yes | no  — eligible for --timing injection
-#   debug   = yes | no  — eligible for --debug injection
-#   skip    = yes       — exclude from all fleet ops (omit or no to include)
+#   path        = local dev directory (required)
+#   type        = hook | script | wrapper | ui | core
+#   timing      = yes | no        — eligible for --timing injection
+#   debug       = yes | no        — eligible for --debug injection
+#   skip        = yes             — exclude from all fleet ops (omit or no to include)
+#   status      = release | testing | wip | suspended | archived
+#   envar_ready = yes | no        — updated for TW_TASK_DIR/TASKRC isolation (B+C)
 
 [recurrence-overhaul]
-path    = ~/dev/tw-recurrence_overhaul-hook
-type    = hook
-timing  = yes
-debug   = yes
+path        = ~/dev/tw-recurrence_overhaul-hook
+type        = hook
+timing      = yes
+debug       = yes
+status      = release
+envar_ready = no
 
 [timelog]
-path    = ~/dev/tw-timelog-hook
-type    = hook
-timing  = yes
-debug   = yes
+path        = ~/dev/tw-timelog-hook
+type        = hook
+timing      = yes
+debug       = yes
+status      = release
+envar_ready = no
 
 [subtask]
-path    = ~/dev/tw-subtask-hook
-type    = hook
-timing  = yes
-debug   = yes
+path        = ~/dev/tw-subtask-hook
+type        = hook
+timing      = yes
+debug       = yes
+status      = release
+envar_ready = no
 
 [need-priority]
-path    = ~/dev/tw-need_priority-hook
-type    = hook
-timing  = yes
-debug   = yes
+path        = ~/dev/tw-need_priority-hook
+type        = hook
+timing      = yes
+debug       = yes
+status      = release
+envar_ready = yes
 
 [agenda-edate]
-path    = ~/dev/tw-agenda-hook
-type    = hook
-timing  = yes
-debug   = yes
+path        = ~/dev/tw-agenda-hook
+type        = hook
+timing      = yes
+debug       = yes
+status      = release
+envar_ready = no
 
 [smart-nag]
-path    = ~/dev/tw-smart-nag-hook
-type    = hook
-timing  = yes
-debug   = yes
+path        = ~/dev/tw-smart-nag-hook
+type        = hook
+timing      = yes
+debug       = yes
+status      = release
+envar_ready = no
 
 [wikitags]
-path    = ~/dev/tw-wikitags-hook
-type    = hook
-timing  = yes
-debug   = yes
+path        = ~/dev/tw-wikitags-hook
+type        = hook
+timing      = yes
+debug       = yes
+status      = wip
+envar_ready = no
 
 [hledger-add]
-path    = ~/dev/tw-hledger-add-hook
-type    = hook
-timing  = yes
-debug   = yes
+path        = ~/dev/tw-hledger-add-hook
+type        = hook
+timing      = yes
+debug       = yes
+status      = release
+envar_ready = no
 
 [tod-filter]
-path    = ~/dev/tod-filter
-type    = hook
-timing  = yes
-debug   = yes
+path        = ~/dev/tod-filter
+type        = hook
+timing      = yes
+debug       = yes
+status      = release
+envar_ready = no
 
 [deps-mgmt]
-path    = ~/dev/tw-deps-mgmt-hook
-type    = hook
-timing  = yes
-debug   = yes
+path        = ~/dev/tw-deps-mgmt-hook
+type        = hook
+timing      = yes
+debug       = yes
+status      = release
+envar_ready = no
 
 [tw2nb]
-path    = ~/dev/tw2nb
-type    = hook
-timing  = yes
-debug   = yes
+path        = ~/dev/tw2nb
+type        = hook
+timing      = yes
+debug       = yes
+status      = release
+envar_ready = no
 
 [annn]
-path    = ~/dev/tw-ann-hook
-type    = wrapper
-timing  = no
-debug   = yes
+path        = ~/dev/tw-ann-hook
+type        = wrapper
+timing      = no
+debug       = yes
+status      = release
+envar_ready = no
 
 [sanity-check]
-path    = ~/dev/tw-sanity-check
-type    = script
-timing  = no
-debug   = yes
+path        = ~/dev/tw-sanity-check
+type        = script
+timing      = no
+debug       = yes
+status      = release
+envar_ready = no
 
 [resched]
-path    = ~/dev/tw-sched-sh
-type    = script
-timing  = no
-debug   = yes
+path        = ~/dev/tw-sched-sh
+type        = script
+timing      = no
+debug       = yes
+status      = release
+envar_ready = no
 
 [urgency-tweaker]
-path    = ~/dev/urgency-tweaker
-type    = script
-timing  = no
-debug   = yes
+path        = ~/dev/urgency-tweaker
+type        = script
+timing      = no
+debug       = yes
+status      = release
+envar_ready = no
+
+[hook-ctrl]
+path        = ~/dev/tw-hook-ctrl
+type        = script
+timing      = no
+debug       = no
+status      = testing
+envar_ready = yes
 
 [tw-gtk]
-path    = ~/dev/tw-gtk
-type    = ui
-timing  = no
-debug   = yes
-skip    = yes
+path        = ~/dev/tw-gtk
+type        = ui
+timing      = no
+debug       = yes
+status      = suspended
+envar_ready = no
+skip        = yes
 
 [tw-tui]
-path    = ~/dev/tw-tui
-type    = ui
-timing  = no
-debug   = no
-skip    = yes
+path        = ~/dev/tw-tui
+type        = ui
+timing      = no
+debug       = no
+status      = release
+envar_ready = no
+skip        = yes
 
 [tw]
-path    = ~/dev/awesome-taskwarrior
-type    = core
-timing  = no
-debug   = no
-skip    = yes
+path        = ~/dev/awesome-taskwarrior
+type        = core
+timing      = no
+debug       = no
+status      = release
+envar_ready = no
+skip        = yes
