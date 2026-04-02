@@ -2,7 +2,7 @@
 # Registry-based package manager and ecosystem wrapper for Taskwarrior
 
 name=awesome-taskwarrior
-version=4.10.3
+version=4.10.4
 type=script
 description=Registry-based package manager and ecosystem wrapper for Taskwarrior
 repo=https://github.com/linuxcaffe/awesome-taskwarrior
@@ -10,7 +10,7 @@ base_url=https://raw.githubusercontent.com/linuxcaffe/awesome-taskwarrior/master
 files=tw:script:scripts,lib/tw_hook_lib.py:script:scripts,lib/tw_condition_lib.py:script:scripts,lib/tw-runtime.sh:script:scripts,lib/tw-common.sh:script:scripts,README.md:doc:docs/awesome-taskwarrior_README.md
 tags=wrapper,registry,installer,package-manager
 
-checksums=b657be7f09fd9bf4e250f80d7adcbe7bd6fb09095f7de9e88d645806b6946a06,daa313be6dbcae4df1cba8b0c36d04cd37f7f8f940c51ea68becaf52f37a6c9f,b3830a42ef18a6b030942d9bf9b401ded68deeaf6d3a39acc5d630447b5d75d9,a535fcf46521fa005d3be0cfd8e9f8245d22517e8adbc13f83ce73a55df3763d,d45f1df089ad42585c48a32d6876ff7f5bb6ce80ac52a43854f52d461593e20d,c8efb2f8e0dd9bfc4326856573d775da632b5b7df4d020baa401a19d37139261
+checksums=e937069560e1ea85acf7bc73bf0b5f7f0e0915ee75b967560ac2e0a73bf7d433,daa313be6dbcae4df1cba8b0c36d04cd37f7f8f940c51ea68becaf52f37a6c9f,b3830a42ef18a6b030942d9bf9b401ded68deeaf6d3a39acc5d630447b5d75d9,a535fcf46521fa005d3be0cfd8e9f8245d22517e8adbc13f83ce73a55df3763d,d45f1df089ad42585c48a32d6876ff7f5bb6ce80ac52a43854f52d461593e20d,c8efb2f8e0dd9bfc4326856573d775da632b5b7df4d020baa401a19d37139261
 
 author=designed by linuxcaffe, implemented by claude
 license=MIT
