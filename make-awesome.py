@@ -1010,14 +1010,36 @@ class EnvarEnhancer:
                 patched = cls._PY_TASKRC.sub(cls._PY_TASKRC_REPL, patched)
                 changed_items.append('TASKRC')
 
-            # Flag any remaining ~/.task refs (not in comments)
+            # If any replacement introduced os.path.join(TASK_DIR, ...) but
+            # TASK_DIR is not defined, inject the constant before its first use.
+            if ('os.path.join(TASK_DIR' in patched and
+                    not _re.search(r'^\s*TASK_DIR\s*=', patched, _re.MULTILINE)):
+                td_const = ("TASK_DIR = os.environ.get("
+                            "'TW_TASK_DIR', os.path.expanduser('~/.task'))\n")
+                # Insert just before the first line referencing TASK_DIR
+                lines = patched.splitlines(keepends=True)
+                insert_at = next(
+                    (i for i, l in enumerate(lines) if 'TASK_DIR' in l),
+                    len(lines)
+                )
+                lines.insert(insert_at, td_const)
+                patched = ''.join(lines)
+                if not has_import_os:
+                    patched = cls._inject_import_os(patched)
+                if 'TASK_DIR (injected)' not in changed_items:
+                    changed_items.append('TASK_DIR (injected)')
+
+            # Flag remaining ~/.task refs that look like actual path code
+            # (skip comment lines and plain-text strings like install instructions)
+            _path_ops = ('expanduser', 'os.path', 'Path(', 'join(', '= "~/', "= '~/")
             for line in patched.splitlines():
                 stripped = line.lstrip()
                 if stripped.startswith('#'):
                     continue
                 if '~/.task' in line and 'TW_TASK_DIR' not in line:
-                    report.add_flagged(path.name,
-                        f"residual ~/.task reference (not auto-fixed): {stripped[:80]}")
+                    if any(op in line for op in _path_ops):
+                        report.add_flagged(path.name,
+                            f"residual ~/.task in path code (not auto-fixed): {stripped[:80]}")
 
             # TW_DEBUG without injector mark
             if cls._CUSTOM_DEBUG.search(patched) and cls._INJECTOR_MARK not in patched:
@@ -1050,11 +1072,17 @@ class EnvarEnhancer:
         path.write_text(patched)
 
         # Verify Python compiles
+        # Clear PYTHONPYCACHEPREFIX — if set to /dev/null (a common dev setting)
+        # py_compile will crash trying to create cache dirs inside /dev/null.
         if cls._is_python(path):
             import subprocess as _sp
+            import os as _os2
+            _compile_env = _os2.environ.copy()
+            _compile_env.pop('PYTHONPYCACHEPREFIX', None)
             result = _sp.run(
                 [sys.executable, '-m', 'py_compile', str(path)],
-                capture_output=True
+                capture_output=True,
+                env=_compile_env
             )
             if result.returncode != 0:
                 # Restore from backup
