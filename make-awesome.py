@@ -710,6 +710,496 @@ def cmd_timing(args) -> int:
     return 0 if (injected > 0 or skipped > 0) else 1
 
 
+# ============================================================================
+# StageReport — shared deviation/anomaly reporting for all pipeline stages
+# ============================================================================
+
+class StageReport:
+    """Accumulates events during a pipeline stage and prints a summary.
+
+    Each stage creates one StageReport, feeds it events, then calls
+    print_summary() at the end.  Clean runs (no flags, no failures) stay
+    silent so the normal stage output is not cluttered.
+
+    Event types:
+      changed  — file/item was successfully modified
+      skipped  — already correct, nothing to do
+      flagged  — unusual pattern found but NOT auto-fixed (needs human eye)
+      failed   — hard error during processing
+    """
+
+    def __init__(self, stage_name: str):
+        self.stage   = stage_name
+        self.changed: list = []   # (item, detail)
+        self.skipped: list = []
+        self.flagged: list = []
+        self.failed:  list = []
+
+    def add_changed(self, item: str, detail: str = ''):
+        self.changed.append((item, detail))
+
+    def add_skipped(self, item: str, detail: str = ''):
+        self.skipped.append((item, detail))
+
+    def add_flagged(self, item: str, detail: str):
+        self.flagged.append((item, detail))
+
+    def add_failed(self, item: str, detail: str):
+        self.failed.append((item, detail))
+
+    @property
+    def has_issues(self) -> bool:
+        return bool(self.flagged or self.failed)
+
+    @property
+    def clean(self) -> bool:
+        return not self.has_issues
+
+    def print_summary(self):
+        """Print report only when there is something worth noting."""
+        if not self.has_issues:
+            return
+        print()
+        msg(f"┌─ {self.stage} stage report ({'CLEAN' if self.clean else 'ATTENTION NEEDED'}) ─")
+        if self.flagged:
+            msg(f"│  {len(self.flagged)} flagged (unusual patterns — review manually):")
+            for item, detail in self.flagged:
+                warn(f"│    [FLAG] {item}")
+                if detail:
+                    warn(f"│           {detail}")
+        if self.failed:
+            msg(f"│  {len(self.failed)} failed:")
+            for item, detail in self.failed:
+                error(f"│    [FAIL] {item}")
+                if detail:
+                    error(f"│           {detail}")
+        msg(f"└{'─' * 60}")
+        print()
+
+
+# ============================================================================
+# EnvarEnhancer — patch hardcoded ~/.task paths to use TW_TASK_DIR
+# ============================================================================
+
+class EnvarEnhancer:
+    """Scan and patch hardcoded environment-related paths in project files.
+
+    Handles:
+      TW_TASK_DIR  — replaces hardcoded ~/.task path constants
+      TASKRC       — replaces hardcoded ~/.taskrc references
+      TW_DEBUG     — flags non-standard debug implementations (no auto-fix)
+      TW_TIMING    — flags non-standard timing blocks (no auto-fix)
+
+    Safe patterns (auto-fixed):
+      Python:
+        TASK_DIR   = os.path.expanduser("~/.task")
+        CONFIG_DIR = os.path.expanduser("~/.task/config")
+        HOOK_DIR   = os.path.expanduser("~/.task/hooks")
+        <VAR>      = os.path.expanduser("~/.task/config/<file>.rc")
+        Path.home() / '.task'  (standalone, not chained)
+        taskrc     = os.path.expanduser("~/.taskrc")
+      Shell:
+        TASK_DIR="${HOME}/.task"  or  TASK_DIR="$HOME/.task"
+        TASKRC="${HOME}/.taskrc"  (only if not already using ${TASKRC:-...})
+
+    Flagged (reported, not auto-fixed):
+      - Inline ~/.task references inside strings/f-strings
+      - ~/.task in comments (informational only)
+      - TW_DEBUG / TW_TIMING patterns that differ from injector standard
+      - Any remaining ~/.task reference after patching
+    """
+
+    import re as _re
+
+    # ── Python patterns ───────────────────────────────────────────────────────
+
+    # TASK_DIR = os.path.expanduser("~/.task")
+    _PY_TASK_DIR = _re.compile(
+        r'^(\s*TASK_DIR\s*=\s*)os\.path\.expanduser\(["\']~/.task["\']\)',
+        _re.MULTILINE
+    )
+    _PY_TASK_DIR_REPL = r"\1os.environ.get('TW_TASK_DIR', os.path.expanduser('~/.task'))"
+
+    # CONFIG_DIR = os.path.expanduser("~/.task/config")
+    _PY_CONFIG_DIR = _re.compile(
+        r'^(\s*CONFIG_DIR\s*=\s*)os\.path\.expanduser\(["\']~/.task/config["\']\)',
+        _re.MULTILINE
+    )
+    _PY_CONFIG_DIR_REPL = r"\1os.path.join(TASK_DIR, 'config')"
+
+    # HOOK_DIR = os.path.expanduser("~/.task/hooks")
+    _PY_HOOK_DIR = _re.compile(
+        r'^(\s*HOOK_DIR\s*=\s*)os\.path\.expanduser\(["\']~/.task/hooks["\']\)',
+        _re.MULTILINE
+    )
+    _PY_HOOK_DIR_REPL = r"\1os.path.join(TASK_DIR, 'hooks')"
+
+    # <VAR> = os.path.expanduser("~/.task/config/<file>")
+    _PY_TASK_SUBPATH = _re.compile(
+        r'^(\s*\w+\s*=\s*)os\.path\.expanduser\(["\']~/.task/([^"\']+)["\']\)',
+        _re.MULTILINE
+    )
+
+    # Path.home() / '.task'  (NOT followed by / to avoid chained paths)
+    _PY_PATH_HOME = _re.compile(
+        r"Path\.home\(\)\s*/\s*'\.task'(?!\s*/)",
+    )
+    _PY_PATH_HOME_REPL = "Path(os.environ.get('TW_TASK_DIR', str(Path.home() / '.task')))"
+
+    # taskrc = os.path.expanduser("~/.taskrc")  — any var name
+    _PY_TASKRC = _re.compile(
+        r'^(\s*\w*[Tt]ask[Rr][Cc]\w*\s*=\s*)os\.path\.expanduser\(["\']~/.taskrc["\']\)',
+        _re.MULTILINE
+    )
+    _PY_TASKRC_REPL = r"\1os.environ.get('TASKRC', os.path.expanduser('~/.taskrc'))"
+
+    # ── Shell patterns ────────────────────────────────────────────────────────
+
+    # TASK_DIR="$HOME/.task" or TASK_DIR="${HOME}/.task"
+    _SH_TASK_DIR = _re.compile(
+        r'^(\s*TASK_DIR\s*=\s*)["\']?\$\{?HOME\}?/\.task["\']?',
+        _re.MULTILINE
+    )
+    _SH_TASK_DIR_REPL = r'\1"${TW_TASK_DIR:-${HOME}/.task}"'
+
+    # TASKRC="$HOME/.taskrc" — only when NOT already using ${TASKRC:-...}
+    _SH_TASKRC = _re.compile(
+        r'^(\s*TASKRC\s*=\s*)["\']?\$\{?HOME\}?/\.taskrc["\']?',
+        _re.MULTILINE
+    )
+    _SH_TASKRC_REPL = r'\1"${TASKRC:-${HOME}/.taskrc}"'
+
+    # ── Detection patterns (flag only) ────────────────────────────────────────
+
+    # Remaining ~/.task references after patching
+    _REMAINING_TASK = _re.compile(r'~/.task(?!/logs)')
+    # Non-standard TW_DEBUG (not from injector)
+    _CUSTOM_DEBUG   = _re.compile(r'TW_DEBUG', _re.MULTILINE)
+    _INJECTOR_MARK  = 'Auto-generated by make-awesome'
+
+    # ─────────────────────────────────────────────────────────────────────────
+
+    @classmethod
+    def _is_python(cls, path: Path) -> bool:
+        return path.suffix == '.py' or (
+            path.suffix == '' and path.read_bytes()[:2] in (b'#!',) and
+            b'python' in path.read_bytes()[:50]
+        )
+
+    @classmethod
+    def _is_shell(cls, path: Path) -> bool:
+        if path.suffix in ('.sh', '.bash'):
+            return True
+        if path.suffix == '':
+            try:
+                hdr = path.read_bytes()[:50]
+                return b'#!/bin/bash' in hdr or b'#!/bin/sh' in hdr
+            except Exception:
+                return False
+        return False
+
+    @classmethod
+    def scan_file(cls, path: Path, report: 'StageReport'):
+        """Scan one file and add events to report without modifying anything."""
+        try:
+            text = path.read_text(errors='replace')
+        except Exception as e:
+            report.add_failed(path.name, str(e))
+            return
+
+        fname = path.name
+
+        if cls._is_python(path) or cls._is_shell(path):
+            # Check for already-done
+            if 'TW_TASK_DIR' in text:
+                report.add_skipped(fname, 'already uses TW_TASK_DIR')
+                return
+
+        if cls._is_python(path):
+            found = []
+            if cls._PY_TASK_DIR.search(text):
+                found.append('TASK_DIR')
+            if cls._PY_CONFIG_DIR.search(text):
+                found.append('CONFIG_DIR')
+            if cls._PY_HOOK_DIR.search(text):
+                found.append('HOOK_DIR')
+            if cls._PY_TASKRC.search(text):
+                found.append('TASKRC')
+            if cls._PY_PATH_HOME.search(text):
+                found.append('Path.home()/.task')
+            if found:
+                report.add_changed(fname, f"will patch: {', '.join(found)}")
+
+            # Sub-path patterns — auto-fixable, report them
+            for m in cls._PY_TASK_SUBPATH.finditer(text):
+                subpath = m.group(2)
+                # Skip if it's already handled by specific patterns above
+                if not subpath.startswith('config') and not subpath.startswith('hooks'):
+                    report.add_changed(fname, f"will patch inline path: ~/.task/{subpath}")
+
+            # TW_DEBUG: flag if present but NOT from injector
+            if cls._CUSTOM_DEBUG.search(text) and cls._INJECTOR_MARK not in text:
+                report.add_flagged(fname, 'custom TW_DEBUG implementation (not from injector) — review')
+
+        elif cls._is_shell(path):
+            found = []
+            if cls._SH_TASK_DIR.search(text):
+                found.append('TASK_DIR')
+            if cls._SH_TASKRC.search(text) and '${TASKRC:-' not in text:
+                found.append('TASKRC')
+            if found:
+                report.add_changed(fname, f"will patch: {', '.join(found)}")
+
+    @classmethod
+    def patch_file(cls, path: Path, report: 'StageReport', dry_run: bool = False) -> bool:
+        """Patch one file. Returns True if file was changed (or would be in dry_run)."""
+        import shutil
+        try:
+            original = path.read_text()
+        except Exception as e:
+            report.add_failed(path.name, str(e))
+            return False
+
+        # Skip if already done
+        if 'TW_TASK_DIR' in original:
+            report.add_skipped(path.name, 'already uses TW_TASK_DIR')
+            return False
+
+        patched = original
+        changed_items = []
+
+        if cls._is_python(path):
+            # Ensure `import os` is present (needed for os.environ.get)
+            has_import_os = bool(_re.search(r'^import os\b', patched, _re.MULTILINE))
+
+            # Apply patches in dependency order
+            if cls._PY_TASK_DIR.search(patched):
+                patched = cls._PY_TASK_DIR.sub(cls._PY_TASK_DIR_REPL, patched)
+                changed_items.append('TASK_DIR')
+                if not has_import_os:
+                    # Insert `import os` after shebang/docstring block
+                    patched = cls._inject_import_os(patched)
+
+            if cls._PY_CONFIG_DIR.search(patched):
+                patched = cls._PY_CONFIG_DIR.sub(cls._PY_CONFIG_DIR_REPL, patched)
+                changed_items.append('CONFIG_DIR')
+
+            if cls._PY_HOOK_DIR.search(patched):
+                patched = cls._PY_HOOK_DIR.sub(cls._PY_HOOK_DIR_REPL, patched)
+                changed_items.append('HOOK_DIR')
+
+            # Generic sub-path handler for remaining ~/.task/<path> patterns
+            def _subpath_repl(m):
+                prefix = m.group(1)
+                subpath = m.group(2)
+                parts = subpath.strip('/').split('/')
+                parts_str = ', '.join(f"'{p}'" for p in parts)
+                return f"{prefix}os.path.join(TASK_DIR, {parts_str})"
+
+            if cls._PY_TASK_SUBPATH.search(patched):
+                new = cls._PY_TASK_SUBPATH.sub(_subpath_repl, patched)
+                if new != patched:
+                    patched = new
+                    changed_items.append('subpaths')
+
+            if cls._PY_PATH_HOME.search(patched):
+                patched = cls._PY_PATH_HOME.sub(cls._PY_PATH_HOME_REPL, patched)
+                changed_items.append('Path.home()/.task')
+
+            if cls._PY_TASKRC.search(patched):
+                patched = cls._PY_TASKRC.sub(cls._PY_TASKRC_REPL, patched)
+                changed_items.append('TASKRC')
+
+            # Flag any remaining ~/.task refs (not in comments)
+            for line in patched.splitlines():
+                stripped = line.lstrip()
+                if stripped.startswith('#'):
+                    continue
+                if '~/.task' in line and 'TW_TASK_DIR' not in line:
+                    report.add_flagged(path.name,
+                        f"residual ~/.task reference (not auto-fixed): {stripped[:80]}")
+
+            # TW_DEBUG without injector mark
+            if cls._CUSTOM_DEBUG.search(patched) and cls._INJECTOR_MARK not in patched:
+                report.add_flagged(path.name,
+                    'custom TW_DEBUG (not from injector) — run --debug stage first')
+
+        elif cls._is_shell(path):
+            if cls._SH_TASK_DIR.search(patched):
+                patched = cls._SH_TASK_DIR.sub(cls._SH_TASK_DIR_REPL, patched)
+                changed_items.append('TASK_DIR')
+
+            if cls._SH_TASKRC.search(patched) and '${TASKRC:-' not in patched:
+                patched = cls._SH_TASKRC.sub(cls._SH_TASKRC_REPL, patched)
+                changed_items.append('TASKRC')
+
+        if patched == original:
+            report.add_skipped(path.name, 'no matching patterns found')
+            return False
+
+        if dry_run:
+            report.add_changed(path.name, f"[dry-run] would patch: {', '.join(changed_items)}")
+            return True
+
+        # Backup
+        orig_path = Path(str(path) + '.orig')
+        if not orig_path.exists():
+            shutil.copy2(path, orig_path)
+
+        # Write patch
+        path.write_text(patched)
+
+        # Verify Python compiles
+        if cls._is_python(path):
+            import subprocess as _sp
+            result = _sp.run(
+                [sys.executable, '-m', 'py_compile', str(path)],
+                capture_output=True
+            )
+            if result.returncode != 0:
+                # Restore from backup
+                shutil.copy2(orig_path, path)
+                report.add_failed(path.name,
+                    f"syntax error after patch — restored from .orig: "
+                    f"{result.stderr.decode().strip()[:120]}")
+                return False
+
+        report.add_changed(path.name, f"patched: {', '.join(changed_items)}")
+        return True
+
+    @classmethod
+    def _inject_import_os(cls, text: str) -> str:
+        """Insert `import os` after the first existing import block."""
+        lines = text.splitlines(keepends=True)
+        insert_at = 0
+        for i, line in enumerate(lines):
+            if line.startswith('import ') or line.startswith('from '):
+                insert_at = i
+                break
+        if insert_at:
+            lines.insert(insert_at, 'import os\n')
+        return ''.join(lines)
+
+    @classmethod
+    def update_awesome_rc(cls, app_name: str) -> bool:
+        """Flip envar_ready = yes for app_name in awesome.rc."""
+        rc_path = SCRIPT_DIR / 'awesome.rc'
+        if not rc_path.exists():
+            return False
+        text = rc_path.read_text()
+        # Find the section and update envar_ready within it
+        import re as _re2
+        # Match the section and the envar_ready line within it
+        pattern = _re2.compile(
+            r'(^\[' + _re2.escape(app_name) + r'\][^\[]*?)'
+            r'(envar_ready\s*=\s*)\S+',
+            _re2.MULTILINE | _re2.DOTALL
+        )
+        new_text, n = pattern.subn(r'\g<1>\g<2>yes', text)
+        if n:
+            rc_path.write_text(new_text)
+            return True
+        return False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+
+import re as _re
+
+
+def cmd_envar(args) -> int:
+    """Patch hardcoded env-related paths to use TW_TASK_DIR / TASKRC."""
+    msg("=" * 70)
+    msg(f"make-awesome.py v{VERSION} --envar")
+    msg("=" * 70)
+    print()
+
+    dry_run = args and hasattr(args, 'dry_run') and args.dry_run
+    force   = args and hasattr(args, 'force')   and args.force
+
+    if dry_run:
+        msg("[dry-run] No files will be modified")
+        print()
+
+    report = StageReport('Envar')
+
+    # Collect candidate files: .py, shell scripts, executable files without extension
+    candidates: list[Path] = []
+    for pat in ['*.py', '*.sh']:
+        candidates.extend(Path('.').glob(pat))
+    for f in Path('.').iterdir():
+        if f.is_file() and f.suffix == '' and os.access(f, os.X_OK):
+            candidates.append(f)
+    candidates = sorted(set(candidates))
+
+    # Skip .orig and __pycache__
+    candidates = [f for f in candidates
+                  if not f.name.endswith('.orig') and '__pycache__' not in str(f)]
+
+    if not candidates:
+        warn("No patchable files found")
+        return 0
+
+    msg(f"Scanning {len(candidates)} file(s)...")
+    print()
+
+    changed = 0
+    for f in candidates:
+        if dry_run:
+            scan_report = StageReport('scan')
+            EnvarEnhancer.scan_file(f, scan_report)
+            # Merge into main report
+            for item, detail in scan_report.changed:
+                report.add_changed(item, detail)
+                msg(f"  [would patch] {item}: {detail}")
+            for item, detail in scan_report.skipped:
+                pass  # silent
+            for item, detail in scan_report.flagged:
+                report.add_flagged(item, detail)
+                warn(f"  [flag] {item}: {detail}")
+        else:
+            if EnvarEnhancer.patch_file(f, report, dry_run=False):
+                changed += 1
+
+    print()
+
+    if not dry_run:
+        if changed > 0:
+            success(f"Patched {changed} file(s)")
+        else:
+            msg("No files needed patching")
+
+        # Update awesome.rc if no failures
+        if not report.failed:
+            app_name = _get_app_name_from_meta()
+            if app_name:
+                if EnvarEnhancer.update_awesome_rc(app_name):
+                    success(f"awesome.rc: envar_ready = yes  [{app_name}]")
+                else:
+                    warn(f"Could not update awesome.rc for '{app_name}' "
+                         f"(not in fleet or envar_ready field missing)")
+            else:
+                warn("No .meta found — awesome.rc not updated")
+        else:
+            warn("awesome.rc not updated (failures present — fix and re-run)")
+
+    report.print_summary()
+
+    msg("Triggered by: TW_TASK_DIR / TASKRC isolation (B+C)")
+    print()
+    return 0 if not report.failed else 1
+
+
+def _get_app_name_from_meta() -> str:
+    """Read app name from the first .meta file in cwd."""
+    metas = list(Path('.').glob('*.meta'))
+    if not metas:
+        return ''
+    for line in metas[0].read_text().splitlines():
+        if line.startswith('name='):
+            return line.split('=', 1)[1].strip()
+    return ''
+
 
 class ProjectInfo:
     def __init__(self):
@@ -1797,6 +2287,7 @@ def cmd_pipeline(commit_msg: str) -> int:
         ('Debug',    True),
         ('Testing',  False),
         ('Timing',   True),
+        ('Envar',    False),   # non-gated: isolation patches, won't block pipeline
         ('Stdhelp',  False),
         ('Meta',     True),
         ('Install',  True),
@@ -1813,6 +2304,8 @@ def cmd_pipeline(commit_msg: str) -> int:
             rc = cmd_testing(None)
         elif name == 'Timing':
             rc = cmd_timing(None)
+        elif name == 'Envar':
+            rc = cmd_envar(None)
         elif name == 'Stdhelp':
             rc = cmd_stdhelp(None)
         elif name == 'Meta':
@@ -2519,7 +3012,7 @@ def cmd_fleet(args) -> int:
 # Main
 # ============================================================================
 
-PIPELINE_ORDER = ['debug', 'testing', 'timing', 'stdhelp', 'meta', 'install', 'push']
+PIPELINE_ORDER = ['debug', 'testing', 'timing', 'envar', 'stdhelp', 'meta', 'install', 'push']
 
 
 def main():
@@ -2542,6 +3035,8 @@ def main():
                        help='Run test suite [STUB]')
     parser.add_argument('--timing', action='store_true',
                        help='Inject TW_TIMING timing block')
+    parser.add_argument('--envar', action='store_true',
+                       help='Patch hardcoded ~/.task paths to use TW_TASK_DIR/TASKRC env vars')
     parser.add_argument('--stdhelp', action='store_true',
                        help='Standardise help output [STUB]')
     parser.add_argument('--meta', action='store_true',
@@ -2575,7 +3070,8 @@ def main():
     # -------------------------------------------------------------------------
     fleet_flags   = args.fleet or args.list is not None or args.add or args.remove
     pipeline_flags = (args.commit_message or args.debug or args.testing or args.timing
-                      or args.stdhelp or args.meta or args.install or args.push is not None)
+                      or args.envar or args.stdhelp or args.meta or args.install
+                      or args.push is not None)
 
     if IS_FLEET_MODE:
         msg(f"[fleet-mode] {SCRIPT_DIR}")
@@ -2619,6 +3115,8 @@ def main():
             rc = cmd_testing(args)
         elif step == 'timing':
             rc = cmd_timing(args)
+        elif step == 'envar':
+            rc = cmd_envar(args)
         elif step == 'stdhelp':
             rc = cmd_stdhelp(args)
         elif step == 'meta':
