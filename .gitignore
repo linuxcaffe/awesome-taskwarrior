@@ -18,3 +18,5 @@ __pycache__/
 
 # ── OS noise ──────────────────────────────────────────────────────────────────
 .DS_Store
+awesome-taskwarrior.install
+awesome-taskwarrior.meta
