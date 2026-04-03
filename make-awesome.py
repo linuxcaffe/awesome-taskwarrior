@@ -2106,40 +2106,107 @@ def cmd_testing(args) -> int:
 # Patterns that every fleet project .gitignore should contain
 _REQUIRED_GITIGNORE_PATTERNS = ['logs/', 'dev/', 'claude/', '*.orig', '__pycache__/']
 
+# Directories to untrack if they were committed before .gitignore was in place
+_DIRS_TO_UNTRACK = ['dev', 'claude', 'logs']
+
+
+def _git_ls_tracked(project_dir: Path, *dirs) -> list:
+    """Return list of tracked files inside the given dir names."""
+    import subprocess as _sp
+    result = _sp.run(
+        ['git', 'ls-files'] + list(dirs),
+        capture_output=True, text=True, cwd=project_dir
+    )
+    return [l for l in result.stdout.splitlines() if l.strip()]
+
+
+def _git_rm_cached(project_dir: Path, *dirs) -> bool:
+    """Untrack dirs from git index (files remain on disk). Returns True on success."""
+    import subprocess as _sp
+    result = _sp.run(
+        ['git', 'rm', '--cached', '-r', '--quiet'] + list(dirs),
+        capture_output=True, text=True, cwd=project_dir
+    )
+    return result.returncode == 0
+
+
 def cmd_gitignore(args) -> int:
     msg("=" * 70)
     msg(f"make-awesome.py v{VERSION} --gitignore")
     msg("=" * 70)
     print()
 
+    dry_run = getattr(args, 'dry_run', False)
     report = StageReport('Gitignore')
     project_dir = Path.cwd()
     gitignore_path = project_dir / '.gitignore'
     template_path = SCRIPT_DIR / 'templates' / 'fleet.gitignore'
+    is_git_repo = _git(project_dir, 'rev-parse', '--git-dir').returncode == 0
 
+    # ── Step 1: ensure .gitignore exists and has required patterns ──────────
     if not gitignore_path.exists():
         if template_path.exists():
-            import shutil
-            shutil.copy(template_path, gitignore_path)
-            report.changed.append(f"Created .gitignore from fleet template")
-            success(f"Created .gitignore (copied from templates/fleet.gitignore)")
+            if not dry_run:
+                import shutil
+                shutil.copy(template_path, gitignore_path)
+            prefix = "[dry-run] " if dry_run else ""
+            success(f"{prefix}Created .gitignore (from templates/fleet.gitignore)")
+            report.add_changed(".gitignore", "created from fleet template")
         else:
-            report.flagged.append("No .gitignore and no fleet template found")
             warn("No .gitignore found and templates/fleet.gitignore is missing")
             warn(f"Expected template at: {template_path}")
+            report.add_flagged("No .gitignore", f"template missing at {template_path}")
     else:
         content = gitignore_path.read_text()
         missing = [p for p in _REQUIRED_GITIGNORE_PATTERNS if p not in content]
         if missing:
-            for p in missing:
-                report.flagged.append(f"Missing pattern in .gitignore: {p}")
-            warn(f".gitignore exists but is missing {len(missing)} fleet pattern(s):")
-            for p in missing:
-                warn(f"  {p}")
-            warn(f"Add them manually or delete .gitignore and re-run --gitignore")
+            if dry_run:
+                msg(f"  [dry-run] would append {len(missing)} missing pattern(s): "
+                    f"{', '.join(missing)}")
+                report.add_changed("[dry-run]", f"would append: {', '.join(missing)}")
+            else:
+                with open(gitignore_path, 'a') as f:
+                    f.write('\n# Added by make-awesome.py --gitignore\n')
+                    for p in missing:
+                        f.write(f"{p}\n")
+                success(f"Appended {len(missing)} missing pattern(s) to .gitignore: "
+                        f"{', '.join(missing)}")
+                report.add_changed(".gitignore", f"appended: {', '.join(missing)}")
         else:
             success(".gitignore present with all required patterns")
-            report.skipped.append(".gitignore OK")
+            report.add_skipped(".gitignore", "all required patterns present")
+
+    # ── Step 2: untrack dirs that are committed but should be ignored ───────
+    if is_git_repo:
+        existing_dirs = [d for d in _DIRS_TO_UNTRACK if (project_dir / d).exists()]
+        if existing_dirs:
+            tracked = _git_ls_tracked(project_dir, *existing_dirs)
+            if tracked:
+                msg(f"  Found {len(tracked)} tracked file(s) in ignored dirs "
+                    f"({', '.join(existing_dirs)}) — untracking from git index:")
+                for f in tracked[:8]:
+                    msg(f"    {f}")
+                if len(tracked) > 8:
+                    msg(f"    ... and {len(tracked) - 8} more")
+
+                if dry_run:
+                    msg(f"  [dry-run] would run: git rm --cached -r {' '.join(existing_dirs)}")
+                    report.add_changed("[dry-run]", f"would untrack {len(tracked)} files")
+                else:
+                    if _git_rm_cached(project_dir, *existing_dirs):
+                        success(f"  Untracked {len(tracked)} file(s) from git index "
+                                f"(files kept on disk)")
+                        report.add_changed(
+                            f"Untracked {len(tracked)} files",
+                            f"from {', '.join(d + '/' for d in existing_dirs)}")
+                    else:
+                        warn("  git rm --cached failed — manual cleanup may be needed")
+                        report.add_flagged("git rm --cached failed",
+                                           f"dirs: {', '.join(existing_dirs)}")
+            else:
+                msg(f"  No tracked files in ignored dirs — index is clean")
+    else:
+        msg("  (not a git repo — skipping index cleanup)")
 
     report.print_summary()
     print()
@@ -2892,6 +2959,7 @@ def cmd_fleet_push(apps: list, message: str, dry_run: bool = False) -> int:
 def _sync_fleet_registry(apps: list, pushed_names: list, message: str):
     """Copy updated .meta (and .install) files into awesome-taskwarrior registry.d/installers/
     for each successfully pushed app, then commit+push the registry repo."""
+    import shutil
     registry_path = SCRIPT_DIR
     registry_d   = registry_path / 'registry.d'
     installers_d = registry_path / 'installers'
@@ -2999,6 +3067,8 @@ def cmd_fleet(args) -> int:
 
     do_timing    = getattr(args, 'timing',    False)
     do_debug     = getattr(args, 'debug',     False)
+    do_envar     = getattr(args, 'envar',     False)
+    do_gitignore = getattr(args, 'gitignore', False)
     do_checksum  = getattr(args, 'checksum',  False)
     dry_run      = getattr(args, 'dry_run',   False)
     list_pat     = getattr(args, 'list',      None)
@@ -3013,11 +3083,11 @@ def cmd_fleet(args) -> int:
         return cmd_fleet_add(add_name)
     if remove_name is not None:
         return cmd_fleet_remove(remove_name)
-    if do_checksum and not do_timing and not do_debug and push_msg is None:
+    if do_checksum and not any([do_timing, do_debug, do_envar, do_gitignore]) and push_msg is None:
         return cmd_fleet_checksum(apps, dry_run=dry_run)
 
     # No flags at all → diagnostic / stats
-    if not do_timing and not do_debug and push_msg is None:
+    if not any([do_timing, do_debug, do_envar, do_gitignore]) and push_msg is None:
         return cmd_fleet_status(apps)
 
     # Validate push message early if push is requested
@@ -3025,8 +3095,16 @@ def cmd_fleet(args) -> int:
         error("--fleet --push requires a commit message: --fleet --push \"message\"")
         return 1
 
-    # Stage flags → apply across fleet first (timing/debug before push)
-    if do_timing or do_debug:
+    # Stage flags → apply across fleet
+    stage_flags = [
+        ('timing',    do_timing,    cmd_timing,    lambda a: a['timing']),
+        ('debug',     do_debug,     cmd_debug,     lambda a: a['debug']),
+        ('envar',     do_envar,     cmd_envar,     lambda a: True),
+        ('gitignore', do_gitignore, cmd_gitignore, lambda a: True),
+    ]
+    active_stages = [(n, fn, elig) for n, flag, fn, elig in stage_flags if flag]
+
+    if active_stages:
         origin  = Path.cwd()
         results = []
 
@@ -3034,9 +3112,10 @@ def cmd_fleet(args) -> int:
             if app['skip']:
                 continue
 
-            if do_timing and not app['timing']:
-                continue
-            if do_debug and not app['debug']:
+            # Check per-stage eligibility (timing/debug respect awesome.rc flags)
+            eligible = all(elig(app) for _, _, elig in active_stages)
+            if not eligible:
+                results.append((app['name'], 'SKIP', 'not eligible'))
                 continue
 
             if not app['path'].is_dir():
@@ -3048,10 +3127,11 @@ def cmd_fleet(args) -> int:
             os.chdir(app['path'])
 
             rc = 0
-            if do_timing:
-                rc = cmd_timing(args)
-            if rc == 0 and do_debug:
-                rc = cmd_debug(args)
+            for stage_name, stage_fn, _ in active_stages:
+                if rc == 0 or stage_name in ('gitignore', 'envar'):  # non-gated stages always run
+                    rc_s = stage_fn(args)
+                    if stage_name not in ('gitignore', 'envar'):
+                        rc = rc_s
 
             results.append((app['name'], 'OK' if rc == 0 else 'FAIL', ''))
 
