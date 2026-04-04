@@ -1244,10 +1244,8 @@ class ProjectInfo:
         self.tags = ""
         self.files = []
         self.checksums = []
-        # Wrapper-specific fields
-        self.wrapper_keyword = ""
-        self.wrapper_script = ""
-        self.wrapper_type = "command"  # 'command' or 'filter'
+        # Wrapper-specific fields (list of dicts: keyword, script, type)
+        self.wrappers = []
 
 
 def detect_project_info() -> ProjectInfo:
@@ -1472,12 +1470,24 @@ def prompt_for_metadata(info: ProjectInfo) -> bool:
                         info.license = line.split('=', 1)[1].strip()
                     elif line.startswith('type='):
                         info.type = line.split('=', 1)[1].strip()
-                    elif line.startswith('wrapper.keyword='):
-                        info.wrapper_keyword = line.split('=', 1)[1].strip()
-                    elif line.startswith('wrapper.script='):
-                        info.wrapper_script = line.split('=', 1)[1].strip()
-                    elif line.startswith('wrapper.type='):
-                        info.wrapper_type = line.split('=', 1)[1].strip()
+                    elif line.startswith('wrapper.'):
+                        # Indexed:  wrapper.1.keyword=theme
+                        # Legacy:   wrapper.keyword=theme  (treated as index 1)
+                        rest = line[len('wrapper.'):].strip()
+                        import re as _re
+                        m = _re.match(r'^(\d+)\.(keyword|script|type)=(.+)$', rest)
+                        if m:
+                            idx, field, val = int(m.group(1)), m.group(2), m.group(3).strip()
+                        else:
+                            m2 = _re.match(r'^(keyword|script|type)=(.+)$', rest)
+                            if m2:
+                                idx, field, val = 1, m2.group(1), m2.group(2).strip()
+                            else:
+                                idx = None
+                        if idx is not None:
+                            while len(info.wrappers) < idx:
+                                info.wrappers.append({'keyword': '', 'script': '', 'type': 'command'})
+                            info.wrappers[idx - 1][field] = val
                     elif line.startswith('base_url='):
                         # Extract branch from base_url
                         url = line.split('=', 1)[1].strip()
@@ -1504,39 +1514,64 @@ def prompt_for_metadata(info: ProjectInfo) -> bool:
     
     # Wrapper-specific prompts
     if info.type == 'wrapper':
-        if info.wrapper_keyword:
-            response = input(f"Wrapper keyword [{info.wrapper_keyword}]: ").strip()
-            if response:
-                info.wrapper_keyword = response
-        else:
-            info.wrapper_keyword = input("Wrapper keyword (e.g., ann): ").strip()
-        
-        if not info.wrapper_keyword:
-            error("Wrapper keyword required")
-            return False
-        
-        if info.wrapper_script:
-            response = input(f"Wrapper script [{info.wrapper_script}]: ").strip()
-            if response:
-                info.wrapper_script = response
-        else:
-            info.wrapper_script = input("Wrapper script name (e.g., annn): ").strip()
-        
-        if not info.wrapper_script:
-            error("Wrapper script name required")
-            return False
-        
-        # Wrapper type: command, filter, or pre-exec
-        current_wtype = info.wrapper_type or 'command'
-        print(f"Wrapper type: (1) command   — keyword in args triggers dispatch (e.g., annn)")
-        print(f"              (2) filter    — pipes all report output through script (e.g., nicedates)")
-        print(f"              (3) pre-exec  — runs before task (and after for cleanup), patches config")
         wtype_map = {
             '1': 'command',  '2': 'filter',  '3': 'pre-exec',
             'command': 'command', 'filter': 'filter', 'pre-exec': 'pre-exec',
         }
-        response = input(f"Select [{current_wtype}]: ").strip().lower()
-        info.wrapper_type = wtype_map.get(response, current_wtype)
+
+        def _prompt_one_wrapper(existing=None):
+            """Prompt for a single wrapper entry. Returns dict or None to cancel."""
+            w = existing.copy() if existing else {'keyword': '', 'script': '', 'type': 'command'}
+            if w['keyword']:
+                r = input(f"  Keyword [{w['keyword']}]: ").strip()
+                if r:
+                    w['keyword'] = r
+            else:
+                w['keyword'] = input("  Keyword (e.g., ann): ").strip()
+            if not w['keyword']:
+                return None
+
+            if w['script']:
+                r = input(f"  Script  [{w['script']}]: ").strip()
+                if r:
+                    w['script'] = r
+            else:
+                w['script'] = input("  Script (e.g., annn): ").strip()
+            if not w['script']:
+                return None
+
+            current_wtype = w.get('type', 'command')
+            print(f"  Type: (1) command   — keyword in args triggers dispatch")
+            print(f"        (2) filter    — pipes all report output through script")
+            print(f"        (3) pre-exec  — runs before task (and after for cleanup)")
+            r = input(f"  Select [{current_wtype}]: ").strip().lower()
+            w['type'] = wtype_map.get(r, current_wtype)
+            return w
+
+        # Edit existing wrappers in place
+        if not info.wrappers:
+            info.wrappers.append({'keyword': '', 'script': '', 'type': 'command'})
+
+        updated = []
+        for i, w in enumerate(info.wrappers, 1):
+            print(f"Wrapper {i}: {w['keyword']}|{w['script']}|{w['type']}")
+            result = _prompt_one_wrapper(w)
+            if result:
+                updated.append(result)
+        info.wrappers = updated
+
+        if not info.wrappers:
+            error("At least one wrapper required")
+            return False
+
+        # Offer to add more
+        while True:
+            r = input("Add another wrapper? [y/N]: ").strip().lower()
+            if r != 'y':
+                break
+            result = _prompt_one_wrapper()
+            if result:
+                info.wrappers.append(result)
     
     # Description with default if available
     if info.description:
@@ -1686,10 +1721,12 @@ def generate_meta_file(info: ProjectInfo) -> bool:
             f.write(f"requires_taskwarrior={info.requires_tw}\n")
             if info.requires_py:
                 f.write(f"requires_python={info.requires_py}\n")
-            if info.type == 'wrapper':
-                f.write(f"\nwrapper.keyword={info.wrapper_keyword}\n")
-                f.write(f"wrapper.script={info.wrapper_script}\n")
-                f.write(f"wrapper.type={info.wrapper_type}\n")
+            if info.type == 'wrapper' and info.wrappers:
+                f.write('\n')
+                for i, w in enumerate(info.wrappers, 1):
+                    f.write(f"wrapper.{i}.keyword={w['keyword']}\n")
+                    f.write(f"wrapper.{i}.script={w['script']}\n")
+                    f.write(f"wrapper.{i}.type={w['type']}\n")
         
         success(f"Created {meta_file}")
         return True
@@ -1878,18 +1915,21 @@ def generate_installer(info: ProjectInfo) -> bool:
             # Finish install function
             f.write('\n')
             
-            # Register wrapper if applicable
-            if info.type == 'wrapper' and info.wrapper_keyword and info.wrapper_script:
-                f.write('    # Register wrapper with tw\n')
+            # Register wrappers if applicable
+            if info.type == 'wrapper' and info.wrappers:
+                f.write('    # Register wrappers with tw\n')
                 f.write('    WRAPPERS_FILE="${HOME}/.task/config/.tw_wrappers"\n')
                 f.write('    mkdir -p "$(dirname "$WRAPPERS_FILE")"\n')
-                f.write(f'    if ! grep -q "^{info.wrapper_keyword}|" "$WRAPPERS_FILE" 2>/dev/null; then\n')
-                f.write(f'        echo "{info.wrapper_keyword}|{info.wrapper_script}|{info.description}|{info.wrapper_type}" >> "$WRAPPERS_FILE"\n')
-                f.write(f'        tw_msg "Registered wrapper: {info.wrapper_keyword} -> {info.wrapper_script} ({info.wrapper_type})"\n')
-                f.write(f'        debug_msg "Registered wrapper in .tw_wrappers" 2\n')
-                f.write('    else\n')
-                f.write(f'        tw_msg "Wrapper already registered: {info.wrapper_keyword}"\n')
-                f.write('    fi\n\n')
+                for w in info.wrappers:
+                    kw, script, wtype = w['keyword'], w['script'], w['type']
+                    f.write(f'    if ! grep -q "^{kw}|" "$WRAPPERS_FILE" 2>/dev/null; then\n')
+                    f.write(f'        echo "{kw}|{script}|{info.description}|{wtype}" >> "$WRAPPERS_FILE"\n')
+                    f.write(f'        tw_msg "Registered wrapper: {kw} -> {script} ({wtype})"\n')
+                    f.write(f'        debug_msg "Registered wrapper in .tw_wrappers" 2\n')
+                    f.write('    else\n')
+                    f.write(f'        tw_msg "Wrapper already registered: {kw}"\n')
+                    f.write('    fi\n')
+                f.write('\n')
             
             f.write('    debug_msg "Installation complete" 1\n')
             f.write(f'    tw_success "Installed {info.name} v$VERSION"\n')
@@ -1939,15 +1979,18 @@ def generate_installer(info: ProjectInfo) -> bool:
                 f.write(f'        debug_msg "Removed from .taskrc: {first_config}" 2\n')
                 f.write('    fi\n\n')
             
-            # Unregister wrapper if applicable
-            if info.type == 'wrapper' and info.wrapper_keyword:
-                f.write('    # Unregister wrapper from tw\n')
+            # Unregister wrappers if applicable
+            if info.type == 'wrapper' and info.wrappers:
+                f.write('    # Unregister wrappers from tw\n')
                 f.write('    WRAPPERS_FILE="${HOME}/.task/config/.tw_wrappers"\n')
-                f.write(f'    if grep -q "^{info.wrapper_keyword}|" "$WRAPPERS_FILE" 2>/dev/null; then\n')
-                f.write(f'        sed -i.bak "/^{info.wrapper_keyword}|/d" "$WRAPPERS_FILE"\n')
-                f.write(f'        tw_msg "Unregistered wrapper: {info.wrapper_keyword}"\n')
-                f.write(f'        debug_msg "Removed wrapper from .tw_wrappers" 2\n')
-                f.write('    fi\n\n')
+                for w in info.wrappers:
+                    kw = w['keyword']
+                    f.write(f'    if grep -q "^{kw}|" "$WRAPPERS_FILE" 2>/dev/null; then\n')
+                    f.write(f'        sed -i.bak "/^{kw}|/d" "$WRAPPERS_FILE"\n')
+                    f.write(f'        tw_msg "Unregistered wrapper: {kw}"\n')
+                    f.write(f'        debug_msg "Removed wrapper from .tw_wrappers" 2\n')
+                    f.write('    fi\n')
+                f.write('\n')
             
             f.write(f'    tw_success "Removed {info.name}"\n')
             f.write('    return 0\n')
