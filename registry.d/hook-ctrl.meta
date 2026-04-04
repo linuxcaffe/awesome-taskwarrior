@@ -10,7 +10,7 @@ base_url=https://raw.githubusercontent.com/linuxcaffe/tw-hook-ctrl/main
 files=hook-ctrl.py:script,README.md:doc
 tags=hooks,tui,ncurses,permissions,management
 
-checksums=a8de878d9a537df77d337ed38254840e946ca8d5faba5492c96db00125b31b10,1e052f4a8aa3ea24f44b7626afde1d1925068469cc35d5469d6224eb9e72e469
+checksums=a8de878d9a537df77d337ed38254840e946ca8d5faba5492c96db00125b31b10,a7142f47fb35709c9cfe4359f410491ea7f5f7e6bc20d2ba1e68510ecf6ebd96
 
 author=linuxcaffe + claude sonnet
 license=MIT
