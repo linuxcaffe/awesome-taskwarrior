@@ -2,7 +2,7 @@
 # ncurses TUI for previewing and selecting Taskwarrior color themes, with per-report theme switching
 
 name=theme-select
-version=0.2.0
+version=0.3.0
 type=wrapper
 description=ncurses TUI for previewing and selecting Taskwarrior color themes, with per-report theme switching
 repo=https://github.com/linuxcaffe/tw-theme-select
@@ -10,12 +10,15 @@ base_url=https://raw.githubusercontent.com/linuxcaffe/tw-theme-select/main
 files=theme-select.py:script,theme-wrap.py:script,README.md:doc
 tags=theme, color, reports, preview, tui, wrapper
 
-checksums=3822b5dcac7c55e374aa48c9ee0883739381c2d0ca897a628825f5169ac551eb,ec722b1db1c88cfb9e12c53f5fc7c4e738c462a3ba1956a682865b5a44b852e3,58cb64e2d36e18fd4e14cd09dbad13ef235704fba82df2be074ac8b58e116719
+checksums=f1c439b299303b4e77c388b517fc3dc2d3da0f6e2189ef45ad7c3705781b4ee9,ec722b1db1c88cfb9e12c53f5fc7c4e738c462a3ba1956a682865b5a44b852e3,58cb64e2d36e18fd4e14cd09dbad13ef235704fba82df2be074ac8b58e116719
 
 author=linuxcaffe + claude 4.6
 license=MIT
 requires_taskwarrior=2.6.0
 
-wrapper.keyword=theme
-wrapper.script=theme-wrap.py
-wrapper.type=pre-exec
+wrapper.1.keyword=theme
+wrapper.1.script=theme-select.py
+wrapper.1.type=command
+wrapper.2.keyword=theme-switch
+wrapper.2.script=theme-wrap.py
+wrapper.2.type=pre-exec
