@@ -8,7 +8,8 @@
 #   debug       = yes | no        — eligible for --debug injection
 #   skip        = yes             — exclude from all fleet ops (omit or no to include)
 #   status      = release | testing | wip | suspended | archived
-#   envar_ready = yes | no        — updated for TW_TASK_DIR/TASKRC isolation (B+C)
+#   envar_ready  = yes | no       — updated for TW_TASK_DIR/TASKRC isolation (B+C)
+#   skip_testing = yes            — exempt from --fleet --testing gate (app has no tests yet)
 
 [recurrence-overhaul]
 path        = ~/dev/tw-recurrence_overhaul-hook
@@ -137,6 +138,15 @@ timing      = no
 debug       = no
 status      = testing
 envar_ready = yes
+
+[theme-select]
+path        = ~/dev/tw-theme-select
+type        = wrapper
+timing      = no
+debug       = no
+status      = wip
+envar_ready = yes
+skip_testing = yes
 
 [tw-gtk]
 path        = ~/dev/tw-gtk

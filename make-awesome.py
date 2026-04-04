@@ -1526,11 +1526,15 @@ def prompt_for_metadata(info: ProjectInfo) -> bool:
             error("Wrapper script name required")
             return False
         
-        # Wrapper type: command (keyword dispatch) or filter (output filter)
+        # Wrapper type: command, filter, or pre-exec
         current_wtype = info.wrapper_type or 'command'
-        print(f"Wrapper type: (1) command  — keyword in args triggers dispatch (e.g., annn)")
-        print(f"              (2) filter   — pipes all report output through script (e.g., nicedates)")
-        wtype_map = {'1': 'command', '2': 'filter', 'command': 'command', 'filter': 'filter'}
+        print(f"Wrapper type: (1) command   — keyword in args triggers dispatch (e.g., annn)")
+        print(f"              (2) filter    — pipes all report output through script (e.g., nicedates)")
+        print(f"              (3) pre-exec  — runs before task (and after for cleanup), patches config")
+        wtype_map = {
+            '1': 'command',  '2': 'filter',  '3': 'pre-exec',
+            'command': 'command', 'filter': 'filter', 'pre-exec': 'pre-exec',
+        }
         response = input(f"Select [{current_wtype}]: ").strip().lower()
         info.wrapper_type = wtype_map.get(response, current_wtype)
     
@@ -1562,9 +1566,12 @@ def prompt_for_metadata(info: ProjectInfo) -> bool:
     if response:
         info.branch = response
     
-    # Validate branch exists on GitHub by testing a known URL
+    # Validate branch exists on GitHub by testing a known file.
+    # Use the first listed source file (always present) rather than README.md
+    # (which may not exist yet on first pipeline run — chicken-and-egg).
     if info.repo:
-        test_url = f"https://raw.githubusercontent.com/{info.repo}/{info.branch}/README.md"
+        probe_file = info.files[0][0] if info.files else "README.md"
+        test_url = f"https://raw.githubusercontent.com/{info.repo}/{info.branch}/{probe_file}"
         msg(f"Verifying branch '{info.branch}' on GitHub...")
         try:
             result = subprocess.run(
@@ -1579,7 +1586,7 @@ def prompt_for_metadata(info: ProjectInfo) -> bool:
                 # Suggest alternatives
                 alternatives = ['main', 'master'] if info.branch not in ('main', 'master') else ['master' if info.branch == 'main' else 'main']
                 for alt in alternatives:
-                    alt_url = f"https://raw.githubusercontent.com/{info.repo}/{alt}/README.md"
+                    alt_url = f"https://raw.githubusercontent.com/{info.repo}/{alt}/{probe_file}"
                     alt_result = subprocess.run(
                         ['curl', '-sI', '-o', '/dev/null', '-w', '%{http_code}', alt_url],
                         capture_output=True, text=True, timeout=10
@@ -2094,7 +2101,72 @@ def cmd_testing(args) -> int:
     msg(f"make-awesome.py v{VERSION} --testing")
     msg("=" * 70)
     print()
-    warn("Test infrastructure not yet implemented")
+
+    import subprocess as _sp
+
+    project_dir = Path.cwd()
+    test_dir    = project_dir / 'test'
+    report      = StageReport('Testing')
+
+    # ── Discover test files ──────────────────────────────────────────────────
+    test_files = []
+    if test_dir.exists():
+        test_files  = sorted(test_dir.glob('test-*.py'))
+        test_files += sorted(test_dir.glob('test-*.sh'))
+
+    if not test_files:
+        warn("No test files found in test/")
+        warn("To scaffold one:")
+        warn(f"  cp ~/.task/awesome-taskwarrior/templates/test-python-template.py "
+             f"test/test-{project_dir.name}.py")
+        warn("  # Edit the file, then re-run --testing")
+        report.add_skipped("testing", "no test files — pass (warning only)")
+        print()
+        return 0  # Warn but don't gate: apps without tests still flow through
+
+    msg(f"Found {len(test_files)} test file(s) in test/:")
+    for f in test_files:
+        msg(f"  {f.name}")
+    print()
+
+    # ── Run each test file ───────────────────────────────────────────────────
+    passed, failed = [], []
+
+    for tf in sorted(test_files):
+        msg(f"▶ {tf.name}")
+        cmd = [sys.executable, str(tf)] if tf.suffix == '.py' else ['bash', str(tf)]
+        result = _sp.run(cmd, capture_output=True, text=True, cwd=project_dir)
+
+        # Show TAP / stdout output (trimmed)
+        stdout_lines = result.stdout.strip().splitlines()
+        if stdout_lines:
+            for line in stdout_lines:
+                print(f"    {line}")
+
+        if result.returncode == 0:
+            success(f"  PASS: {tf.name}")
+            passed.append(tf.name)
+            report.add_changed(tf.name, "all tests passed")
+        else:
+            error(f"  FAIL: {tf.name}  (exit {result.returncode})")
+            # Show last few stderr lines for diagnosis
+            stderr_lines = result.stderr.strip().splitlines()
+            for line in stderr_lines[-8:]:
+                warn(f"    {line}")
+            failed.append(tf.name)
+            report.add_failed(tf.name, f"exit {result.returncode}")
+
+        print()
+
+    # ── Summary ──────────────────────────────────────────────────────────────
+    if failed:
+        error(f"Testing: {len(failed)}/{len(test_files)} FAILED  "
+              f"({', '.join(failed)})")
+        report.print_summary()
+        print()
+        return 1
+
+    success(f"Testing: {len(passed)}/{len(test_files)} passed")
     print()
     return 0
 
@@ -2506,7 +2578,8 @@ def load_fleet_config() -> list:
             'debug':       s.get('debug', 'no').strip().lower() == 'yes',
             'skip':        skip,
             'status':      status,
-            'envar_ready': s.get('envar_ready', 'no').strip().lower() == 'yes',
+            'envar_ready':   s.get('envar_ready',   'no').strip().lower() == 'yes',
+            'skip_testing':  s.get('skip_testing',  'no').strip().lower() == 'yes',
         })
     return apps
 
@@ -2530,9 +2603,10 @@ def cmd_fleet_status(apps) -> int:
         print(f"  {t:<12} {n}")
     print()
 
-    timing_elig  = sum(1 for a in active if a['timing'])
-    debug_elig   = sum(1 for a in active if a['debug'])
-    envar_ready  = sum(1 for a in active if a['envar_ready'])
+    timing_elig   = sum(1 for a in active if a['timing'])
+    debug_elig    = sum(1 for a in active if a['debug'])
+    envar_ready   = sum(1 for a in active if a['envar_ready'])
+    skip_testing  = sum(1 for a in active if a['skip_testing'])
     msg("Eligibility:")
     print(f"  --timing      {timing_elig} eligible")
     print(f"  --debug       {debug_elig} eligible")
@@ -2546,7 +2620,8 @@ def cmd_fleet_status(apps) -> int:
         n = status_counts.get(st, 0)
         if n:
             print(f"  {st:<12} {n}")
-    print(f"  envar_ready  {envar_ready}/{len(active)} active apps")
+    print(f"  envar_ready   {envar_ready}/{len(active)} active apps")
+    print(f"  skip_testing  {skip_testing}/{len(active)} active apps (exempt from --fleet --testing gate)")
     print()
 
     msg("App status:")
@@ -2592,6 +2667,8 @@ def cmd_fleet_status(apps) -> int:
             flags.append(f"debug:[{'D' if has_debug else ' '}]")
         flags.append(cs_str)
         flags.append(f"env:[{'✓' if app['envar_ready'] else ' '}]")
+        if app['skip_testing']:
+            flags.append("notst:[✓]")
         flag_str = '  '.join(flags)
 
         status = app['status']
@@ -2616,15 +2693,16 @@ def cmd_fleet_list(apps, pattern: str = '') -> int:
         return 0
 
     home = str(Path.home())
-    print(f"\n{'NAME':<24} {'TYPE':<10} {'STATUS':<11} {'ENV':<5} {'TIME':<5} {'DBG':<5} {'SKIP':<5} PATH")
-    print("-" * 90)
+    print(f"\n{'NAME':<24} {'TYPE':<10} {'STATUS':<11} {'ENV':<5} {'TIME':<5} {'DBG':<5} {'SKIP':<5} {'NOTST':<6} PATH")
+    print("-" * 96)
     for a in apps:
-        skip_str   = 'yes' if a['skip']        else '-'
-        timing_str = 'yes' if a['timing']       else 'no'
-        debug_str  = 'yes' if a['debug']        else 'no'
-        envar_str  = 'yes' if a['envar_ready']  else 'no'
-        path_str   = str(a['path']).replace(home, '~')
-        print(f"{a['name']:<24} {a['type']:<10} {a['status']:<11} {envar_str:<5} {timing_str:<5} {debug_str:<5} {skip_str:<5} {path_str}")
+        skip_str    = 'yes' if a['skip']          else '-'
+        timing_str  = 'yes' if a['timing']         else 'no'
+        debug_str   = 'yes' if a['debug']          else 'no'
+        envar_str   = 'yes' if a['envar_ready']    else 'no'
+        notest_str  = 'yes' if a['skip_testing']   else '-'
+        path_str    = str(a['path']).replace(home, '~')
+        print(f"{a['name']:<24} {a['type']:<10} {a['status']:<11} {envar_str:<5} {timing_str:<5} {debug_str:<5} {skip_str:<5} {notest_str:<6} {path_str}")
 
     print(f"\n{len(apps)} app(s)")
     return 0
@@ -2670,8 +2748,11 @@ def cmd_fleet_add(name: str) -> int:
     envar_in  = input("  Envar-ready (TW_TASK_DIR)? [y/N]: ").strip().lower()
     envar_val = 'yes' if envar_in in ('y', 'yes') else 'no'
 
-    skip_in   = input("  Skip (exclude from fleet ops)? [y/N]: ").strip().lower()
-    skip_line = "skip        = yes\n" if skip_in in ('y', 'yes') else ''
+    skip_in        = input("  Skip (exclude from fleet ops)? [y/N]: ").strip().lower()
+    skip_line      = "skip         = yes\n" if skip_in in ('y', 'yes') else ''
+
+    skiptest_in    = input("  Skip --testing gate in fleet? [y/N]: ").strip().lower()
+    skiptest_line  = "skip_testing = yes\n" if skiptest_in in ('y', 'yes') else ''
 
     entry = (
         f"\n[{name}]\n"
@@ -2682,6 +2763,7 @@ def cmd_fleet_add(name: str) -> int:
         f"status      = {status_in}\n"
         f"envar_ready = {envar_val}\n"
         + skip_line
+        + skiptest_line
     )
 
     with open(rc_path, 'a') as f:
@@ -3067,6 +3149,7 @@ def cmd_fleet(args) -> int:
 
     do_timing    = getattr(args, 'timing',    False)
     do_debug     = getattr(args, 'debug',     False)
+    do_testing   = getattr(args, 'testing',   False)
     do_envar     = getattr(args, 'envar',     False)
     do_gitignore = getattr(args, 'gitignore', False)
     do_checksum  = getattr(args, 'checksum',  False)
@@ -3076,6 +3159,8 @@ def cmd_fleet(args) -> int:
     remove_name  = getattr(args, 'remove',    None)
     push_msg     = getattr(args, 'push',      None)
 
+    any_stage = any([do_timing, do_debug, do_testing, do_envar, do_gitignore])
+
     # Sub-commands: list / add / remove (no stage ops)
     if list_pat is not None:
         return cmd_fleet_list(apps, list_pat)
@@ -3083,11 +3168,11 @@ def cmd_fleet(args) -> int:
         return cmd_fleet_add(add_name)
     if remove_name is not None:
         return cmd_fleet_remove(remove_name)
-    if do_checksum and not any([do_timing, do_debug, do_envar, do_gitignore]) and push_msg is None:
+    if do_checksum and not any_stage and push_msg is None:
         return cmd_fleet_checksum(apps, dry_run=dry_run)
 
     # No flags at all → diagnostic / stats
-    if not any([do_timing, do_debug, do_envar, do_gitignore]) and push_msg is None:
+    if not any_stage and push_msg is None:
         return cmd_fleet_status(apps)
 
     # Validate push message early if push is requested
@@ -3096,13 +3181,18 @@ def cmd_fleet(args) -> int:
         return 1
 
     # Stage flags → apply across fleet
+    # Tuple: (name, enabled, function, eligibility_fn, gated)
+    # gated=True  → stage exit code gates the app (FAIL stops push)
+    # gated=False → stage always runs, exit code ignored for gating purposes
     stage_flags = [
-        ('timing',    do_timing,    cmd_timing,    lambda a: a['timing']),
-        ('debug',     do_debug,     cmd_debug,     lambda a: a['debug']),
-        ('envar',     do_envar,     cmd_envar,     lambda a: True),
-        ('gitignore', do_gitignore, cmd_gitignore, lambda a: True),
+        ('envar',     do_envar,     cmd_envar,     lambda a: True,          False),
+        ('gitignore', do_gitignore, cmd_gitignore, lambda a: True,          False),
+        ('timing',    do_timing,    cmd_timing,    lambda a: a['timing'],   True),
+        ('debug',     do_debug,     cmd_debug,     lambda a: a['debug'],    True),
+        ('testing',   do_testing,   cmd_testing,   lambda a: not a['skip_testing'], True),
     ]
-    active_stages = [(n, fn, elig) for n, flag, fn, elig in stage_flags if flag]
+    active_stages = [(n, fn, elig, gated)
+                     for n, flag, fn, elig, gated in stage_flags if flag]
 
     if active_stages:
         origin  = Path.cwd()
@@ -3113,7 +3203,7 @@ def cmd_fleet(args) -> int:
                 continue
 
             # Check per-stage eligibility (timing/debug respect awesome.rc flags)
-            eligible = all(elig(app) for _, _, elig in active_stages)
+            eligible = all(elig(app) for _, _, elig, _ in active_stages)
             if not eligible:
                 results.append((app['name'], 'SKIP', 'not eligible'))
                 continue
@@ -3127,10 +3217,10 @@ def cmd_fleet(args) -> int:
             os.chdir(app['path'])
 
             rc = 0
-            for stage_name, stage_fn, _ in active_stages:
-                if rc == 0 or stage_name in ('gitignore', 'envar'):  # non-gated stages always run
+            for stage_name, stage_fn, _, gated in active_stages:
+                if rc == 0 or not gated:  # non-gated always run; gated stops on failure
                     rc_s = stage_fn(args)
-                    if stage_name not in ('gitignore', 'envar'):
+                    if gated and rc == 0:
                         rc = rc_s
 
             results.append((app['name'], 'OK' if rc == 0 else 'FAIL', ''))

@@ -117,6 +117,7 @@ import hashlib
 import shutil
 import shlex
 import readline
+import uuid
 import json
 import tempfile
 from urllib.request import urlopen, Request
@@ -420,10 +421,10 @@ class TaskRC:
 
 class WrapperManager:
     """Manages wrapper dispatch for tw.
-    
-    Two wrapper types, registered in ~/.task/config/.tw_wrappers:
+
+    Three wrapper types, registered in ~/.task/config/.tw_wrappers:
         keyword|script|description|type
-    
+
     type=command  (default) — keyword found in args triggers dispatch.
         Example: ann|annn|Annotation manager|command
         tw 42 ann.1  → detects 'ann', runs: annn 42.1
@@ -432,6 +433,15 @@ class WrapperManager:
         Example: nicedates|nicedates|Nice date formatting|filter
         tw next  → runs: task next | nicedates
         Multiple filter wrappers are chained in registration order.
+
+    type=pre-exec  — runs before task (and again after, for cleanup).
+        Example: theme-switch|theme-wrap.py|Per-report theme switching|pre-exec
+        tw list  → calls theme-wrap.py (TW_PRE_EXEC_PHASE=pre, TW_REPORT=list)
+                   then runs: task list
+                   then calls theme-wrap.py (TW_PRE_EXEC_PHASE=post)
+        Scripts receive TW_PRE_EXEC_PHASE, TW_REPORT, TW_PRE_EXEC_SESSION env vars.
+        Multiple pre-exec wrappers run in registration order (post runs in reverse).
+        If any pre-exec script exits non-zero, task is aborted.
 
     The type field is optional; omitting it defaults to 'command' for
     backward compatibility with existing .tw_wrappers entries.
@@ -503,8 +513,8 @@ class WrapperManager:
         for i, arg in enumerate(args):
             # Check each registered keyword
             for keyword in self.wrappers:
-                # Skip filter-type wrappers — they are not command dispatchers
-                if self.wrappers[keyword].get('type') == 'filter':
+                # Skip non-command wrappers — they are not keyword dispatchers
+                if self.wrappers[keyword].get('type') in ('filter', 'pre-exec'):
                     continue
                 # Exact match: "ann"
                 if arg == keyword:
@@ -609,6 +619,63 @@ class WrapperManager:
             for kw, info in self.wrappers.items()
             if info.get('type') == 'filter'
         ]
+
+    def get_pre_exec(self):
+        """Return ordered list of registered pre-exec wrappers.
+
+        Pre-exec wrappers run before task executes (and again after for cleanup),
+        allowing side-effects like patching config files before task reads them.
+        Returns list of {'keyword', 'script', 'description'} dicts.
+        """
+        return [
+            {'keyword': kw, **info}
+            for kw, info in self.wrappers.items()
+            if info.get('type') == 'pre-exec'
+        ]
+
+    def run_pre_exec(self, task_args, session_id):
+        """Call all pre-exec wrappers with TW_PRE_EXEC_PHASE=pre.
+
+        Returns list of resolved script paths that ran successfully (for post-exec),
+        or None if any script exits non-zero (signals task should be aborted).
+        """
+        pre_exec = self.get_pre_exec()
+        if not pre_exec:
+            return []
+        report = _find_report_name(task_args) or ''
+        ran = []
+        for w in pre_exec:
+            script_path = self.resolve_script(w['script'])
+            if not script_path:
+                debug(f"WrapperManager: pre-exec script not found: {w['script']}", 1)
+                continue
+            env = os.environ.copy()
+            env['TW_PRE_EXEC_PHASE']   = 'pre'
+            env['TW_REPORT']           = report
+            env['TW_PRE_EXEC_SESSION'] = session_id
+            result = subprocess.run([script_path], env=env, check=False)
+            if result.returncode != 0:
+                debug(f"WrapperManager: pre-exec aborted by {w['script']} (rc={result.returncode})", 1)
+                return None
+            ran.append(script_path)
+        return ran
+
+    def run_post_exec(self, ran_scripts, task_args, session_id):
+        """Call pre-exec wrappers again with TW_PRE_EXEC_PHASE=post for cleanup.
+
+        Runs in reverse registration order so cleanups unwind correctly.
+        Always called (in finally), regardless of task exit code.
+        """
+        report = _find_report_name(task_args) or ''
+        for script_path in reversed(ran_scripts):
+            env = os.environ.copy()
+            env['TW_PRE_EXEC_PHASE']   = 'post'
+            env['TW_REPORT']           = report
+            env['TW_PRE_EXEC_SESSION'] = session_id
+            try:
+                subprocess.run([script_path], env=env, check=False)
+            except Exception as e:
+                debug(f"WrapperManager: post-exec error for {script_path}: {e}", 1)
 
     def resolve_script(self, script):
         """Find script in PATH or ~/.task/scripts/. Returns path or None."""
@@ -2883,11 +2950,20 @@ def run_with_timing(args):
 
 
 def pass_through_to_task(args, debug_wrapper=False):
-    """Pass command through to task, routing via filter wrappers if registered."""
+    """Pass command through to task, routing via pre-exec and filter wrappers."""
+    wrapper_mgr = WrapperManager()
+    session_id  = uuid.uuid4().hex[:12]
+
+    # Pre-exec wrappers: run before task so they can patch config before task
+    # reads it. run_pre_exec() returns None to abort, [] if none registered.
+    ran_pre_exec = []
+    if wrapper_mgr.get_pre_exec():
+        ran_pre_exec = wrapper_mgr.run_pre_exec(args, session_id)
+        if ran_pre_exec is None:
+            return 1  # a pre-exec script signalled abort
+
     try:
-        # Only route through filter wrappers for report-like invocations.
-        # Commands that modify state (add, done, rm, etc.) bypass filters.
-        wrapper_mgr = WrapperManager()
+        # Filter wrappers: report-only, pipe task output through registered scripts.
         if wrapper_mgr.get_filters() and _args_have_report(args):
             rc = wrapper_mgr.run_through_filters(args, debug_wrapper=debug_wrapper)
             if rc is not None:
@@ -2911,6 +2987,10 @@ def pass_through_to_task(args, debug_wrapper=False):
     except Exception as e:
         print(f"[tw] Error executing task: {e}")
         return 1
+
+    finally:
+        if ran_pre_exec:
+            wrapper_mgr.run_post_exec(ran_pre_exec, args, session_id)
 
 def generate_bash_completion():
     """Generate bash completion script for tw"""
@@ -3850,6 +3930,12 @@ def main():
             if filter_wrappers:
                 print("\nInstalled Filter Wrappers (applied to all report output):")
                 for kw, info in sorted(filter_wrappers.items()):
+                    desc = info.get('description', '')
+                    cmd_row(f"{kw}", f"{desc} (via {info['script']})")
+            pre_exec_wrappers = {k: v for k, v in wrappers.items() if v.get('type') == 'pre-exec'}
+            if pre_exec_wrappers:
+                print("\nInstalled Pre-exec Wrappers (run before task, restored after):")
+                for kw, info in sorted(pre_exec_wrappers.items()):
                     desc = info.get('description', '')
                     cmd_row(f"{kw}", f"{desc} (via {info['script']})")
         
