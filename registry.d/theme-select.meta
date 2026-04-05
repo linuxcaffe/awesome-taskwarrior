@@ -2,7 +2,7 @@
 # ncurses TUI for previewing and selecting Taskwarrior color themes, with per-report theme switching
 
 name=theme-select
-version=0.4.0
+version=0.5.0
 type=wrapper
 description=ncurses TUI for previewing and selecting Taskwarrior color themes, with per-report theme switching
 repo=https://github.com/linuxcaffe/tw-theme-select
@@ -10,7 +10,7 @@ base_url=https://raw.githubusercontent.com/linuxcaffe/tw-theme-select/main
 files=theme-select.py:script,theme-wrap.py:script,README.md:doc
 tags=theme, color, reports, preview, tui, wrapper
 
-checksums=56e60fecf735720627913af4bbae28c5ad042a442c75cb5f10fd7ce286651d42,ec722b1db1c88cfb9e12c53f5fc7c4e738c462a3ba1956a682865b5a44b852e3,b72d19c332cdec6bc7cf3cd1328f5fce17affc8d9d439f0b254dc741604a452b
+checksums=ddd30222506ccde8edde0cc8f06038d0d97fe61f1fd850785e2ce0ccb4a2ef77,ec722b1db1c88cfb9e12c53f5fc7c4e738c462a3ba1956a682865b5a44b852e3,b72d19c332cdec6bc7cf3cd1328f5fce17affc8d9d439f0b254dc741604a452b
 
 author=linuxcaffe + claude 4.6
 license=MIT
