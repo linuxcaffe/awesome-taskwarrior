@@ -2742,8 +2742,11 @@ def _find_report_name(args):
     """Return the report name from args, or None if no report word found.
 
     Skips rc.* overrides, tags, attribute:value pairs, numbers, and flags.
-    Returns the first bare lowercase word that is not a known task command.
+    Returns the LAST bare lowercase word that is not a known task command,
+    matching Taskwarrior's convention of 'task <filter...> <report>' where
+    the report name always comes last (e.g. 'tw proj:foo list' → 'list').
     """
+    candidates = []
     for arg in args:
         if arg.startswith('rc.') or arg.startswith('rc:'):
             continue
@@ -2756,8 +2759,8 @@ def _find_report_name(args):
         if arg.startswith('--') or (arg.startswith('-') and len(arg) == 2):
             continue
         if re.match(r'^[a-z][a-z0-9._]*$', arg) and arg not in _TASK_NONREPORT_COMMANDS:
-            return arg
-    return None
+            candidates.append(arg)
+    return candidates[-1] if candidates else None
 
 
 def _args_have_report(args):
