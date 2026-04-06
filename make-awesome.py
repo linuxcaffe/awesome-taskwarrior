@@ -2735,28 +2735,188 @@ def cmd_fleet_status(apps) -> int:
     return 0
 
 
-def cmd_fleet_list(apps, pattern: str = '') -> int:
-    """List fleet apps, optionally filtered by name pattern."""
-    if pattern:
-        apps = [a for a in apps if pattern.lower() in a['name'].lower()]
+def _load_meta_from_file(path: Path) -> dict:
+    """Parse a .meta file into a dict of key=value pairs (skips comments/blanks)."""
+    m = {}
+    try:
+        for line in path.read_text(errors='replace').splitlines():
+            line = line.strip()
+            if not line or line.startswith('#') or '=' not in line:
+                continue
+            k, _, v = line.partition('=')
+            m[k.strip()] = v.strip()
+    except OSError:
+        pass
+    return m
 
-    if not apps:
-        warn(f"No apps matching '{pattern}'")
+
+def _load_meta(name: str, app_path: Path = None) -> dict:
+    """Load .meta for a named app: registry.d first, then project dir fallback."""
+    registry_d = SCRIPT_DIR / 'registry.d'
+    candidates = [registry_d / f"{name}.meta"]
+    if app_path:
+        candidates.append(app_path / f"{name}.meta")
+    for c in candidates:
+        if c.exists():
+            return _load_meta_from_file(c)
+    return {}
+
+
+def _discover_dev_path(name: str) -> Path | None:
+    """Search ~/dev for a directory whose .meta file declares name=<name>.
+    Tries common naming patterns first, then does a full scan."""
+    dev = Path.home() / 'dev'
+    if not dev.is_dir():
+        return None
+    # Fast path: common naming conventions
+    for candidate in [
+        dev / name,
+        dev / f"tw-{name}",
+        dev / f"tw-{name}-hook",
+        dev / f"tw-{name}-sh",
+        dev / f"{name}-hook",
+        dev / f"{name}-sh",
+    ]:
+        if (candidate / f"{name}.meta").exists():
+            return candidate
+    # Full scan: any ~/dev/*/{name}.meta
+    for meta_file in dev.glob(f"*/{name}.meta"):
+        return meta_file.parent
+    return None
+
+
+def cmd_fleet_list(apps: list, pattern: str = '') -> int:
+    """List apps from registry.d (canonical), enriched with awesome.rc fleet data."""
+    import shutil as _shutil
+
+    registry_d  = SCRIPT_DIR / 'registry.d'
+    installed_d = Path.home() / '.task/awesome-taskwarrior/registry.d'
+    home        = str(Path.home())
+
+    fleet_by_name = {a['name']: a for a in apps}
+
+    # Registry.d is the canonical source — iterate all .meta files
+    rows = []
+    if registry_d.exists():
+        for meta_file in sorted(registry_d.glob('*.meta')):
+            name = meta_file.stem
+            if pattern and pattern.lower() not in name.lower():
+                continue
+            meta  = _load_meta_from_file(meta_file)
+            fleet = fleet_by_name.get(name, {})
+            inst  = (installed_d / f"{name}.meta").exists()
+            rows.append((name, meta, fleet, inst))
+
+    # Fleet-only entries (in awesome.rc but not in registry.d — e.g. 'tw' core)
+    registry_names = {r[0] for r in rows}
+    for a in apps:
+        if a['name'] not in registry_names:
+            if not pattern or pattern.lower() in a['name'].lower():
+                rows.append((a['name'], {}, a, False))
+
+    if not rows:
+        warn(f"No apps{' matching ' + repr(pattern) if pattern else ''}")
+        return 0
+
+    term_w = _shutil.get_terminal_size((120, 40)).columns
+    NW, TW_, VW, SW = 22, 9, 7, 10
+    GW = min(30, max(10, term_w - 4 - NW - TW_ - VW - SW - 10))
+
+    print(f"\n  {'':3} {'NAME':<{NW}} {'TYPE':<{TW_}} {'VER':<{VW}} {'STATUS':<{SW}} TAGS")
+    print("  " + "─" * (NW + TW_ + VW + SW + GW + 12))
+
+    STATUS_WARN = {'wip', 'testing', 'suspended', 'archived'}
+
+    for name, meta, fleet, inst in rows:
+        inst_s = '[*]' if inst else '[ ]'
+        atype  = (meta.get('type') or fleet.get('type', '?'))[:TW_]
+        ver    = meta.get('version', '?')[:VW]
+        if fleet:
+            status = ('(skip)' if fleet.get('skip') else fleet.get('status', '?'))[:SW]
+        else:
+            status = '(no rc)'[:SW]
+        tags   = meta.get('tags', '')[:GW]
+
+        line = f"  {inst_s} {name:<{NW}} {atype:<{TW_}} {ver:<{VW}} {status:<{SW}} {tags}"
+
+        if fleet.get('skip'):
+            print(f"\033[2m{line}\033[0m")
+        elif status in STATUS_WARN or status == '(no rc)':
+            print(f"\033[33m{line}\033[0m")
+        else:
+            print(line)
+
+    print(f"\n  {len(rows)} app(s)")
+    return 0
+
+
+def cmd_fleet_discover(apps: list, apply: bool = False) -> int:
+    """Find registry.d apps not in awesome.rc and hunt for their dev dirs.
+
+    Without --apply: report only.
+    With --apply: add found entries to awesome.rc.
+    """
+    registry_d  = SCRIPT_DIR / 'registry.d'
+    fleet_names = {a['name'] for a in apps}
+
+    missing = []
+    for meta_file in sorted(registry_d.glob('*.meta')):
+        name = meta_file.stem
+        if name in fleet_names:
+            continue
+        meta = _load_meta_from_file(meta_file)
+        path = _discover_dev_path(name)
+        missing.append((name, meta, path))
+
+    if not missing:
+        success("All registry apps have awesome.rc entries — nothing to discover")
         return 0
 
     home = str(Path.home())
-    print(f"\n{'NAME':<24} {'TYPE':<10} {'STATUS':<11} {'ENV':<5} {'TIME':<5} {'DBG':<5} {'SKIP':<5} {'NOTST':<6} PATH")
-    print("-" * 96)
-    for a in apps:
-        skip_str    = 'yes' if a['skip']          else '-'
-        timing_str  = 'yes' if a['timing']         else 'no'
-        debug_str   = 'yes' if a['debug']          else 'no'
-        envar_str   = 'yes' if a['envar_ready']    else 'no'
-        notest_str  = 'yes' if a['skip_testing']   else '-'
-        path_str    = str(a['path']).replace(home, '~')
-        print(f"{a['name']:<24} {a['type']:<10} {a['status']:<11} {envar_str:<5} {timing_str:<5} {debug_str:<5} {skip_str:<5} {notest_str:<6} {path_str}")
+    found    = [(n, m, p) for n, m, p in missing if p]
+    notfound = [(n, m, p) for n, m, p in missing if not p]
 
-    print(f"\n{len(apps)} app(s)")
+    msg(f"Registry apps missing from awesome.rc: {len(missing)}")
+    print()
+    if found:
+        msg(f"  Found ({len(found)}):")
+        for name, meta, path in found:
+            print(f"    + {name:<24} {str(path).replace(home, '~')}")
+    if notfound:
+        msg(f"  Dev dir not found ({len(notfound)}):")
+        for name, meta, path in notfound:
+            print(f"    ? {name:<24} (not in ~/dev — add path manually)")
+
+    if not apply:
+        print()
+        msg("Run with --fleet --discover --apply to add found entries to awesome.rc")
+        return 0
+
+    # Apply: add entries for found paths
+    rc_path = SCRIPT_DIR / 'awesome.rc'
+    added = 0
+    for name, meta, path in found:
+        path_str   = str(path).replace(home, '~')
+        atype      = meta.get('type', 'unknown')
+        entry = (
+            f"\n[{name}]\n"
+            f"path        = {path_str}\n"
+            f"type        = {atype}\n"
+            f"timing      = no\n"
+            f"debug       = yes\n"
+            f"status      = release\n"
+            f"envar_ready = no\n"
+        )
+        with open(rc_path, 'a') as f:
+            f.write(entry)
+        success(f"Added [{name}] path={path_str}")
+        added += 1
+
+    print()
+    msg(f"Added {added} entr{'y' if added == 1 else 'ies'} to awesome.rc")
+    if notfound:
+        warn(f"{len(notfound)} app(s) still need manual path entries: "
+             + ", ".join(n for n, _, _ in notfound))
     return 0
 
 
@@ -3159,23 +3319,6 @@ def cmd_fleet_query(apps: list, terms: list) -> int:
     """
     import shutil as _shutil
 
-    registry_d = SCRIPT_DIR / 'registry.d'
-
-    def _load_meta(app):
-        for candidate in [
-            registry_d / f"{app['name']}.meta",
-            app['path'] / f"{app['name']}.meta",
-        ]:
-            if candidate.exists():
-                m = {}
-                for line in candidate.read_text(errors='replace').splitlines():
-                    if line.startswith('#') or '=' not in line:
-                        continue
-                    k, _, v = line.partition('=')
-                    m[k.strip()] = v.strip()
-                return m
-        return {}
-
     _FIELD_NEQ = re.compile(r'^(\w+)!=(.*)$')
     _FIELD_EQ  = re.compile(r'^(\w+)=(.*)$')
     _FIELD_HAS = re.compile(r'^(\w+):(.*)$')
@@ -3223,7 +3366,7 @@ def cmd_fleet_query(apps: list, terms: list) -> int:
                 return False
         return True
 
-    enriched = [(a, _load_meta(a)) for a in apps]
+    enriched = [(a, _load_meta(a['name'], a.get('path'))) for a in apps]
     results  = [(a, m) for a, m in enriched if _matches(a, m)]
 
     if not results:
@@ -3336,14 +3479,18 @@ def cmd_fleet(args) -> int:
     remove_name  = getattr(args, 'remove',    None)
     push_msg     = getattr(args, 'push',      None)
     query_terms  = getattr(args, 'query',     None)
+    do_discover  = getattr(args, 'discover',  False)
+    do_apply     = getattr(args, 'apply',     False)
 
     any_stage = any([do_timing, do_debug, do_testing, do_envar, do_gitignore])
 
-    # Sub-commands: query / list / add / remove (no stage ops)
+    # Sub-commands: query / list / discover / add / remove (no stage ops)
     if query_terms is not None:
         return cmd_fleet_query(apps, query_terms)
     if list_pat is not None:
         return cmd_fleet_list(apps, list_pat)
+    if do_discover:
+        return cmd_fleet_discover(apps, apply=do_apply)
     if add_name is not None:
         return cmd_fleet_add(add_name)
     if remove_name is not None:
@@ -3490,6 +3637,10 @@ def main():
                        help='Add a new app entry to awesome.rc [fleet-mode only]')
     parser.add_argument('--remove', metavar='NAME',
                        help='Remove an app entry from awesome.rc [fleet-mode only]')
+    parser.add_argument('--discover', action='store_true',
+                       help='Find registry apps missing from awesome.rc and hunt for dev dirs [fleet-mode only]')
+    parser.add_argument('--apply', action='store_true',
+                       help='With --discover: write found entries into awesome.rc [fleet-mode only]')
     parser.add_argument('--checksum', action='store_true',
                        help='Recalculate .meta checksums across fleet [fleet-mode only]')
     parser.add_argument('--version', action='version',
@@ -3500,7 +3651,8 @@ def main():
     # -------------------------------------------------------------------------
     # Mode banner + guardrails
     # -------------------------------------------------------------------------
-    fleet_flags   = args.fleet or args.list is not None or args.add or args.remove or args.query is not None
+    fleet_flags   = (args.fleet or args.list is not None or args.add or args.remove
+                     or args.query is not None or args.discover)
     pipeline_flags = (args.commit_message or args.gitignore or args.debug or args.testing
                       or args.timing or args.envar or args.stdhelp or args.meta
                       or args.install or args.push is not None)
@@ -3523,7 +3675,8 @@ def main():
     if args.commit_message:
         return cmd_pipeline(args.commit_message)
 
-    if args.fleet or args.list is not None or args.add or args.remove:
+    if (args.fleet or args.list is not None or args.add or args.remove
+            or args.discover or args.query is not None):
         return cmd_fleet(args)
 
     # Collect requested steps in pipeline order

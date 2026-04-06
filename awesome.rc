@@ -148,7 +148,7 @@ status      = wip
 envar_ready = yes
 skip_testing = yes
 
-[tw-gtk]
+[gtk]
 path        = ~/dev/tw-gtk
 type        = ui
 timing      = no
