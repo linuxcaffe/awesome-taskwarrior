@@ -1862,19 +1862,23 @@ def generate_installer(info: ProjectInfo) -> bool:
                 f.write('    }\n')
                 f.write(f'    debug_msg "Installed config: {dp}" 2\n\n')
 
-            # Add config to .taskrc if needed (standard dest only)
+            # Add config include — prefer included.rc if it exists, else .taskrc
             std_configs = [(n, ft, d) for n, ft, d in configs if not d]
             if std_configs:
                 first_config = std_configs[0][0]
-                f.write('    # Add config to .taskrc\n')
-                f.write('    tw_msg "Checking .taskrc for existing config include..."\n')
-                f.write(f'    if ! grep -q "{first_config}" "$TASKRC" 2>/dev/null; then\n')
-                f.write(f'        echo "include ~/.task/config/{first_config}" >> "$TASKRC"\n')
-                f.write(f'        tw_msg "Added config include to .taskrc"\n')
-                f.write(f'        debug_msg "Added to .taskrc: include ~/.task/config/{first_config}" 2\n')
+                f.write('    # Add config include to included.rc (if present) or .taskrc\n')
+                f.write('    INCLUDED_RC="${TASK_DIR}/config/included.rc"\n')
+                f.write(f'    if grep -q "{first_config}" "$TASKRC" "$INCLUDED_RC" 2>/dev/null; then\n')
+                f.write(f'        tw_msg "Config already included"\n')
+                f.write(f'        debug_msg "Config already present: {first_config}" 2\n')
+                f.write('    elif [ -f "$INCLUDED_RC" ]; then\n')
+                f.write(f'        echo "include ${{TASK_DIR}}/config/{first_config}" >> "$INCLUDED_RC"\n')
+                f.write(f'        tw_msg "Added config include to included.rc"\n')
+                f.write(f'        debug_msg "Added to included.rc: include ${{TASK_DIR}}/config/{first_config}" 2\n')
                 f.write('    else\n')
-                f.write('        tw_msg "Config already in .taskrc"\n')
-                f.write(f'        debug_msg "Config already present in .taskrc: {first_config}" 2\n')
+                f.write(f'        echo "include ${{TASK_DIR}}/config/{first_config}" >> "$TASKRC"\n')
+                f.write(f'        tw_msg "Added config include to .taskrc"\n')
+                f.write(f'        debug_msg "Added to .taskrc: include ${{TASK_DIR}}/config/{first_config}" 2\n')
                 f.write('    fi\n\n')
 
             # Download docs
@@ -1967,13 +1971,18 @@ def generate_installer(info: ProjectInfo) -> bool:
             f.write('    sed -i.bak "/^$APPNAME|/d" "$MANIFEST_FILE"\n')
             f.write('    debug_msg "Removed from manifest" 2\n\n')
             
-            # Remove config from .taskrc if present
+            # Remove config include from included.rc or .taskrc
             if configs:
                 first_config = configs[0][0]
                 # NO NAME CHANGES! Use actual filename
                 # Match by filename only (path-format-agnostic)
-                f.write('    # Remove config from .taskrc\n')
-                f.write(f'    if grep -q "{first_config}" "$TASKRC" 2>/dev/null; then\n')
+                f.write('    # Remove config include from included.rc or .taskrc\n')
+                f.write('    INCLUDED_RC="${TASK_DIR}/config/included.rc"\n')
+                f.write(f'    if grep -q "{first_config}" "$INCLUDED_RC" 2>/dev/null; then\n')
+                f.write(f'        sed -i.bak "/{first_config}/d" "$INCLUDED_RC"\n')
+                f.write(f'        tw_msg "Removed config from included.rc"\n')
+                f.write(f'        debug_msg "Removed from included.rc: {first_config}" 2\n')
+                f.write(f'    elif grep -q "{first_config}" "$TASKRC" 2>/dev/null; then\n')
                 f.write(f'        sed -i.bak "/{first_config}/d" "$TASKRC"\n')
                 f.write(f'        tw_msg "Removed config from .taskrc"\n')
                 f.write(f'        debug_msg "Removed from .taskrc: {first_config}" 2\n')
@@ -3133,6 +3142,131 @@ def _sync_fleet_registry(apps: list, pushed_names: list, message: str):
         success(f"[registry] pushed ({len(pushed_names)} app(s) synced)")
 
 
+def cmd_fleet_query(apps: list, terms: list) -> int:
+    """Query fleet apps by field=value, field:text, field!=value, or freetext.
+
+    Field sources:
+      awesome.rc  — name, type, status, timing, debug, skip, envar_ready,
+                    skip_testing, path
+      registry.d  — description, tags, version, repo, author, license
+
+    Examples:
+      --query theme                          freetext in name+desc+tags
+      --query type=hook                      exact field match
+      --query tags:reports                   substring in tags
+      --query type=hook status!=archived     compound (AND)
+      --query envar_ready=no status=release  release apps needing envar update
+    """
+    import shutil as _shutil
+
+    registry_d = SCRIPT_DIR / 'registry.d'
+
+    def _load_meta(app):
+        for candidate in [
+            registry_d / f"{app['name']}.meta",
+            app['path'] / f"{app['name']}.meta",
+        ]:
+            if candidate.exists():
+                m = {}
+                for line in candidate.read_text(errors='replace').splitlines():
+                    if line.startswith('#') or '=' not in line:
+                        continue
+                    k, _, v = line.partition('=')
+                    m[k.strip()] = v.strip()
+                return m
+        return {}
+
+    _FIELD_NEQ = re.compile(r'^(\w+)!=(.*)$')
+    _FIELD_EQ  = re.compile(r'^(\w+)=(.*)$')
+    _FIELD_HAS = re.compile(r'^(\w+):(.*)$')
+
+    field_filters = []   # (field, op, value)
+    free_terms    = []   # bare words → searched in name+description+tags
+
+    for term in (terms or []):
+        m = _FIELD_NEQ.match(term)
+        if m:
+            field_filters.append((m.group(1), '!=', m.group(2).lower()))
+            continue
+        m = _FIELD_EQ.match(term)
+        if m:
+            field_filters.append((m.group(1), '=', m.group(2).lower()))
+            continue
+        m = _FIELD_HAS.match(term)
+        if m:
+            field_filters.append((m.group(1), ':', m.group(2).lower()))
+            continue
+        free_terms.append(term.lower())
+
+    _BOOL_FIELDS = {'timing', 'debug', 'skip', 'envar_ready', 'skip_testing'}
+
+    def _fval(app, meta, field):
+        if field in _BOOL_FIELDS:
+            return 'yes' if app.get(field) else 'no'
+        if field in app:
+            return str(app[field]).lower()
+        return str(meta.get(field, '')).lower()
+
+    def _matches(app, meta):
+        for field, op, val in field_filters:
+            fv = _fval(app, meta, field)
+            if op == '='  and fv != val:      return False
+            if op == '!=' and fv == val:       return False
+            if op == ':'  and val not in fv:   return False
+        for term in free_terms:
+            haystack = ' '.join([
+                app['name'],
+                meta.get('description', ''),
+                meta.get('tags', ''),
+            ]).lower()
+            if term not in haystack:
+                return False
+        return True
+
+    enriched = [(a, _load_meta(a)) for a in apps]
+    results  = [(a, m) for a, m in enriched if _matches(a, m)]
+
+    if not results:
+        warn(f"No apps match: {' '.join(terms)}" if terms else "Fleet is empty")
+        return 0
+
+    tw = _shutil.get_terminal_size((120, 40)).columns
+    home = str(Path.home())
+
+    header = f"{len(results)} app(s)" + (f" matching: {' '.join(terms)}" if terms else " (all)")
+    print(f"\n  {header}\n")
+
+    NW, TW_, VW, SW, GW = 24, 9, 7, 10, 20   # col widths: name type ver status tags
+    desc_w = max(10, tw - NW - TW_ - VW - SW - GW - 12)
+
+    print(f"  {'NAME':<{NW}} {'TYPE':<{TW_}} {'VER':<{VW}} {'STATUS':<{SW}} "
+          f"{'TAGS':<{GW}} DESCRIPTION")
+    print("  " + "─" * (NW + TW_ + VW + SW + GW + desc_w + 10))
+
+    STATUS_WARN = {'wip', 'testing', 'suspended', 'archived'}
+
+    for app, meta in results:
+        name   = app['name'][:NW]
+        atype  = app['type'][:TW_]
+        ver    = meta.get('version', '?')[:VW]
+        status = ('(skip)' if app['skip'] else app['status'])[:SW]
+        tags   = meta.get('tags', '')[:GW]
+        desc   = meta.get('description', '')[:desc_w]
+
+        line = (f"  {name:<{NW}} {atype:<{TW_}} {ver:<{VW}} "
+                f"{status:<{SW}} {tags:<{GW}} {desc}")
+
+        if app['skip']:
+            print(f"\033[2m{line}\033[0m")         # dim — skipped
+        elif app['status'] in STATUS_WARN:
+            print(f"\033[33m{line}\033[0m")         # yellow — non-release
+        else:
+            print(line)
+
+    print()
+    return 0
+
+
 def cmd_fleet_checksum(apps: list, dry_run: bool = False) -> int:
     """Recalculate .meta checksums across all fleet apps."""
     updated = skipped = missing = errors = 0
@@ -3201,10 +3335,13 @@ def cmd_fleet(args) -> int:
     add_name     = getattr(args, 'add',       None)
     remove_name  = getattr(args, 'remove',    None)
     push_msg     = getattr(args, 'push',      None)
+    query_terms  = getattr(args, 'query',     None)
 
     any_stage = any([do_timing, do_debug, do_testing, do_envar, do_gitignore])
 
-    # Sub-commands: list / add / remove (no stage ops)
+    # Sub-commands: query / list / add / remove (no stage ops)
+    if query_terms is not None:
+        return cmd_fleet_query(apps, query_terms)
     if list_pat is not None:
         return cmd_fleet_list(apps, list_pat)
     if add_name is not None:
@@ -3345,6 +3482,8 @@ def main():
                        help='Show what would happen without modifying files')
     parser.add_argument('--fleet', action='store_true',
                        help='Fleet management [fleet-mode only]')
+    parser.add_argument('--query', nargs='*', metavar='TERM',
+                       help='Query fleet: name=val field:text field!=val freetext (ANDed) [fleet-mode only]')
     parser.add_argument('--list', nargs='?', const='', metavar='PATTERN',
                        help='List fleet apps, optional name filter [fleet-mode only]')
     parser.add_argument('--add', metavar='NAME',
@@ -3361,7 +3500,7 @@ def main():
     # -------------------------------------------------------------------------
     # Mode banner + guardrails
     # -------------------------------------------------------------------------
-    fleet_flags   = args.fleet or args.list is not None or args.add or args.remove
+    fleet_flags   = args.fleet or args.list is not None or args.add or args.remove or args.query is not None
     pipeline_flags = (args.commit_message or args.gitignore or args.debug or args.testing
                       or args.timing or args.envar or args.stdhelp or args.meta
                       or args.install or args.push is not None)

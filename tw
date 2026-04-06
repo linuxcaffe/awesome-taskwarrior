@@ -653,6 +653,7 @@ class WrapperManager:
             env['TW_PRE_EXEC_PHASE']   = 'pre'
             env['TW_REPORT']           = report
             env['TW_PRE_EXEC_SESSION'] = session_id
+            env['TW_TASK_ARGS']        = json.dumps(task_args)
             result = subprocess.run([script_path], env=env, check=False)
             if result.returncode != 0:
                 debug(f"WrapperManager: pre-exec aborted by {w['script']} (rc={result.returncode})", 1)
@@ -672,6 +673,7 @@ class WrapperManager:
             env['TW_PRE_EXEC_PHASE']   = 'post'
             env['TW_REPORT']           = report
             env['TW_PRE_EXEC_SESSION'] = session_id
+            env['TW_TASK_ARGS']        = json.dumps(task_args)
             try:
                 subprocess.run([script_path], env=env, check=False)
             except Exception as e:
