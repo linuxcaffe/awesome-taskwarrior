@@ -1,16 +1,16 @@
 # hook-ctrl.meta
-# ncurses TUI for toggling Taskwarrior hook permissions (enable/disable via chmod)
+# Three-panel TUI dashboard: toggle hooks (chmod), scripts (chmod), and config includes (comment toggle) — unified control over all installed Taskwarrior capabilities
 
 name=hook-ctrl
-version=0.2.0
+version=0.3.0
 type=script
-description=ncurses TUI for toggling Taskwarrior hook permissions (enable/disable via chmod)
+description=Three-panel TUI dashboard: toggle hooks (chmod), scripts (chmod), and config includes (comment toggle) — unified control over all installed Taskwarrior capabilities
 repo=https://github.com/linuxcaffe/tw-hook-ctrl
 base_url=https://raw.githubusercontent.com/linuxcaffe/tw-hook-ctrl/main
 files=hook-ctrl.py:script,README.md:doc
-tags=hooks,tui,ncurses,permissions,management
+tags=hooks,scripts,includes,tui,ncurses,permissions,management,dashboard
 
-checksums=a8de878d9a537df77d337ed38254840e946ca8d5faba5492c96db00125b31b10,a7142f47fb35709c9cfe4359f410491ea7f5f7e6bc20d2ba1e68510ecf6ebd96
+checksums=f630bcd48e5c0b5ec4f153133bb442ff33d89675579039cb4c0e3589db27fd5d,a7142f47fb35709c9cfe4359f410491ea7f5f7e6bc20d2ba1e68510ecf6ebd96
 
 author=linuxcaffe + claude sonnet
 license=MIT
