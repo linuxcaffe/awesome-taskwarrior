@@ -10,6 +10,12 @@
 #   status      = release | testing | wip | suspended | archived
 #   envar_ready  = yes | no       — updated for TW_TASK_DIR/TASKRC isolation (B+C)
 #   skip_testing = yes            — exempt from --fleet --testing gate (app has no tests yet)
+#   tw_web      = yes | no | partial
+#                 yes     — fully compatible with tw-web (non-interactive)
+#                 no      — requires terminal interaction; must guard with TW_WEB=1 check
+#                 partial — won't hang but some features don't work (e.g. desktop notify)
+#                 tw-web sets TW_WEB=1 in every subprocess; hooks should check and skip
+#                 interactive parts (input(), /dev/tty, fzf, whiptail, hledger-add, etc.)
 
 [recurrence-overhaul]
 path        = ~/dev/tw-recurrence_overhaul-hook
@@ -18,6 +24,7 @@ timing      = yes
 debug       = yes
 status      = release
 envar_ready = yes
+tw_web      = yes
 
 [timelog]
 path        = ~/dev/tw-timelog-hook
@@ -26,6 +33,7 @@ timing      = yes
 debug       = yes
 status      = release
 envar_ready = no
+tw_web      = yes      # writes to timeclock file; not interactive
 
 [subtask]
 path        = ~/dev/tw-subtask-hook
@@ -34,6 +42,7 @@ timing      = yes
 debug       = yes
 status      = release
 envar_ready = yes
+tw_web      = no       # opens /dev/tty for single-char prompts; needs TW_WEB guard
 
 [need-priority]
 path        = ~/dev/tw-need_priority-hook
@@ -42,6 +51,7 @@ timing      = yes
 debug       = yes
 status      = release
 envar_ready = yes
+tw_web      = yes
 
 [agenda-edate]
 path        = ~/dev/tw-agenda-hook
@@ -50,6 +60,7 @@ timing      = yes
 debug       = yes
 status      = release
 envar_ready = no
+tw_web      = yes
 
 [smart-nag]
 path        = ~/dev/tw-smart-nag-hook
@@ -58,6 +69,7 @@ timing      = yes
 debug       = yes
 status      = release
 envar_ready = no
+tw_web      = partial  # nag message won't reach web user; won't hang
 
 [wikitags]
 path        = ~/dev/tw-wikitags-hook
@@ -66,6 +78,7 @@ timing      = yes
 debug       = yes
 status      = wip
 envar_ready = no
+tw_web      = yes
 
 [hledger-add]
 path        = ~/dev/tw-hledger-add-hook
@@ -74,6 +87,7 @@ timing      = yes
 debug       = yes
 status      = release
 envar_ready = no
+tw_web      = no       # launches hledger interactively; needs TW_WEB guard
 
 [tod-filter]
 path        = ~/dev/tod-filter
@@ -82,6 +96,7 @@ timing      = yes
 debug       = yes
 status      = release
 envar_ready = no
+tw_web      = yes
 
 [deps-mgmt]
 path        = ~/dev/tw-deps-mgmt-hook
@@ -90,6 +105,7 @@ timing      = yes
 debug       = yes
 status      = release
 envar_ready = no
+tw_web      = no       # opens /dev/tty for single-char prompts; needs TW_WEB guard
 
 [tw2nb]
 path        = ~/dev/tw2nb
@@ -98,6 +114,7 @@ timing      = yes
 debug       = yes
 status      = release
 envar_ready = no
+tw_web      = yes
 
 [annn]
 path        = ~/dev/tw-ann-hook
@@ -106,6 +123,7 @@ timing      = no
 debug       = yes
 status      = release
 envar_ready = yes
+tw_web      = yes
 
 [sanity-check]
 path        = ~/dev/tw-sanity-check
@@ -114,6 +132,7 @@ timing      = no
 debug       = yes
 status      = release
 envar_ready = no
+tw_web      = yes
 
 [resched]
 path        = ~/dev/tw-sched-sh
@@ -122,6 +141,7 @@ timing      = no
 debug       = yes
 status      = release
 envar_ready = no
+tw_web      = yes
 
 [urgency-tweaker]
 path        = ~/dev/urgency-tweaker
@@ -130,6 +150,7 @@ timing      = no
 debug       = yes
 status      = release
 envar_ready = no
+tw_web      = yes
 
 [hook-ctrl]
 path        = ~/dev/tw-hook-ctrl
@@ -138,6 +159,7 @@ timing      = no
 debug       = no
 status      = testing
 envar_ready = yes
+tw_web      = yes
 
 [theme-select]
 path        = ~/dev/tw-theme-select
@@ -147,6 +169,7 @@ debug       = no
 status      = wip
 envar_ready = yes
 skip_testing = yes
+tw_web      = no       # terminal UI tool
 
 [gtk]
 path        = ~/dev/tw-gtk
@@ -156,6 +179,7 @@ debug       = yes
 status      = suspended
 envar_ready = no
 skip        = yes
+tw_web      = no       # desktop UI
 
 [tw-tui]
 path        = ~/dev/tw-tui
@@ -165,6 +189,7 @@ debug       = no
 status      = release
 envar_ready = no
 skip        = yes
+tw_web      = no       # terminal UI
 
 [tw]
 path        = ~/dev/awesome-taskwarrior
@@ -174,3 +199,85 @@ debug       = no
 status      = release
 envar_ready = no
 skip        = yes
+tw_web      = yes
+
+[daily-email]
+path        = ~/dev/tw-daily-email
+type        = hook
+timing      = no
+debug       = yes
+status      = release
+envar_ready = no
+tw_web      = yes
+
+[matrix-taskbot]
+path        = ~/dev/tw-matrix-bot
+type        = script
+timing      = no
+debug       = yes
+status      = release
+envar_ready = no
+tw_web      = yes
+
+[nb-plugins]
+path        = ~/dev/nb-plugins
+type        = hook
+timing      = no
+debug       = yes
+status      = release
+envar_ready = no
+tw_web      = yes
+
+[powerline-taskwarrior]
+path        = ~/dev/powerline-taskwarrior
+type        = script
+timing      = no
+debug       = yes
+status      = release
+envar_ready = no
+tw_web      = partial  # terminal display only; no effect in web context
+
+[stop-started]
+path        = ~/dev/tw-stop-started-hook
+type        = hook
+timing      = no
+debug       = yes
+status      = release
+envar_ready = no
+tw_web      = yes
+
+[t]
+path        = ~/dev/t
+type        = script
+timing      = no
+debug       = yes
+status      = release
+envar_ready = no
+tw_web      = yes
+
+[time-defaults]
+path        = ~/dev/tw-time-defaults
+type        = hook
+timing      = no
+debug       = yes
+status      = release
+envar_ready = no
+tw_web      = yes
+
+[tw2ical]
+path        = ~/dev/tw-ical-hook
+type        = hook
+timing      = no
+debug       = yes
+status      = release
+envar_ready = no
+tw_web      = yes
+
+[gtk-notify]
+path        = ~/dev/tw-gtk-notify-hook
+type        = hook
+timing      = no
+debug       = no
+status      = release
+envar_ready = no
+tw_web      = partial  # yad exits cleanly if absent; notifications won't show in web context
