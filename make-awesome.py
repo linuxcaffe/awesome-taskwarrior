@@ -3150,7 +3150,68 @@ def recalculate_meta_checksums(path: Path) -> bool:
     return False
 
 
-def cmd_fleet_push(apps: list, message: str, dry_run: bool = False) -> int:
+def _ipush_prompt(name: str, path: Path) -> bool:
+    """Per-app interactive prompt for --ipush: version + tags only.
+    Reads current values from .meta; writes updated .meta if changed.
+    Returns True to proceed with commit, False to skip this app.
+    """
+    import os as _os
+    origin = Path(_os.getcwd())
+    _os.chdir(path)
+    try:
+        # Read current version and tags from .meta (if present)
+        meta_files = list(path.glob('*.meta'))
+        meta_file  = meta_files[0] if meta_files else None
+
+        cur_version = '1.0.0'
+        cur_tags    = ''
+        if meta_file:
+            for line in meta_file.read_text().splitlines():
+                if line.startswith('version='):
+                    cur_version = line.split('=', 1)[1].strip()
+                elif line.startswith('tags='):
+                    cur_tags = line.split('=', 1)[1].strip()
+
+        print()
+        msg(f"  [{name}]  {path}")
+
+        r_ver  = input(f"    Version [{cur_version}]: ").strip()
+        r_tags = input(f"    Tags    [{cur_tags}]: ").strip()
+        r_skip = input(f"    Push?   [Y/n]: ").strip().lower()
+
+        if r_skip in ('n', 'no'):
+            warn(f"  SKIP  [{name}]  skipped by user")
+            return False
+
+        new_version = r_ver  or cur_version
+        new_tags    = r_tags or cur_tags
+
+        # Rewrite .meta if version or tags changed
+        if meta_file and (new_version != cur_version or new_tags != cur_tags):
+            lines = meta_file.read_text().splitlines()
+            out   = []
+            for line in lines:
+                if line.startswith('version='):
+                    out.append(f'version={new_version}')
+                elif line.startswith('tags='):
+                    out.append(f'tags={new_tags}')
+                else:
+                    out.append(line)
+            meta_file.write_text('\n'.join(out) + '\n')
+            recalculate_meta_checksums(path)
+            msg(f"    .meta updated  version={new_version}  tags={new_tags}")
+
+        # Also update VERSION file if it exists
+        if (path / 'VERSION').exists() and new_version != cur_version:
+            (path / 'VERSION').write_text(new_version + '\n')
+
+        return True
+    finally:
+        _os.chdir(origin)
+
+
+def cmd_fleet_push(apps: list, message: str, dry_run: bool = False,
+                   interactive: bool = False) -> int:
     """Commit and push all dirty fleet repos, skipping .orig files."""
     results = []
 
@@ -3197,6 +3258,12 @@ def cmd_fleet_push(apps: list, message: str, dry_run: bool = False) -> int:
         msg(f"\n  [{name}]  {path}")
         for line in pushable:
             print(f"    {line}")
+
+        # Interactive mode: prompt for version/tags bump before committing
+        if interactive and not dry_run:
+            if not _ipush_prompt(name, path):
+                results.append((name, 'SKIP', 'skipped by user'))
+                continue
 
         # Recalculate .meta checksums if a .meta file exists
         recalculate_meta_checksums(path)
@@ -3410,6 +3477,45 @@ def cmd_fleet_query(apps: list, terms: list) -> int:
     return 0
 
 
+def cmd_fleet_grep(apps: list, pattern: str) -> int:
+    """Search source files across all fleet dev dirs for a literal pattern."""
+    import subprocess as _sp
+
+    home    = str(Path.home())
+    found   = 0
+    skipped = []
+
+    for app in apps:
+        path = app['path']
+        if not path.is_dir():
+            skipped.append(app['name'])
+            continue
+
+        result = _sp.run(
+            ['grep', '-rn', '--include=*.py', '--include=*.sh',
+             '--include=*.bash', '--include=*.rc', '--include=*.install',
+             pattern, str(path)],
+            capture_output=True, text=True
+        )
+        if result.stdout.strip():
+            rel = str(path).replace(home, '~')
+            print(f"\n  \033[1m{app['name']}\033[0m  ({rel})")
+            for line in result.stdout.splitlines():
+                # Trim the path prefix for readability
+                short = line.replace(str(path) + '/', '')
+                print(f"    {short}")
+            found += 1
+
+    print()
+    if found:
+        msg(f"Pattern {repr(pattern)} found in {found} app(s)")
+    else:
+        msg(f"Pattern {repr(pattern)} not found in any fleet app")
+    if skipped:
+        warn(f"Skipped (path not found): {', '.join(skipped)}")
+    return 0
+
+
 def cmd_fleet_checksum(apps: list, dry_run: bool = False) -> int:
     """Recalculate .meta checksums across all fleet apps."""
     updated = skipped = missing = errors = 0
@@ -3478,13 +3584,21 @@ def cmd_fleet(args) -> int:
     add_name     = getattr(args, 'add',       None)
     remove_name  = getattr(args, 'remove',    None)
     push_msg     = getattr(args, 'push',      None)
+    ipush_msg    = getattr(args, 'ipush',     None)
     query_terms  = getattr(args, 'query',     None)
     do_discover  = getattr(args, 'discover',  False)
     do_apply     = getattr(args, 'apply',     False)
+    grep_pat     = getattr(args, 'grep',      None)
+
+    # Normalise: --ipush feeds into the same push path with interactive=True
+    if ipush_msg is not None and push_msg is None:
+        push_msg = ipush_msg
 
     any_stage = any([do_timing, do_debug, do_testing, do_envar, do_gitignore])
 
     # Sub-commands: query / list / discover / add / remove (no stage ops)
+    if grep_pat is not None:
+        return cmd_fleet_grep(apps, grep_pat)
     if query_terms is not None:
         return cmd_fleet_query(apps, query_terms)
     if list_pat is not None:
@@ -3578,7 +3692,8 @@ def cmd_fleet(args) -> int:
 
     # Push — either standalone or after stage flags
     if push_msg is not None:
-        return cmd_fleet_push(apps, push_msg, dry_run=dry_run)
+        return cmd_fleet_push(apps, push_msg, dry_run=dry_run,
+                              interactive=(ipush_msg is not None))
 
     return 0
 
@@ -3623,6 +3738,8 @@ def main():
     parser.add_argument('--push', nargs='?', const='', default=None,
                        metavar='MESSAGE',
                        help='Git push + registry (message optional); with --fleet: commit+push all dirty repos (message required)')
+    parser.add_argument('--ipush', metavar='MESSAGE',
+                       help='Interactive fleet push: prompt for version/tags per app before committing [fleet-mode only]')
     parser.add_argument('--force', action='store_true',
                        help='Force re-enhancement of already enhanced files')
     parser.add_argument('--dry-run', action='store_true',
@@ -3637,6 +3754,8 @@ def main():
                        help='Add a new app entry to awesome.rc [fleet-mode only]')
     parser.add_argument('--remove', metavar='NAME',
                        help='Remove an app entry from awesome.rc [fleet-mode only]')
+    parser.add_argument('--grep', metavar='PATTERN',
+                       help='Search source files across all fleet dev dirs [fleet-mode only]')
     parser.add_argument('--discover', action='store_true',
                        help='Find registry apps missing from awesome.rc and hunt for dev dirs [fleet-mode only]')
     parser.add_argument('--apply', action='store_true',
@@ -3652,7 +3771,8 @@ def main():
     # Mode banner + guardrails
     # -------------------------------------------------------------------------
     fleet_flags   = (args.fleet or args.list is not None or args.add or args.remove
-                     or args.query is not None or args.discover)
+                     or args.query is not None or args.discover or args.grep
+                     or args.ipush is not None)
     pipeline_flags = (args.commit_message or args.gitignore or args.debug or args.testing
                       or args.timing or args.envar or args.stdhelp or args.meta
                       or args.install or args.push is not None)
@@ -3676,7 +3796,7 @@ def main():
         return cmd_pipeline(args.commit_message)
 
     if (args.fleet or args.list is not None or args.add or args.remove
-            or args.discover or args.query is not None):
+            or args.discover or args.query is not None or args.grep):
         return cmd_fleet(args)
 
     # Collect requested steps in pipeline order
