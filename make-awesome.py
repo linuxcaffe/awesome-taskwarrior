@@ -2785,13 +2785,29 @@ def _discover_dev_path(name: str) -> Path | None:
     return None
 
 
+def _load_manifest_versions() -> dict:
+    """Return {app_name: installed_version} from ~/.task/config/.tw_manifest.
+    Only the first (oldest) entry per app is used — latest is overwritten on
+    reinstall so last entry wins; read all and keep last seen."""
+    manifest = Path.home() / '.task/config/.tw_manifest'
+    versions = {}
+    try:
+        for line in manifest.read_text(errors='replace').splitlines():
+            parts = line.split('|')
+            if len(parts) >= 2 and parts[0] and parts[1]:
+                versions[parts[0].strip()] = parts[1].strip()
+    except OSError:
+        pass
+    return versions
+
+
 def cmd_fleet_list(apps: list, pattern: str = '') -> int:
     """List apps from registry.d (canonical), enriched with awesome.rc fleet data."""
     import shutil as _shutil
 
-    registry_d  = SCRIPT_DIR / 'registry.d'
-    installed_d = Path.home() / '.task/awesome-taskwarrior/registry.d'
-    home        = str(Path.home())
+    registry_d      = SCRIPT_DIR / 'registry.d'
+    home            = str(Path.home())
+    installed_vers  = _load_manifest_versions()
 
     fleet_by_name = {a['name']: a for a in apps}
 
@@ -2802,17 +2818,20 @@ def cmd_fleet_list(apps: list, pattern: str = '') -> int:
             name = meta_file.stem
             if pattern and pattern.lower() not in name.lower():
                 continue
-            meta  = _load_meta_from_file(meta_file)
-            fleet = fleet_by_name.get(name, {})
-            inst  = (installed_d / f"{name}.meta").exists()
-            rows.append((name, meta, fleet, inst))
+            meta          = _load_meta_from_file(meta_file)
+            fleet         = fleet_by_name.get(name, {})
+            inst_ver      = installed_vers.get(name)
+            inst          = inst_ver is not None
+            reg_ver       = meta.get('version')
+            update_avail  = inst and reg_ver and inst_ver and reg_ver != inst_ver
+            rows.append((name, meta, fleet, inst, update_avail))
 
     # Fleet-only entries (in awesome.rc but not in registry.d — e.g. 'tw' core)
     registry_names = {r[0] for r in rows}
     for a in apps:
         if a['name'] not in registry_names:
             if not pattern or pattern.lower() in a['name'].lower():
-                rows.append((a['name'], {}, a, False))
+                rows.append((a['name'], {}, a, False, False))
 
     if not rows:
         warn(f"No apps{' matching ' + repr(pattern) if pattern else ''}")
@@ -2827,8 +2846,22 @@ def cmd_fleet_list(apps: list, pattern: str = '') -> int:
 
     STATUS_WARN = {'wip', 'testing', 'suspended', 'archived'}
 
-    for name, meta, fleet, inst in rows:
-        inst_s = '[*]' if inst else '[ ]'
+    n_installed = 0
+    n_updates   = 0
+
+    for name, meta, fleet, inst, update_avail in rows:
+        if inst:
+            n_installed += 1
+        if update_avail:
+            n_updates += 1
+
+        if update_avail:
+            inst_s = '[↑]'
+        elif inst:
+            inst_s = '[*]'
+        else:
+            inst_s = '[ ]'
+
         atype  = (meta.get('type') or fleet.get('type', '?'))[:TW_]
         ver    = meta.get('version', '?')[:VW]
         if fleet:
@@ -2839,14 +2872,22 @@ def cmd_fleet_list(apps: list, pattern: str = '') -> int:
 
         line = f"  {inst_s} {name:<{NW}} {atype:<{TW_}} {ver:<{VW}} {status:<{SW}} {tags}"
 
-        if fleet.get('skip'):
-            print(f"\033[2m{line}\033[0m")
+        if update_avail:
+            print(f"\033[36m{line}\033[0m")        # cyan  — update available
+        elif fleet.get('skip'):
+            print(f"\033[2m{line}\033[0m")          # dim   — skipped/core
         elif status in STATUS_WARN or status == '(no rc)':
-            print(f"\033[33m{line}\033[0m")
+            print(f"\033[33m{line}\033[0m")         # yellow — wip/testing/no rc
         else:
             print(line)
 
-    print(f"\n  {len(rows)} app(s)")
+    # Footer
+    footer = f"({len(rows)}) Available applications"
+    if n_installed:
+        footer += f"  ·  {n_installed} installed"
+    if n_updates:
+        footer += f"  ·  \033[36m{n_updates} update(s) available\033[0m"
+    print(f"\n  {footer}")
     return 0
 
 
