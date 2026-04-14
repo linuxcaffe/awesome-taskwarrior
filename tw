@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 tw - awesome-taskwarrior package manager and wrapper
-Version: 2.10.0
+Version: 2.10.1
 
 A unified wrapper for Taskwarrior that provides:
 - Transparent pass-through to task command
@@ -1492,37 +1492,60 @@ class AppManager:
             for app, info in all_apps.items():
                 if tag_filter.matches(info['tags']):
                     filtered_apps[app] = info
-            
+
             if not filtered_apps:
                 print(f"[tw] No applications match filter: {tag_filter}")
                 return
-            
+
             all_apps = filtered_apps
-            print(f"[tw] Applications (filtered by {tag_filter}):")
-        else:
-            print("[tw] Available applications:")
-        
+
         if not all_apps:
             print("[tw] No applications in registry")
             return
-        
+
+        CYAN  = "\033[36m"
+        RESET = "\033[0m"
+
+        n_installed = 0
+        n_updates   = 0
+
         # Display apps with status indicators
         for app, info in sorted(all_apps.items()):
-            if info['is_installed']:
-                status = "[*] "
-                version_str = f"v{info['installed_version']}"
+            inst_ver = info['installed_version']
+            reg_ver  = info['version']
+            update_avail = info['is_installed'] and inst_ver and inst_ver != reg_ver
+
+            if update_avail:
+                status      = "[↑] "
+                version_str = f"v{inst_ver}→{reg_ver}"
+                n_installed += 1
+                n_updates   += 1
+            elif info['is_installed']:
+                status      = "[*] "
+                version_str = f"v{inst_ver}"
+                n_installed += 1
             else:
-                status = "[ ] "
-                version_str = f"v{info['version']}"
-            
-            tags_str = ""
-            if info['tags']:
-                tags_str = f" [{', '.join(info['tags'])}]"
-            
-            print(f"[tw] {status}{app} ({version_str}){tags_str}")
-        
-        # Show legend
-        print(f"\n[tw] Legend: [*] = installed, [ ] = available")
+                status      = "[ ] "
+                version_str = f"v{reg_ver}"
+
+            tags_str = f" [{', '.join(info['tags'])}]" if info['tags'] else ""
+            line = f"[tw] {status}{app} ({version_str}){tags_str}"
+
+            if update_avail:
+                print(f"{CYAN}{line}{RESET}")
+            else:
+                print(line)
+
+        # Footer
+        total = len(all_apps)
+        filter_str = f" (filtered by {tag_filter})" if tag_filter and tag_filter.has_filters() else ""
+        footer = f"[tw] ({total}) Available applications{filter_str}"
+        if n_installed:
+            footer += f"  ·  {n_installed} installed"
+        if n_updates:
+            footer += f"  ·  {CYAN}{n_updates} update(s) available{RESET}"
+        print(f"\n{footer}")
+        print(f"[tw] Legend: [*] installed  [↑] {CYAN}update available{RESET}  [ ] not installed")
     
     def list_tags(self, app_names=None):
         """List all available tags from registry, optionally filtered by app names
