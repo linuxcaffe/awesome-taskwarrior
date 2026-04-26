@@ -2,7 +2,7 @@
 # Bulk-operation pre-flight guard: blocks mutating commands that affect many tasks when running under non-interactive clients (TW_NOINTERACT=1), emitting a structured JSON signal so the client can confirm before proceeding.
 
 name=interactor
-version=0.1.1
+version=0.1.2
 type=hook
 description=Bulk-operation pre-flight guard: blocks mutating commands that affect many tasks when running under non-interactive clients (TW_NOINTERACT=1), emitting a structured JSON signal so the client can confirm before proceeding.
 repo=https://github.com/linuxcaffe/tw-nointeract-preflight-hook
@@ -10,7 +10,7 @@ base_url=https://raw.githubusercontent.com/linuxcaffe/tw-nointeract-preflight-ho
 files=on-launch_nointeract-preflight.py:hook,README.md:doc
 tags=safety,bulk,nointeract,hook,web,gui
 
-checksums=07a422a7678d856409902a991587a03d92307b51dcf927ab0604806980f0b63c,00c5bace26740f9eb8277955966e5e6fa25dd66e90cf946e2301399e77013576
+checksums=2fcfd73fc39b4e827b8d8629b2dc92960d7badd0836a9044343385b302e113b2,1dbee0bee33583b897d3a410a896b081a18d9d2ca641c11d0bf84b0a245a1d7f
 
 author=linuxcaffe + Claude Sonnet 4.6
 license=MIT
