@@ -57,6 +57,24 @@ def error(text):
 def warn(text):
     print(f"{Colors.YELLOW}[make] [WARN]{Colors.NC} {text}")
 
+def write_atomic(path, lines):
+    """Write lines to path atomically: write temp file then rename.
+    Prevents partial-write corruption if the process is killed mid-write.
+    """
+    import tempfile
+    dir_ = os.path.dirname(path)
+    fd, tmp = tempfile.mkstemp(dir=dir_, prefix='.awesome.rc.tmp')
+    try:
+        with os.fdopen(fd, 'w') as f:
+            f.writelines(lines)
+        os.rename(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
 
 # ============================================================================
 # DEBUG Enhancement (Smart pattern-aware enhancement from v3.0.0)
@@ -2540,6 +2558,184 @@ def cmd_push(args, commit_msg: str = None) -> int:
 # ============================================================================
 # PIPELINE
 # ============================================================================
+# --nointeract: scan hooks for interactive patterns, check/inject TW_NOINTERACT
+# ============================================================================
+
+_INTERACTIVE_PATTERNS = [
+    (r'open\s*\(\s*[\'\"]/dev/tty', 'opens /dev/tty'),
+    (r'os\.open\s*\([^,]*tty',      'opens /dev/tty via os.open'),
+    (r'\binput\s*\(',               'uses input()'),
+    (r'\bgetpass\s*\(',             'uses getpass()'),
+    (r'\bgetchar\s*\(',             'uses getchar()'),
+    (r'subprocess.*\bfzf\b',        'spawns fzf'),
+    (r'subprocess.*\bwhiptail\b',   'spawns whiptail'),
+    (r'subprocess.*\bdialog\b',     'spawns dialog'),
+    (r'\bcurses\b',                 'uses curses'),
+    (r'hledger.*add',               'launches hledger add'),
+]
+
+_NOINTERACT_GUARD = r'TW_NOINTERACT'
+_OLD_GUARD        = r'TW_WEB'
+_PTY_SIGNAL       = r'tw_needs_pty'
+
+_FIX_TEMPLATE = '''\
+    if os.environ.get('TW_NOINTERACT'):
+        import json as _json, sys as _sys
+        _sys.stderr.write(_json.dumps({{
+            'type': 'tw_needs_pty',
+            'cmd':  os.environ.get('TW_PREFLIGHT_CMD', ''),
+        }}) + '\\n')
+        {exit_call}
+'''
+
+
+def _scan_file_nointeract(filepath: Path):
+    """Return dict with scan results for one Python file."""
+    import re
+    try:
+        src = filepath.read_text()
+    except OSError:
+        return None
+
+    lines = src.splitlines()
+    hits = []
+    for i, line in enumerate(lines, 1):
+        for pattern, label in _INTERACTIVE_PATTERNS:
+            if re.search(pattern, line):
+                hits.append((i, line.strip(), label))
+                break
+
+    has_nointeract = bool(re.search(_NOINTERACT_GUARD, src))
+    has_old_guard  = bool(re.search(_OLD_GUARD, src))
+    has_pty_signal = bool(re.search(_PTY_SIGNAL, src))
+
+    return {
+        'file':           filepath,
+        'hits':           hits,
+        'has_nointeract': has_nointeract,
+        'has_pty_signal': has_pty_signal,
+        'has_old_guard':  has_old_guard,
+    }
+
+
+def _apply_nointeract_fix(filepath: Path, result: dict, dry_run: bool) -> bool:
+    """Inject TW_NOINTERACT guard before the first interactive line."""
+    import re
+    src = filepath.read_text()
+    lines = src.splitlines(keepends=True)
+    first_hit_line = result['hits'][0][0]  # 1-based
+
+    # Detect indentation of the target line
+    target = lines[first_hit_line - 1]
+    indent = len(target) - len(target.lstrip())
+    ind = ' ' * indent
+
+    # Detect exit style: sys.exit(1) or return 1
+    exit_call = 'sys.exit(1)' if 'sys.exit' in src else 'return 1'
+
+    guard = (
+        f"{ind}if os.environ.get('TW_NOINTERACT'):\n"
+        f"{ind}    import json as _json\n"
+        f"{ind}    print(_json.dumps({{\n"
+        f"{ind}        'type': 'tw_needs_pty',\n"
+        f"{ind}        'cmd':  os.environ.get('TW_PREFLIGHT_CMD', ''),\n"
+        f"{ind}    }}), file=sys.stderr)\n"
+        f"{ind}    {exit_call}\n"
+        f"\n"
+    )
+
+    insert_at = first_hit_line - 1  # 0-based index before the hit line
+    new_lines = lines[:insert_at] + [guard] + lines[insert_at:]
+
+    if dry_run:
+        warn(f"  [dry-run] would insert guard before line {first_hit_line} in {filepath.name}")
+        return True
+
+    write_atomic(str(filepath), new_lines)
+    success(f"  Injected TW_NOINTERACT guard in {filepath.name} before line {first_hit_line}")
+    return True
+
+
+def cmd_nointeract(args) -> int:
+    """Scan hook files for interactive patterns; check/inject TW_NOINTERACT guards."""
+    import configparser, re
+
+    fix     = getattr(args, 'fix', False)
+    dry_run = getattr(args, 'dry_run', False)
+
+    if IS_FLEET_MODE:
+        import configparser as _cp
+        rc_path = SCRIPT_DIR / 'awesome.rc'
+        cfg = _cp.ConfigParser(inline_comment_prefixes=('#',))
+        cfg.read(rc_path)
+        candidates = []
+        for name in cfg.sections():
+            s = cfg[name]
+            tw_web = s.get('tw_web', 'yes').strip().lower()
+            typ    = s.get('type', '').strip().lower()
+            skip   = s.get('skip', 'no').strip().lower() == 'yes'
+            path   = Path(s.get('path', '')).expanduser()
+            if skip:
+                continue
+            # Only hooks/scripts — not UI apps (theme-select, gtk, tw-tui)
+            if tw_web == 'no' and typ in ('hook', 'script'):
+                candidates.append((name, path))
+    else:
+        # Project mode: scan current dir
+        candidates = [(Path.cwd().name, Path.cwd())]
+
+    if not candidates:
+        msg("No tw_web=no hook entries found.")
+        return 0
+
+    any_issues = False
+    for name, path in candidates:
+        if not path.exists():
+            warn(f"[{name}] path not found: {path}")
+            continue
+
+        py_files = list(path.glob('*.py'))
+        py_files = [f for f in py_files if not f.name.endswith('.orig')]
+        if not py_files:
+            continue
+
+        msg(f"\n[{name}]  {path}")
+        for f in sorted(py_files):
+            result = _scan_file_nointeract(f)
+            if result is None:
+                continue
+            if not result['hits']:
+                continue  # no interactive code — skip
+
+            if result['has_nointeract'] and result['has_pty_signal']:
+                print(f"  ✅ {f.name}  — TW_NOINTERACT + tw_needs_pty guard present")
+            elif result['has_nointeract'] and not result['has_pty_signal']:
+                print(f"  ⚠️  {f.name}  — TW_NOINTERACT present but no tw_needs_pty signal")
+                any_issues = True
+            elif result['has_old_guard'] and not result['has_nointeract']:
+                print(f"  ⚠️  {f.name}  — TW_WEB guard only (needs upgrade to TW_NOINTERACT)")
+                for ln, text, label in result['hits'][:3]:
+                    print(f"       line {ln}: {label}  →  {text[:60]}")
+                any_issues = True
+                if fix:
+                    _apply_nointeract_fix(f, result, dry_run)
+            else:
+                print(f"  ❌ {f.name}  — interactive code, no TW_NOINTERACT guard")
+                for ln, text, label in result['hits'][:3]:
+                    print(f"       line {ln}: {label}  →  {text[:60]}")
+                any_issues = True
+                if fix:
+                    _apply_nointeract_fix(f, result, dry_run)
+
+    if not any_issues:
+        success("All scanned hooks have TW_NOINTERACT guards.")
+    elif not fix:
+        msg("\nRun with --fix to inject guards automatically.")
+
+    return 0
+
+
+# ============================================================================
 
 def cmd_pipeline(commit_msg: str) -> int:
     msg("=" * 70)
@@ -3054,8 +3250,7 @@ def cmd_fleet_remove(name: str) -> int:
             new_lines.append(line)
 
     if found_in_rc:
-        with open(rc_path, 'w') as f:
-            f.writelines(new_lines)
+        write_atomic(rc_path, new_lines)
         success(f"Removed '{name}' from awesome.rc")
         registry_files_removed.append('awesome.rc')
         removed_anything = True
@@ -3803,6 +3998,10 @@ def main():
                        help='With --discover: write found entries into awesome.rc [fleet-mode only]')
     parser.add_argument('--checksum', action='store_true',
                        help='Recalculate .meta checksums across fleet [fleet-mode only]')
+    parser.add_argument('--nointeract', action='store_true',
+                       help='Scan hooks for interactive patterns; check/inject TW_NOINTERACT guards')
+    parser.add_argument('--fix', action='store_true',
+                       help='With --nointeract: auto-inject TW_NOINTERACT guards')
     parser.add_argument('--version', action='version',
                        version=f'v{VERSION}')
 
@@ -3839,6 +4038,9 @@ def main():
     if (args.fleet or args.list is not None or args.add or args.remove
             or args.discover or args.query is not None or args.grep):
         return cmd_fleet(args)
+
+    if args.nointeract:
+        return cmd_nointeract(args)
 
     # Collect requested steps in pipeline order
     def flag_set(name):
