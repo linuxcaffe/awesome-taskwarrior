@@ -142,6 +142,11 @@ an answer uses `tw_needs_pty`, or skips the question under `TW_NOINTERACT` with 
 - **Settings:** `~/.task/config/<app>.rc`, keys `<app>.<setting>` (`gittw.autocommit = yes`), included
   from `~/.task/config/included.rc`. A hook reads its own file directly; calling `task _get` from a hook
   is slow.
+- **Never leave a dangling `include`.** Taskwarrior refuses to start if an included file is missing, and so
+  does every client. An installer's `remove` deletes the include with the file, or keeps both. `tw -r`
+  (2.10.2+) comments out any include left dangling after a remove, as a safety net; `taskutil config check`
+  (daily timer, tw-web launch) reports one with its file and line. Generated installers re-enable a
+  commented-out include on reinstall.
 - **On/off:** a hook runs only when executable. `hook-ctrl` toggles the bit, scripts' bits, and
   `include` lines. Prefer a setting when the user may want the feature "paused but installed".
 
