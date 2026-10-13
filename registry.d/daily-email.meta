@@ -2,7 +2,7 @@
 # Send a daily Taskwarrior report by email via msmtp and systemd timer
 
 name=daily-email
-version=0.1.0
+version=0.1.1
 type=hook
 description=Send a daily Taskwarrior report by email via msmtp and systemd timer
 repo=https://github.com/linuxcaffe/tw-daily-email

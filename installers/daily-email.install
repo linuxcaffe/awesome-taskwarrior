@@ -10,7 +10,7 @@ set -euo pipefail
 # that make-awesome.py cannot generate. Deploy via --push only.
 # ============================================================================
 
-VERSION="0.1.0"
+VERSION="0.1.1"
 APPNAME="daily-email"
 BASE_URL="https://raw.githubusercontent.com/linuxcaffe/tw-daily-email/master"
 
@@ -143,8 +143,9 @@ remove() {
         systemctl --user daemon-reload 2>/dev/null || true
     fi
 
-    # Remove files listed in manifest
+    # Remove files listed in manifest, except the settings (kept, as install keeps them)
     grep "^$APPNAME|" "$MANIFEST_FILE" | cut -d"|" -f3 | while read -r file; do
+        [[ "$file" == "$CONFIG_DIR/daily-email.rc" ]] && continue
         if [[ -f "$file" ]]; then
             rm "$file"
             tw_msg "Removed: $(basename "$file")"
