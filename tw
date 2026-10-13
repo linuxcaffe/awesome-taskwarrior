@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 tw - awesome-taskwarrior package manager and wrapper
-Version: 2.10.1
+Version: 2.10.2
 
 A unified wrapper for Taskwarrior that provides:
 - Transparent pass-through to task command
@@ -10,6 +10,10 @@ A unified wrapper for Taskwarrior that provides:
 - Per-file manifest tracking
 - Checksum verification
 - Dev mode indicator for local development
+
+Updates in v2.10.2:
+- Added: tw -r comments out any `include` left pointing at a missing file (repair_dangling_includes),
+  so a remove can never leave `task` unable to start ("Could not read include file")
 
 Updates in v2.10.1:
 - Changed: run_with_timing() sets TW_TIMING=1 in subprocess env
@@ -123,7 +127,7 @@ import tempfile
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 
-VERSION = "2.10.1"
+VERSION = "2.10.2"
 
 # GitHub configuration
 GITHUB_REPO = "linuxcaffe/awesome-taskwarrior"
@@ -1064,6 +1068,56 @@ class Manifest:
                 ])
                 f.write(line + '\n')
 
+_INCLUDE_RE = re.compile(r'^(\s*)include\s+(\S.*?)\s*$')
+_SYSTEM_RC_DIR = Path('/usr/share/taskwarrior')
+
+
+def _include_target(value, including_file):
+    """Where Taskwarrior 2.6.2 finds `include value`: absolute or ~ as written; else the
+    including file's folder; else /usr/share/taskwarrior. None when nothing is there."""
+    p = Path(os.path.expanduser(value))
+    candidates = [p] if p.is_absolute() else [including_file.parent / p, _SYSTEM_RC_DIR / p]
+    return next((c for c in candidates if c.is_file()), None)
+
+
+def repair_dangling_includes(taskrc, note='tw', _seen=None):
+    """Comment out every `include` in the taskrc chain whose file is missing, so `task` still
+    starts. Returns one description per line changed. Edits through symlinks (gittw's .taskrc)."""
+    fixed = []
+    _seen = set() if _seen is None else _seen
+    rcfile = Path(taskrc).expanduser()
+    try:
+        real = rcfile.resolve()
+        if real in _seen or not real.is_file():
+            return fixed
+        _seen.add(real)
+        lines = real.read_text().splitlines(keepends=True)
+    except OSError:
+        return fixed
+    changed = False
+    stamp = datetime.now().strftime('%Y-%m-%d')
+    for i, line in enumerate(lines):
+        m = _INCLUDE_RE.match(line.rstrip('\n'))
+        if not m:
+            continue
+        target = _include_target(m.group(2), real)
+        if target is None:
+            lines[i] = f"#{line.rstrip(chr(10)).lstrip()}   # {note} {stamp}: file missing\n"
+            fixed.append(f"{real}:{i + 1}: include {m.group(2)}")
+            changed = True
+        else:
+            fixed += repair_dangling_includes(target, note, _seen)
+    if changed:
+        real.write_text(''.join(lines))
+    return fixed
+
+
+def _repair_after_remove(paths, app_name):
+    taskrc = Path(os.environ.get('TASKRC') or paths.taskrc)
+    for item in repair_dangling_includes(taskrc, note=f'tw -r {app_name}'):
+        print(f"[tw] [!] Commented out an include whose file is gone: {item}")
+
+
 class AppManager:
     """Manages application installation, removal, and updates"""
     
@@ -1210,6 +1264,7 @@ class AppManager:
                 
                 if result.returncode == 0:
                     self.manifest.remove_app(app_name)
+                    _repair_after_remove(self.paths, app_name)
                     print(f"[tw] [+] Removed: {app_name}")
                     return True
                 else:
@@ -1236,6 +1291,7 @@ class AppManager:
                     print(f"[tw]   Removed: {file_path}")
             
             self.manifest.remove_app(app_name)
+            _repair_after_remove(self.paths, app_name)
             print(f"[tw] [+] Removed: {app_name}")
             return True
     

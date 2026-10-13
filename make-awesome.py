@@ -1886,9 +1886,14 @@ def generate_installer(info: ProjectInfo) -> bool:
                 first_config = std_configs[0][0]
                 f.write('    # Add config include to included.rc (if present) or .taskrc\n')
                 f.write('    INCLUDED_RC="${TASK_DIR}/config/included.rc"\n')
-                f.write(f'    if grep -q "{first_config}" "$TASKRC" "$INCLUDED_RC" 2>/dev/null; then\n')
+                # Only an active include counts; one commented out (e.g. by tw -r's dangling-include
+                # repair) is re-enabled rather than mistaken for "already included".
+                f.write(f'    if grep -qE "^[[:space:]]*include[[:space:]].*{first_config}" "$TASKRC" "$INCLUDED_RC" 2>/dev/null; then\n')
                 f.write(f'        tw_msg "Config already included"\n')
                 f.write(f'        debug_msg "Config already present: {first_config}" 2\n')
+                f.write(f'    elif grep -qE "^[[:space:]]*#[[:space:]]*include[[:space:]].*{first_config}" "$INCLUDED_RC" 2>/dev/null; then\n')
+                f.write(f'        sed -i.bak -E "s|^[[:space:]]*#[[:space:]]*(include[[:space:]].*{first_config})[[:space:]]*(#.*)?$|\\1|" "$INCLUDED_RC"\n')
+                f.write(f'        tw_msg "Re-enabled config include in included.rc"\n')
                 f.write('    elif [ -f "$INCLUDED_RC" ]; then\n')
                 f.write(f'        echo "include ${{TASK_DIR}}/config/{first_config}" >> "$INCLUDED_RC"\n')
                 f.write(f'        tw_msg "Added config include to included.rc"\n')
