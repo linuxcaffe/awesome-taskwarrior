@@ -307,12 +307,13 @@ tw.py --remove myapp
 1. **Keep It Simple**: One hook/script per file, clear names
 2. **Standalone First**: Always test installers without tw.py
 3. **Fallback Logic**: Provide alternatives for tw-common.sh functions
-4. **Document Well**: README in your repo, good .meta description
+4. **Document Well**: README in your repo, good .meta description; link [CONVENTIONS.md](CONVENTIONS.md) for the client contract instead of restating it
 5. **Version Carefully**: Use semantic versioning
 6. **Test Thoroughly**: Install, use, uninstall, verify cleanup
 7. **Checksum**: Generate and include checksums for security
 
 ## See Also
 
+- [CONVENTIONS.md](CONVENTIONS.md) - Client ↔ hook contract (`TW_NOINTERACT`, signals, spool), config, packaging, tests
 - [API.md](dev/API.md) - Function reference for tw-common.sh
 - [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution workflow

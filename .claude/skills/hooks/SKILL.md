@@ -140,6 +140,11 @@ Always use `+test` tag on all tasks created in tests.
 
 ### Non-interactive client protocol — fleet-wide conventions
 
+> **Canonical reference: `~/dev/awesome-taskwarrior/CONVENTIONS.md`** (env vars, the `tw_needs_pty` /
+> `tw_preflight` signal formats, spool, rules for hooks and clients). Read it before writing or changing
+> a hook's non-interactive path; this section is a summary and may lag. New hooks gate on
+> `TW_NOINTERACT` and emit `tw_needs_pty`; `TW_INTERACTIVE_REQUIRED` is legacy.
+
 Non-terminal clients (tw-web, tw-gtk, Electron apps, etc.) cannot handle interactive
 hooks. Three env vars form the standard protocol — set by the client on every subprocess:
 
@@ -148,7 +153,7 @@ hooks. Three env vars form the standard protocol — set by the client on every 
 | `TW_NOINTERACT` | `1` | Any non-interactive client — primary gate |
 | `TW_CLIENT` | `web`, `gtk`, … | Client identity for client-specific behaviour |
 | `TW_WEB` | `1` | Legacy alias for tw-web (keep for backward compat) |
-| `TW_SPOOL_DIR` | `/tmp/<client>-spool` | Where hooks write deferred commands |
+| `TW_SPOOL_DIR` | client-private dir (tw-web: `$XDG_RUNTIME_DIR/tw-web/spool`) | Where hooks write deferred commands; never assume a path |
 
 **Gate pattern** — check `TW_NOINTERACT` first, not `TW_WEB`:
 ```python
@@ -184,7 +189,7 @@ if spool_dir:
 
 **Client side** (tw-web, app.py):
 ```python
-_SPOOL_DIR = Path('/tmp/tw-web-spool')
+_SPOOL_DIR = _private_dir(_RUN_DIR / 'spool')   # $XDG_RUNTIME_DIR/tw-web/spool, mode 0700
 _TW_ENV = {..., 'TW_SPOOL_DIR': str(_SPOOL_DIR)}
 
 def _drain_spool():
@@ -226,6 +231,10 @@ This leaves a visible trail in the task so the user knows an action is pending.
 Flask sets `TW_WEB=1` on all task subprocess calls. Hooks MUST check this before any
 interactive operation. Terminal-interactive code (opening `/dev/tty`, `input()`, `getch()`)
 silently hangs or appears in the launch terminal when `TW_WEB=1`.
+
+> **Not working end to end (2026-10-13), see CONVENTIONS.md §4:** the helper writes to `/tmp/tw-web-prompts`
+> but tw-web now reads a private runtime dir, and the hyphenated file name means `from tw_web_prompt
+> import …` never imports. Don't build on it until hook interaction is redesigned.
 
 **Tier 2 prompt helper** — `~/.task/scripts/tw-web-prompt.py` (Python) / `tw-web-prompt.sh` (Bash)
 
