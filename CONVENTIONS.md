@@ -58,6 +58,9 @@ everything else on stderr.
 ```
 
 - `cmd` is `TW_PREFLIGHT_CMD` if the client set it, else empty (the client then uses the command it ran).
+- `reason` (optional): what needs the terminal, for clients that show it. tw-web doesn't yet.
+- The name is `tw_needs_pty`. An older draft of nointeract-preflight's README called it `tw_needs_terminal`;
+  no client recognises that name.
 - Exit 1. The change is not made; the client offers to run `task <cmd>` in a terminal, where the hook runs
   normally.
 - **New hooks use this signal.**

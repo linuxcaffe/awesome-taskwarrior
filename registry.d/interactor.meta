@@ -10,7 +10,7 @@ base_url=https://raw.githubusercontent.com/linuxcaffe/tw-nointeract-preflight-ho
 files=on-launch_nointeract-preflight.py:hook,README.md:doc
 tags=safety,bulk,nointeract,hook,web,gui
 
-checksums=2fcfd73fc39b4e827b8d8629b2dc92960d7badd0836a9044343385b302e113b2,1dbee0bee33583b897d3a410a896b081a18d9d2ca641c11d0bf84b0a245a1d7f
+checksums=6a19821decaa3aeecb748683fbbdcc4925cd884894bfb7173607df305b81a473,373f6f3f356c6dbf4596b140489697cebb036e7671f72b6164a45a1c3ef9300f
 
 author=linuxcaffe + Claude Sonnet 4.6
 license=MIT
