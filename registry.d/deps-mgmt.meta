@@ -10,7 +10,7 @@ base_url=https://raw.githubusercontent.com/linuxcaffe/tw-deps-mgmt-hook/master
 files=on-modify_deps-mgmt.py:hook
 tags=deps, tree, parent, child, management, hook
 
-checksums=5111b8082de42467d9fdeb338caf82b6efd5d3c5662166eb30b79b252bea856f
+checksums=afa7425beefd9305dbe2fe7c7db9a785a71792274f25c45ceb77183f4f2629eb
 
 author=Designed by linuxcaffe, implemented by Claude Sonnet
 license=MIT

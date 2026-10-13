@@ -10,7 +10,7 @@ base_url=https://raw.githubusercontent.com/linuxcaffe/t/master
 files=t:script,README.md:doc
 tags=time, tracking, timedot, hledger, script
 
-checksums=91d61ae0dd56d927fd97271a41dab9db36d036a118904d454b85f902be2ec7cd,45096ed0188bc86b908188c131f472d49992eb65664c7c06d0af6a980a8f6bb4
+checksums=69c9f64ac1189c61da5765b8600ae820bbcaaa720848ee11f9fa4ee4e0b173bf,3394e2bdcc87cc2e41680a6f98c82a2c7bac69fc6bc7a88414ce36ddf8e6de4f
 
 author=based on orig code by Chase James and Justin Harding, but rewritten by Claude Sonnet
 license=MIT
