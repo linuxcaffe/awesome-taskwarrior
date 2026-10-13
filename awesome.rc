@@ -281,3 +281,12 @@ debug       = no
 status      = release
 envar_ready = no
 tw_web      = partial  # yad exits cleanly if absent; notifications won't show in web context
+
+[gittw]
+path        = ~/dev/gittw
+type        = hook
+timing      = no
+debug       = no
+status      = release
+envar_ready = yes
+tw_web      = yes
