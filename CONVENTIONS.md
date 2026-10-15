@@ -80,13 +80,14 @@ if os.environ.get('TW_NOINTERACT'):
 
 Emitted by the nointeract-preflight on-launch hook when a mutating command would touch `count` tasks or
 more (`threshold`). The client asks the user, then re-runs the same command with
-`TW_PREFLIGHT_CONFIRMED=1`.
+`TW_PREFLIGHT_CONFIRMED=1`. No client does this today: tw-web runs bulk commands in its terminal
+console, where `TW_NOINTERACT` is cleared and Taskwarrior asks for confirmation itself (2026-10-15).
 
 ### `TW_INTERACTIVE_REQUIRED`: legacy marker
 
 The plain string `TW_INTERACTIVE_REQUIRED` anywhere on stderr of a failed command means the same as
-`tw_needs_pty`, without a `cmd`. Clients keep recognising it; **hooks don't emit it any more** (none
-does today).
+`tw_needs_pty`, without a `cmd`. Clients keep recognising it, and treat it exactly like `tw_needs_pty`
+(tw-web opens its console with the command it ran); **hooks don't emit it any more** (none does today).
 
 ## 3. Spool: defer a command, let the change through
 
@@ -97,7 +98,7 @@ blocking it:
    (for example a UUID).
 2. Print the task JSON and exit 0 as usual: the change goes through.
 3. After the command, the client reads and deletes every `*.cmd` file and offers each command
-   ("Run in terminal").
+   ("Run in terminal"). It runs the line as a **shell** command (`$SHELL -c`), not as `task` arguments.
 
 Quote arguments with `shlex.quote`. Optionally annotate the task ("queued: run hledger add") so the
 deferred action leaves a trail.
@@ -132,7 +133,9 @@ an answer uses `tw_needs_pty`, or skips the question under `TW_NOINTERACT` with 
 
 - Set §1 on every call; clear it for a real terminal.
 - `rc.confirmation=no` on every call; `rc.hooks=off` on every read.
-- After every **write**, look for `tw_needs_pty` and `tw_preflight` on stderr and drain the spool.
+- After every **write**, look for `tw_needs_pty` (and the legacy marker) on stderr and drain the spool;
+  look for `tw_preflight` too if the client offers bulk confirmation itself.
+- A client that can't give the command a terminal never writes it into a shell script: run it as argv.
 - Time-limit every `task` call, so a misbehaving hook can't hang the client.
 - Free text goes after `--` (`task add -- <description>`): in 2.6.2 any argument starting with `rc.` is
   an override wherever it appears.
@@ -172,11 +175,11 @@ an answer uses `tw_needs_pty`, or skips the question under `TW_NOINTERACT` with 
 - **Layout: not settled.** `make-awesome.py --testing` runs `test/test-*.py` (scripts); gittw, tw-taskutil
   and tw-web use pytest (`tests/test_*.py`).
 
-## 10. Who does what (2026-10-13)
+## 10. Who does what (2026-10-15)
 
 | | Gate | Emits | Notes |
 |---|---|---|---|
-| tw-web | sets all of §1 | — | reads `tw_needs_pty` on start/done, `tw_preflight` on its command line, the legacy marker on every write; drains the spool on every write |
+| tw-web | sets all of §1 | — | reads `tw_needs_pty` and the legacy marker on every task write and opens its in-page console; drains the spool on every write; doesn't read `tw_preflight` (command mode runs in the console, where Taskwarrior confirms bulk changes) |
 | nointeract-preflight | `TW_NOINTERACT` | `tw_preflight` | on-launch |
 | hledger-add | `TW_NOINTERACT` | `tw_needs_pty` | on done |
 | subtask | `TW_NOINTERACT` | `tw_needs_pty` | on start with dormant subtasks |
@@ -187,6 +190,4 @@ an answer uses `tw_needs_pty`, or skips the question under `TW_NOINTERACT` with 
 
 - §4 questions from hooks, and hooks in test fixtures: with hook interaction.
 - §9 test layout.
-- tw-web reads `tw_needs_pty` only on start and done; a hook that signals on another write (modify,
-  delete) gets a plain error there.
 - deps-mgmt: gate on `TW_NOINTERACT` (it still checks `TW_WEB`), and reinstall the current version.
