@@ -1,0 +1,21 @@
+# holidata.meta
+# Public holidays from holidata.net as Taskwarrior holiday.* entries (task calendar, tw-web): holidata init/refresh/show/check, task holidays
+
+name=holidata
+version=0.1.0
+type=wrapper
+description=Public holidays from holidata.net as Taskwarrior holiday.* entries (task calendar, tw-web): holidata init/refresh/show/check, task holidays
+repo=https://github.com/linuxcaffe/tw-holidata
+base_url=https://raw.githubusercontent.com/linuxcaffe/tw-holidata/main
+files=holidata.py:script:~/.task/scripts/holidata,README.md:doc
+tags=holidays, calendar, holidata, config
+
+checksums=5161bd85465d0038f22096f487133dc3e88920a288b0ed25050e8e0e46f0abd8,ca39f05e91f723a3565dcdf2b4e2557f254686476499e76311c36b929cb69839
+
+author=linuxcaffe + Claude
+license=MIT
+requires_taskwarrior=2.6.0
+
+wrapper.1.keyword=holidays
+wrapper.1.script=holidata
+wrapper.1.type=command
