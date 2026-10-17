@@ -290,3 +290,12 @@ debug       = no
 status      = release
 envar_ready = yes
 tw_web      = yes
+
+[events]
+path        = ~/dev/tw-events
+type        = wrapper
+timing      = no
+debug       = no
+status      = release
+envar_ready = yes
+tw_web      = yes      # no hooks, never prompts; tw-web reads its entries

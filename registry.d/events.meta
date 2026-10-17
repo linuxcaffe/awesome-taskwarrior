@@ -1,0 +1,21 @@
+# events.meta
+# The calendar's non-task entries as Taskwarrior holiday.* entries (task calendar, tw-web): holidays from holidata.net, moon phases, solstices and equinoxes; events init/refresh/show/check, task events
+
+name=events
+version=0.2.0
+type=wrapper
+description=The calendar's non-task entries as Taskwarrior holiday.* entries (task calendar, tw-web): holidays from holidata.net, moon phases, solstices and equinoxes; events init/refresh/show/check, task events
+repo=https://github.com/linuxcaffe/tw-events
+base_url=https://raw.githubusercontent.com/linuxcaffe/tw-events/main
+files=events.py:script:~/.task/scripts/events,README.md:doc
+tags=holidays, calendar, holidata, moon, solstice, equinox, config
+
+checksums=f41790fa76bc9f6d91fd3e88f210a9c228df63308160baf32e7c906de87e3f80,1996446da8ab306b9c786dccadc08abb58d034ca6053c4941a9b5f0afbb63a1b
+
+author=linuxcaffe + Claude
+license=MIT
+requires_taskwarrior=2.6.0
+
+wrapper.1.keyword=events
+wrapper.1.script=events
+wrapper.1.type=command
