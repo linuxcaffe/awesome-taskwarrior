@@ -150,6 +150,10 @@ an answer uses `tw_needs_pty`, or skips the question under `TW_NOINTERACT` with 
   (2.10.2+) comments out any include left dangling after a remove, as a safety net; `taskutil config check`
   (daily timer, tw-web launch) reports one with its file and line. Generated installers re-enable a
   commented-out include on reinstall.
+- **Generated installers overwrite config files on every reinstall** (`tw -u` included) and have no
+  post-install step. Settings a user edits shouldn't ship as a `:config` file: have the app write them
+  itself (tw-events' `events init` writes `events.rc`, keeps what's there, and adds its own includes only
+  after the files they name exist).
 - **On/off:** a hook runs only when executable. `hook-ctrl` toggles the bit, scripts' bits, and
   `include` lines. Prefer a setting when the user may want the feature "paused but installed".
 
@@ -166,6 +170,9 @@ an answer uses `tw_needs_pty`, or skips the question under `TW_NOINTERACT` with 
   off; `no` = needs a terminal (must signal §2).
 - **tw-web is not in the registry,** on purpose: a GUI app, larger than the rest combined. It's the
   reference client for this document. `tw-taskutil` (`taskutil`) is how it joins the fleet's tooling.
+- **Wrapper keywords** (`wrapper.N.keyword` in `.meta`, `.tw_wrappers`) dispatch only before task's command
+  word and `--`, never after a tw flag (tw 2.11.0), so `tw add sync …` adds a task and a keyword may
+  equal its app's name (`events`).
 - **Install folders:** hooks `~/.task/hooks/`, commands `~/.task/scripts/` (on `PATH`), settings
   `~/.task/config/`, docs `~/.task/docs/<app>_README.md`.
 
