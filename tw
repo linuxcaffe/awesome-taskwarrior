@@ -11,6 +11,17 @@ A unified wrapper for Taskwarrior that provides:
 - Checksum verification
 - Dev mode indicator for local development
 
+Updates in v2.13.0 (the 2026-10-17 review's four minor findings):
+- Fixed: --timing captured task's stdout, so a confirmation prompt never showed while task
+  waited for the answer; stdout and stdin stay the terminal's, only stderr is parsed
+- Fixed: the filter PTY read once after task exited (a background child's later output was
+  lost) and could block forever on a child that held the terminal open; it now drains until
+  EIO, or until the terminal has been quiet 0.3 s after task exits
+- Fixed: tw --timing / tw --debug alone did nothing; they run the default report
+- Changed: tw -l and tw -i fetch the registry's .meta files in parallel (get_metas, 8 at a time,
+  cached for the run): tw -l 6.6 s -> 1.2 s here
+- Tests: tests/test_tw_review3.py (8)
+
 Updates in v2.12.0 (the rest of the 2026-10-17 review's notable findings):
 - Fixed: tw -R APP ran `bat`, which on Ubuntu can be Bacula's console (a Qt app); the viewer is
   batcat or a bat that says it's bat, else $PAGER, less, cat (_md_viewer)
@@ -153,7 +164,7 @@ import tempfile
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 
-VERSION = "2.12.0"
+VERSION = "2.13.0"
 
 # GitHub configuration
 GITHUB_REPO = "linuxcaffe/awesome-taskwarrior"
@@ -844,26 +855,32 @@ class WrapperManager:
         )
         os.close(slave_fd)
 
-        # Drain the PTY master into a buffer
+        # Drain the PTY master into a buffer. Read until every writer has closed the terminal
+        # (EIO), or, once task has exited, until it has been quiet for PTY_QUIET seconds: a child
+        # task left behind (a hook's background job) may still write a little, or may hold the
+        # terminal open and say nothing, which must not keep tw waiting.
+        import time as _time
+        PTY_QUIET = 0.3
         output = b''
+        quiet_since = None          # set once task has exited; reset by any later output
         while True:
-            ready, _, _ = _select.select([master_fd], [], [], 0.1)
+            ready, _, _ = _select.select([master_fd], [], [], 0.05)
             if ready:
                 try:
-                    chunk = os.read(master_fd, 4096)
-                    if not chunk:
-                        break
-                    output += chunk
+                    chunk = os.read(master_fd, 65536)
                 except OSError:
+                    break           # EIO: nobody has the terminal open any more
+                if not chunk:
                     break
+                output += chunk
+                if quiet_since is not None:
+                    quiet_since = _time.monotonic()
             elif task_proc.poll() is not None:
-                # Process exited -- drain any remaining bytes
-                try:
-                    chunk = os.read(master_fd, 4096)
-                    output += chunk
-                except OSError:
-                    pass
-                break
+                now = _time.monotonic()
+                if quiet_since is None:
+                    quiet_since = now
+                elif now - quiet_since >= PTY_QUIET:
+                    break
 
         os.close(master_fd)
         task_proc.wait()
@@ -945,7 +962,23 @@ class RegistryManager:
             print(f"[tw] [!] Failed to fetch registry from GitHub: {e}")
             return []
     
+    def get_metas(self, app_names, workers=8):
+        """{name: MetaFile} for the apps that have one, in the order given. Outside dev mode each
+        is an HTTPS fetch, so they run in parallel; get_meta caches them for this run."""
+        from concurrent.futures import ThreadPoolExecutor
+        names = list(app_names)
+        with ThreadPoolExecutor(max_workers=max(1, min(workers, len(names)))) as pool:
+            metas = list(pool.map(self.get_meta, names))
+        return {n: m for n, m in zip(names, metas) if m}
+
     def get_meta(self, app_name):
+        """Get MetaFile object for an app (cached for this run)"""
+        cache = self.__dict__.setdefault('_meta_cache', {})
+        if app_name not in cache:
+            cache[app_name] = self._get_meta(app_name)
+        return cache[app_name]
+
+    def _get_meta(self, app_name):
         """Get MetaFile object for an app"""
         if self.is_dev_mode:
             meta_path = self.paths.local_registry / f"{app_name}.meta"
@@ -1626,8 +1659,7 @@ class AppManager:
         
         # Build combined list with status
         all_apps = {}
-        for app in available:
-            meta = self.registry.get_meta(app)
+        for app, meta in self.registry.get_metas(available).items():
             if meta:
                 version = meta.data.get('version', '?')
                 tags = meta.get_tags()
@@ -1751,6 +1783,7 @@ class AppManager:
         all_apps = []
         apps = self.registry.list_apps()
         debug(f"Found {len(apps)} apps in registry", 2)
+        self.registry.get_metas(apps)       # fetch them all at once; the loops below hit the cache
         
         for app_name in apps:
             debug(f"Processing {app_name}", 3)
@@ -3089,9 +3122,10 @@ def run_with_timing(args):
 
     tw_start = time.perf_counter()
     try:
+        # stdout and stdin stay the terminal's, so task's confirmation prompts show and can be
+        # answered; only stderr (Hook:/Perf lines, [timing] reports) is captured.
         result = subprocess.run(
             cmd,
-            stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
             check=False,
@@ -3138,10 +3172,6 @@ def run_with_timing(args):
         re.compile(r'^\s+tag '),
         re.compile(r'^\s+task rc\.'),
     ]
-
-    # stdout is clean task output — print directly
-    if result.stdout:
-        print(result.stdout, end='')
 
     # Parse stderr: extract timing data, suppress debug noise, pass real messages
     for line in result.stderr.splitlines():
@@ -4378,9 +4408,11 @@ def main():
     if args.readme is not None:
         return readme_cmd(paths.docs_dir, args.readme)
 
-    # If no tw commands, pass through to task
-    if remaining or (not any(vars(args).values())):
-        task_args = remaining if remaining else sys.argv[1:]
+    # If no tw commands, pass through to task. --debug and --timing go in front of a task command,
+    # so alone they still run one (the default report): `tw --timing`.
+    prefix_only = not any(v for k, v in vars(args).items() if k not in ('debug', 'timing'))
+    if remaining or prefix_only:
+        task_args = remaining
         if args.timing:
             return run_with_timing(task_args)
         return pass_through_to_task(task_args, debug_wrapper=debug_wrapper)
