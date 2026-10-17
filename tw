@@ -11,6 +11,18 @@ A unified wrapper for Taskwarrior that provides:
 - Checksum verification
 - Dev mode indicator for local development
 
+Updates in v2.12.0 (the rest of the 2026-10-17 review's notable findings):
+- Fixed: tw -R APP ran `bat`, which on Ubuntu can be Bacula's console (a Qt app); the viewer is
+  batcat or a bat that says it's bat, else $PAGER, less, cat (_md_viewer)
+- Fixed: tw -l -hook, -l -python, -p -tag next: a dash word that isn't a tw flag is a tag or
+  task's own, not a cluster of short flags (_split_tw_args)
+- Fixed: tw -i APP +tag crashed outside dev mode (registry_dir is None); asks the registry
+- Fixed: cmx honours $TASKRC (so do installers' TASKRC and the include repair), keeps a
+  symlinked .taskrc a symlink, and drops earlier sets' context.cmx:<set>.* keys
+- Fixed: tw -s: an apostrophe no longer kills the shell; !! repeats the last shell command
+  (never a task line); :context reads context.<name>.read and leaves the saved context alone
+- Tests: tests/test_tw_review2.py (20)
+
 Updates in v2.11.0 (from the 2026-10-17 review):
 - Fixed: a wrapper keyword no longer shadows tw's own flags: `tw -I/-u/-r/-i events` manage the
   events app instead of running the `events` wrapper (prefix flags --debug/--timing still pass)
@@ -141,7 +153,7 @@ import tempfile
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 
-VERSION = "2.11.0"
+VERSION = "2.12.0"
 
 # GitHub configuration
 GITHUB_REPO = "linuxcaffe/awesome-taskwarrior"
@@ -291,7 +303,7 @@ class PathManager:
         self.config_dir = self.task_dir / "config"
         self.docs_dir = self.task_dir / "docs"
         self.logs_dir = self.task_dir / "logs"
-        self.taskrc = self.home / ".taskrc"
+        self.taskrc = Path(os.environ.get("TASKRC") or self.home / ".taskrc").expanduser()   # what task reads
         
         # Check if we're in a local repo (dev mode)
         self.tw_root = Path(__file__).parent.absolute()
@@ -342,11 +354,11 @@ class TaskRC:
                      'context.cmx.read': '( +work ) and ( +home )'})
     """
     
-    TASKRC_PATH = Path.home() / '.taskrc'
-    
     def __init__(self):
+        # The rc file task itself reads: $TASKRC, else ~/.taskrc
+        self.TASKRC_PATH = Path(os.environ.get('TASKRC') or Path.home() / '.taskrc').expanduser()
         self._data = {}          # key -> value, all files merged
-        self._primary_lines = [] # raw lines from ~/.taskrc only (for writing)
+        self._primary_lines = [] # raw lines from the primary file only (for writing)
         self._loaded = False
     
     def _load(self):
@@ -396,22 +408,28 @@ class TaskRC:
         self._load()
         return self._data.get(key, default)
     
-    def set_keys(self, updates: dict):
-        """Write multiple key=value pairs to ~/.taskrc in one pass.
+    def set_keys(self, updates: dict, drop=None):
+        """Write multiple key=value pairs to the primary rc file in one pass.
         
         - Existing keys are updated in-place (preserving line order/comments).
         - New keys are appended at the end.
         - Empty-string values blank the value but keep the line (key=).
+        - drop(key) → True removes that key's line (keys in updates are never dropped).
+        - A symlinked rc file stays a symlink: the file it points to is rewritten.
         """
         self._load()
         
         remaining = dict(updates)  # keys still to handle
         new_lines = []
+        dropped = []
         
         for line in self._primary_lines:
             stripped = line.strip()
             if stripped and not stripped.startswith('#') and '=' in stripped:
                 key = stripped.partition('=')[0].strip()
+                if drop and key not in updates and drop(key):
+                    dropped.append(key)
+                    continue
                 if key in remaining:
                     # Replace this line
                     new_lines.append(f"{key}={remaining.pop(key)}\n")
@@ -422,15 +440,22 @@ class TaskRC:
         for key, value in remaining.items():
             new_lines.append(f"{key}={value}\n")
         
-        # Write atomically via temp file
-        tmp = self.TASKRC_PATH.with_suffix('.taskrc.tmp')
+        # Write atomically via a temp file next to the real file (through a symlink, not over it)
+        target = self.TASKRC_PATH.resolve()
+        tmp = target.with_name(target.name + '.tw.tmp')
         try:
             with open(tmp, 'w') as f:
                 f.writelines(new_lines)
-            tmp.replace(self.TASKRC_PATH)
+            try:
+                shutil.copymode(target, tmp)
+            except OSError:
+                pass
+            tmp.replace(target)
             # Update in-memory state
             self._primary_lines = new_lines
             self._data.update(updates)
+            for key in dropped:
+                self._data.pop(key, None)
         except OSError as e:
             print(f"[tw] Error writing .taskrc: {e}", file=sys.stderr)
             tmp.unlink(missing_ok=True)
@@ -1921,16 +1946,18 @@ class TaskShell:
         subprocess.run(["task", "rc.context=none"] + args, check=False)
     
     def _get_context(self, name):
-        """Activate context and return its filter definition"""
-        # Activate the context
-        subprocess.run(["task", "context", name], check=False)
-        # Fetch its definition
-        p = subprocess.run(
-            ["task", "_get", f"rc.context.{name}"],
-            capture_output=True,
-            text=True,
-        )
-        return shlex.split(p.stdout.strip())
+        """A context's read filter as one parenthesised group, for the modifier stack; [] if it
+        isn't defined. Reads 2.6.2's context.<name>.read (else the older context.<name>) and
+        changes nothing: the shell runs with rc.context=none, so the stack is the context."""
+        for key in (f"rc.context.{name}.read", f"rc.context.{name}"):
+            p = subprocess.run(["task", "rc.hooks=off", "_get", key], capture_output=True, text=True)
+            text = (p.stdout or '').strip()
+            if text:
+                try:
+                    return ['('] + shlex.split(text) + [')']
+                except ValueError:
+                    return ['('] + text.split() + [')']
+        return []
     
     def _show_help(self, detailed=False):
         """Show shell help"""
@@ -2010,7 +2037,10 @@ Examples:
         elif cmd[0] == "context":
             if len(cmd) > 1:
                 context_filters = self._get_context(cmd[1])
-                self.prefix_stack.extend(context_filters)
+                if context_filters:
+                    self.prefix_stack.extend(context_filters)
+                else:
+                    print(f"Context '{cmd[1]}' isn't defined")
             else:
                 print("Usage: :context <n>")
         
@@ -2032,61 +2062,62 @@ Examples:
         
         return True
     
+    def _shell(self, cmd):
+        """Run a shell command (`!cmd`, `exec cmd`) and remember it for `!!`."""
+        self.last_shell_cmd = cmd
+        subprocess.run(cmd, shell=True, check=False)
+
+    def handle_line(self, line):
+        """One input line. Returns False when the shell should exit."""
+        line = line.strip()
+
+        # Empty input: run default report with current state (bare `task` if there's none)
+        if not line:
+            self._run_task(self.head + self.prefix_stack)
+            return True
+
+        # Shell commands: exec cmd, !cmd, and !! (the last of those again; never a task line)
+        if line.startswith('exec '):
+            if line[5:].strip():
+                self._shell(line[5:].strip())
+            return True
+        if line == '!!':
+            last = getattr(self, 'last_shell_cmd', None)
+            if last:
+                print(f"[tw-shell] Repeating: {last}")
+                self._shell(last)
+            else:
+                print("[tw-shell] No previous shell command to repeat")
+            return True
+        if line.startswith('!'):
+            if line[1:].strip():
+                self._shell(line[1:].strip())
+            return True
+
+        # Meta-commands
+        if line.startswith(":"):
+            try:
+                cmd = shlex.split(line[1:])
+            except ValueError as e:
+                print(f"[tw-shell] {e}: {line}")
+                return True
+            return self._handle_meta_command(cmd)
+
+        # A task command: HEAD + PREFIX_STACK, then the line. Quotes group words as in a shell; a
+        # line they can't parse (an apostrophe: "don't forget milk") is split on spaces instead.
+        try:
+            words = shlex.split(line)
+        except ValueError:
+            words = line.split()
+        self._run_task(self.head + self.prefix_stack + words)
+        return True
+
     def run(self):
         """Run the interactive shell"""
         try:
             while True:
-                line = input(self._format_prompt()).strip()
-                
-                # Empty input: run default report with current state
-                if not line:
-                    args = self.head + self.prefix_stack
-                    if args:  # Only run if we have some state
-                        self._run_task(args)
-                    else:  # Completely empty - run bare 'task'
-                        self._run_task([])
-                    continue
-                
-                # Handle shell command execution (exec or !)
-                if line.startswith('exec '):
-                    shell_cmd = line[5:].strip()
-                    if shell_cmd:
-                        subprocess.run(shell_cmd, shell=True, check=False)
-                    continue
-                
-                if line.startswith('!'):
-                    if len(line) > 1 and line[1] == '!':
-                        # !! - repeat last command (from history)
-                        history_len = readline.get_current_history_length()
-                        if history_len > 1:
-                            # Get the command before the current one
-                            last_cmd = readline.get_history_item(history_len - 1)
-                            if last_cmd and not last_cmd.startswith('!'):
-                                print(f"[tw-shell] Repeating: {last_cmd}")
-                                subprocess.run(last_cmd, shell=True, check=False)
-                            else:
-                                print("[tw-shell] No previous command to repeat")
-                        else:
-                            print("[tw-shell] No command history")
-                    else:
-                        # Single ! - execute shell command
-                        shell_cmd = line[1:].strip()
-                        if shell_cmd:
-                            subprocess.run(shell_cmd, shell=True, check=False)
-                    continue
-                
-                # Handle meta-commands
-                if line.startswith(":"):
-                    cmd = shlex.split(line[1:])
-                    if not self._handle_meta_command(cmd):
-                        break  # Exit shell
-                    continue
-                
-                # Build and execute task command
-                # HEAD + PREFIX_STACK are always prepended to user input
-                args = self.head + self.prefix_stack + shlex.split(line)
-                self._run_task(args)
-        
+                if not self.handle_line(input(self._format_prompt())):
+                    break
         except (EOFError, KeyboardInterrupt):
             print()
         finally:
@@ -2321,6 +2352,38 @@ def get_installed_extensions(paths):
         pass
     
     return extensions
+
+def _app_matches(registry, app_name, tag_filter):
+    """Does the app's registry entry match the tag filter? None when there's no entry. Asks the
+    registry (local in dev mode, GitHub otherwise): registry_dir is None outside dev mode."""
+    meta = registry.get_meta(app_name)
+    if not meta:
+        return None
+    return tag_filter.matches(meta.get_tags())
+
+
+def _split_tw_args(argv):
+    """(argparse's args, the rest). argparse sees only tw's own leading flags (and the argument a
+    flag takes); from the first word that isn't one of them, everything passes through. A dash
+    word that isn't a tw flag (`-hook` in `tw -l -hook`, `-tag` in `tw -p -tag next`) is an
+    excluded tag or task's own, never a cluster of short flags."""
+    flags_with_args = ['-I', '-r', '-u', '-i', '-R', '-A', '--install', '--remove',
+                       '--update', '--info', '--readme', '--attach', '--verify', '--generate-completion',
+                       '--install-completion']
+    parser_args, rest = [], []
+    expect_flag_arg = False
+    for i, arg in enumerate(argv):
+        if expect_flag_arg:
+            parser_args.append(arg)
+            expect_flag_arg = False
+        elif _is_tw_flag(arg) or arg.split('=')[0] == '--gen':
+            parser_args.append(arg)
+            expect_flag_arg = arg.split('=')[0] in flags_with_args and '=' not in arg
+        else:
+            rest = list(argv[i:])
+            break
+    return parser_args, rest
+
 
 def validate_first_arg_flag(args):
     """
@@ -2589,7 +2652,7 @@ def set_cmx_context(contexts_str, silent=False):
                 'cmx.contexts':      '',
                 'context.cmx.read':  '',
                 'context.cmx.write': '',
-            })
+            }, drop=_is_cmx_set_key)
             if not silent:
                 print("Cleared all contexts")
             return 0
@@ -2624,7 +2687,7 @@ def set_cmx_context(contexts_str, silent=False):
             updates[f'context.{context_name}.write'] = combined_write
             updates['context.cmx.write'] = combined_write
 
-        rc.set_keys(updates)
+        rc.set_keys(updates, drop=_is_cmx_set_key)   # earlier sets' context.cmx:<set>.* go
 
         if not silent:
             print(f"Activated contexts: {contexts_str}")
@@ -2640,13 +2703,18 @@ def get_active_context():
     """Get the currently active context name — reads .taskrc directly."""
     return TaskRC().get('context')
 
+def _is_cmx_set_key(key):
+    """context.cmx:<set>.read/.write: one per set ever activated, unless dropped."""
+    return key.startswith('context.cmx:')
+
+
 def clear_cmx_keys():
     """Clear all cmx-related keys — direct .taskrc write, no subprocesses."""
     TaskRC().set_keys({
         'cmx.contexts':      '',
         'context.cmx.read':  '',
         'context.cmx.write': '',
-    })
+    }, drop=_is_cmx_set_key)
 
 def demote_to_regular_context(context_name):
     """Demote from cmx back to a single regular context — one .taskrc write."""
@@ -2655,7 +2723,7 @@ def demote_to_regular_context(context_name):
         'cmx.contexts':      '',
         'context.cmx.read':  '',
         'context.cmx.write': '',
-    })
+    }, drop=_is_cmx_set_key)
     print(f"Context: {context_name}")
 
 def add_context_to_cmx(context_name):
@@ -3730,16 +3798,25 @@ def readme_cmd(docs_dir, query):
     if len(matches) > 1:
         print(f"[tw] Multiple matches — opening first: {target.name}")
 
-    # Choose viewer: bat (with markdown) > PAGER > less > cat
-    import shutil as _shutil
-    if _shutil.which('bat'):
-        os.execvp('bat', ['bat', '--style=plain', '--language=md', str(target)])
-    else:
-        pager = os.environ.get('PAGER', 'less')
-        if _shutil.which(pager):
-            os.execvp(pager, [pager, str(target)])
-        else:
-            os.execvp('cat', ['cat', str(target)])
+    viewer = _md_viewer()
+    os.execvp(viewer[0], viewer + [str(target)])
+
+
+def _md_viewer():
+    """argv for showing a markdown file: bat (Debian/Ubuntu name it batcat) > $PAGER > less > cat.
+    A `bat` must say it's bat: on Ubuntu it can be Bacula's console, which opens a Qt app."""
+    for name in ('batcat', 'bat'):
+        if shutil.which(name):
+            try:
+                out = subprocess.run([name, '--version'], capture_output=True, text=True, timeout=5).stdout
+            except (OSError, subprocess.TimeoutExpired):
+                continue
+            if out.startswith('bat '):
+                return [name, '--style=plain', '--language=md']
+    for pager in (os.environ.get('PAGER'), 'less'):
+        if pager and shutil.which(pager.split()[0]):
+            return pager.split()
+    return ['cat']
 
 
 def main():
@@ -3900,38 +3977,8 @@ def main():
     if debug_wrapper:
         print(f"[tw-debug] First arg is valid tw flag, processing with argparse", file=sys.stderr)
     
-    # CRITICAL: Only let argparse see consecutive flags from the start
-    # Once we hit a non-flag argument, everything after should pass through
-    # Special handling: flags that take arguments need their arg included
-    flags_with_args = ['-I', '-r', '-u', '-i', '-R', '-A', '--install', '--remove',
-                      '--update', '--info', '--readme', '--attach', '--verify', '--generate-completion', '--install-completion']
-    
-    args_for_parser = []
-    remaining_args = []
-    found_non_flag = False
-    expect_flag_arg = False  # True if previous flag expects an argument
-    
-    for arg in sys.argv[1:]:
-        if found_non_flag:
-            # Already found a non-flag, rest goes to remaining
-            remaining_args.append(arg)
-        elif expect_flag_arg:
-            # This is the argument for the previous flag
-            args_for_parser.append(arg)
-            expect_flag_arg = False
-        elif arg.startswith('-'):
-            # This is a flag-like argument
-            args_for_parser.append(arg)
-            # Check if this flag expects an argument
-            flag_base = arg.split('=')[0]  # Handle --flag=value
-            if flag_base in flags_with_args and '=' not in arg:
-                # Flag expects separate argument
-                expect_flag_arg = True
-        else:
-            # First non-flag argument (and not expected by a flag)
-            found_non_flag = True
-            remaining_args.append(arg)
-    
+    args_for_parser, remaining_args = _split_tw_args(sys.argv[1:])
+
     if debug_wrapper:
         print(f"[tw-debug] args_for_parser = {args_for_parser}", file=sys.stderr)
         print(f"[tw-debug] remaining_args = {remaining_args}", file=sys.stderr)
@@ -4306,28 +4353,16 @@ def main():
         
         if args.info:
             # Single app specified directly: --info myapp
-            if tag_filter:
-                # Check if this app matches the filter
-                meta_path = paths.registry_dir / f"{args.info}.meta"
-                if meta_path.exists():
-                    meta = MetaFile(meta_path)
-                    tags = meta.get_tags()
-                    if not tag_filter.matches(tags):
-                        print(f"[tw] Application '{args.info}' does not match filter: {tag_filter}")
-                        return 1
+            if tag_filter and _app_matches(app_manager.registry, args.info, tag_filter) is False:
+                print(f"[tw] Application '{args.info}' does not match filter: {tag_filter}")
+                return 1
             return 0 if app_manager.show_info(args.info) else 1
         
         elif app_names:
             # Multiple apps from remaining args: --info app1 app2
             for app_name in app_names:
-                if tag_filter:
-                    # Check if this app matches the filter
-                    meta_path = paths.registry_dir / f"{app_name}.meta"
-                    if meta_path.exists():
-                        meta = MetaFile(meta_path)
-                        tags = meta.get_tags()
-                        if not tag_filter.matches(tags):
-                            continue  # Skip apps that don't match
+                if tag_filter and _app_matches(app_manager.registry, app_name, tag_filter) is False:
+                    continue  # Skip apps that don't match
                 app_manager.show_info(app_name)
                 print()  # Blank line between apps
             return 0
