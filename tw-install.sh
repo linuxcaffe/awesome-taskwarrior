@@ -34,7 +34,7 @@ mkdir -p ~/.task/config
 
 # Download tw.py
 echo "Downloading tw.py..."
-if curl -fsSL "${RAW_BASE}/tw.py" -o ~/.task/scripts/tw; then
+if curl -fsSL "${RAW_BASE}/tw" -o ~/.task/scripts/tw; then
     chmod +x ~/.task/scripts/tw
     echo "✓ Installed: ~/.task/scripts/tw"
 else

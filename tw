@@ -11,6 +11,20 @@ A unified wrapper for Taskwarrior that provides:
 - Checksum verification
 - Dev mode indicator for local development
 
+Updates in v2.11.0 (from the 2026-10-17 review):
+- Fixed: a wrapper keyword no longer shadows tw's own flags: `tw -I/-u/-r/-i events` manage the
+  events app instead of running the `events` wrapper (prefix flags --debug/--timing still pass)
+- Fixed: a wrapper keyword counts only before task's command word (abbreviations too) and `--`:
+  `tw add sync phone contacts` adds a task instead of running a git sync
+- Fixed: filter wrappers (nicedates) see only reports, decided from the taskrc's report.*,
+  alias.* and default.command (_task_vocab, one `task _show`); writes, information and
+  ambiguous commands run plainly, so `tw 5 del` no longer hangs on an unseen prompt and
+  `tw 5 mod due:…` is parsed in the user's own dateformat
+- Fixed: tw -u stops when the old version's remove fails (files put back, nothing installed on
+  top); a failed install's restore leaves exactly the old manifest lines, no duplicates
+- Fixed: tw-install.sh fetched tw.py (404); the file is tw
+- Tests: tests/test_tw_review.py (55)
+
 Updates in v2.10.2:
 - Added: tw -r comments out any `include` left pointing at a missing file (repair_dangling_includes),
   so a remove can never leave `task` unable to start ("Could not read include file")
@@ -127,7 +141,7 @@ import tempfile
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 
-VERSION = "2.10.2"
+VERSION = "2.11.0"
 
 # GitHub configuration
 GITHUB_REPO = "linuxcaffe/awesome-taskwarrior"
@@ -423,6 +437,43 @@ class TaskRC:
             raise
 
 
+# tw's own flags. A wrapper keyword never dispatches after one of these, except the prefix
+# flags, which go in front of an ordinary command (`tw --timing 42 ann`).
+TW_SHORT_FLAGS = ['-I', '-r', '-R', '-u', '-l', '-i', '-v', '-h', '-s', '-p', '-A', '-g', '-t']
+TW_LONG_FLAGS = ['--install', '--remove', '--readme', '--update', '--list', '--info',
+                 '--verify', '--tags', '--dry-run', '--debug', '--timing',
+                 '--version', '--help', '--shell', '--pager', '--attach', '--generate-completion', '--install-completion']
+TW_PREFIX_FLAGS = ('--debug', '--timing')
+
+
+def _is_tw_flag(arg):
+    return arg in TW_SHORT_FLAGS or arg.split('=')[0] in TW_LONG_FLAGS
+
+
+# Taskwarrior 2.6.2's commands (`task _commands`; 2.6.2 is fixed, so the list is too).
+TASK_COMMANDS = frozenset("""
+    _aliases _columns _commands _config _context _get _ids _projects _show _tags _udas _unique
+    _urgency _uuids _version _zshattributes _zshcommands _zshids _zshuuids
+    active add all annotate append blocked blocking burndown.daily burndown.monthly
+    burndown.weekly calc calendar colors columns commands completed config context count delete
+    denotate diagnostics done duplicate edit execute export ghistory.annual ghistory.daily
+    ghistory.monthly ghistory.weekly help history.annual history.daily history.monthly
+    history.weekly ids import information list log logo long ls minimal modify newest news next
+    oldest overdue prepend projects purge ready recurring reports show start stats stop summary
+    synchronize tags timesheet udas unblocked undo uuids version waiting
+""".split())
+
+
+def _is_task_command(arg, minimum=2):
+    """True when task would read arg as a command: a 2.6.2 command or an abbreviation of one
+    (abbreviation.minimum, default 2), ambiguous or not."""
+    if arg in TASK_COMMANDS:
+        return True
+    if len(arg) < minimum or not re.fullmatch(r'[a-z_][a-z0-9._]*', arg):
+        return False
+    return any(c.startswith(arg) for c in TASK_COMMANDS)
+
+
 class WrapperManager:
     """Manages wrapper dispatch for tw.
 
@@ -510,11 +561,20 @@ class WrapperManager:
         
         Also detects keyword embedded in an arg:
             tw 42 ann.1      → 'ann' found inside 'ann.1'
+
+        A keyword counts only where task would look for its command: before `--` and before
+        the first task command word (abbreviations included), so task text is never one
+        (`tw add sync phone` adds a task). tw's own flags first mean no wrapper at all
+        (`tw -u events` updates the events app), except the prefix flags --debug/--timing.
         """
         if not self.wrappers:
             return None, None, None
-        
+        if args and _is_tw_flag(args[0]) and not args[0].split('=')[0] in TW_PREFIX_FLAGS:
+            return None, None, None
+
         for i, arg in enumerate(args):
+            if arg == '--':
+                break
             # Check each registered keyword
             for keyword in self.wrappers:
                 # Skip non-command wrappers — they are not keyword dispatchers
@@ -536,7 +596,9 @@ class WrapperManager:
                 if arg.startswith('-' + keyword + '.'):
                     filter_args = args[:i]
                     return keyword, filter_args, [arg]
-        
+            if _is_task_command(arg):
+                break       # task's command: what follows is its text, not a wrapper
+
         return None, None, None
     
     def dispatch(self, keyword, filter_args, action_args, debug_wrapper=False):
@@ -1358,9 +1420,16 @@ class AppManager:
         # Also backup manifest entries for this app
         backup_manifest = [e.copy() for e in self.manifest.entries if e['app'] == app_name]
         
-        # Step 3: Remove old version via installer
+        # Step 3: Remove old version via installer. If that fails, stop: installing on top of a
+        # half-removed version leaves two versions' files and manifest lines.
         print(f"[tw] Removing v{old_version}...")
-        self.remove(app_name)
+        if not self.remove(app_name):
+            print(f"[tw] [X] Removing v{old_version} failed; v{new_version} not installed")
+            self._restore_files(backup_dir, backup_manifest)
+            shutil.rmtree(stage_dir, ignore_errors=True)
+            shutil.rmtree(backup_dir, ignore_errors=True)
+            print(f"[tw] Put back v{old_version}'s files; its manifest entries were never removed")
+            return False
         
         # Step 4: Install new version via real .install script
         print(f"[tw] Installing v{new_version}...")
@@ -1477,6 +1546,19 @@ class AppManager:
 
         return stage_dir
     
+    def _restore_files(self, backup_dir, backup_manifest):
+        """Copy backed-up files back to their places (the manifest's paths)."""
+        for entry in backup_manifest:
+            original_path = Path(entry['file'])
+            backup_file = backup_dir / original_path.name
+            if backup_file.exists():
+                original_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(backup_file, original_path)
+                # Restore executable bit if it was executable
+                if original_path.suffix in ('.py', '.sh', '') and original_path.name.startswith('on-'):
+                    original_path.chmod(original_path.stat().st_mode | 0o755)
+                debug(f"Restored: {backup_file} -> {original_path}", 2)
+
     def _restore_backup(self, app_name, backup_dir, backup_manifest):
         """Restore files from backup after a failed update.
         
@@ -1486,23 +1568,13 @@ class AppManager:
         Returns True on success, False on failure.
         """
         try:
-            # Restore files to their original locations using manifest paths
-            for entry in backup_manifest:
-                original_path = Path(entry['file'])
-                backup_file = backup_dir / original_path.name
-                
-                if backup_file.exists():
-                    # Ensure target directory exists
-                    original_path.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(backup_file, original_path)
-                    
-                    # Restore executable bit if it was executable
-                    if original_path.suffix in ('.py', '.sh', '') and original_path.name.startswith('on-'):
-                        original_path.chmod(original_path.stat().st_mode | 0o755)
-                    
-                    debug(f"Restored: {backup_file} -> {original_path}", 2)
-            
-            # Restore manifest entries
+            self._restore_files(backup_dir, backup_manifest)
+
+            # Restore manifest entries: exactly the backup's for this app. Re-read the file first,
+            # since the installers append to it directly; drop whatever the app has there now (a
+            # failed install's lines, or a remove that left them) so nothing is listed twice.
+            self.manifest = Manifest(self.paths.manifest_file)
+            self.manifest.entries = [e for e in self.manifest.entries if e['app'] != app_name]
             for entry in backup_manifest:
                 self.manifest.entries.append(entry)
             self.manifest._save()
@@ -2268,11 +2340,8 @@ def validate_first_arg_flag(args):
     if not first_arg.startswith('-'):
         return (False, None)
     
-    # Known tw flags
-    known_short = ['-I', '-r', '-R', '-u', '-l', '-i', '-v', '-h', '-s', '-p', '-A', '-g', '-t']
-    known_long = ['--install', '--remove', '--readme', '--update', '--list', '--info',
-                  '--verify', '--tags', '--dry-run', '--debug', '--timing',
-                  '--version', '--help', '--shell', '--pager', '--attach', '--generate-completion', '--install-completion']
+    known_short = TW_SHORT_FLAGS
+    known_long = TW_LONG_FLAGS
     
     # Check if it's a known flag (exact match)
     if first_arg in known_short or first_arg in known_long:
@@ -2807,9 +2876,8 @@ def run_with_pager(task_args):
         # Fall back to normal execution
         return pass_through_to_task(task_args)
 
-# Task commands that modify state or produce non-report output.
-# Filter wrappers (e.g. nicedates) are skipped for these — they only
-# make sense for report commands that produce tabular date output.
+# Task commands that modify state or produce non-report output: _find_report_name skips them.
+# (Whether filter wrappers run is decided by _args_have_report, which knows the reports.)
 _TASK_NONREPORT_COMMANDS = {
     'add', 'modify', 'done', 'delete', 'rm', 'denotate', 'annotate',
     'append', 'prepend', 'duplicate', 'start', 'stop', 'import', 'export',
@@ -2844,31 +2912,84 @@ def _find_report_name(args):
     return candidates[-1] if candidates else None
 
 
-def _args_have_report(args):
-    """Return True if args look like a report invocation.
+def _task_vocab():
+    """What _args_have_report needs from the taskrc: report names, aliases, abbreviation.minimum and
+    default.command, from one read-only `task _show` (about 20 ms). None when task can't run."""
+    try:
+        r = subprocess.run(['task', 'rc.hooks=off', 'rc.verbose=nothing', '_show'],
+                           capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if r.returncode != 0:
+        return None
+    vocab = {'reports': set(), 'aliases': {}, 'abbreviation': 2, 'default': 'next'}
+    for line in r.stdout.splitlines():
+        key, _, value = line.partition('=')
+        m = re.fullmatch(r'report\.(.+)\.columns', key)
+        if m:
+            vocab['reports'].add(m.group(1))
+        elif key.startswith('alias.'):
+            vocab['aliases'][key[len('alias.'):]] = value
+        elif key == 'abbreviation.minimum':
+            try:
+                vocab['abbreviation'] = int(value)
+            except ValueError:
+                pass
+        elif key == 'default.command':
+            vocab['default'] = value
+    return vocab
 
-    Skips rc.* overrides, tags (+/-), attribute:value pairs, numbers,
-    and known non-report task commands. If any bare lowercase word remains
-    that is NOT a known task command, we assume it could be a report name
-    and allow filter wrappers to run.
-    """
+
+_ID_RE = re.compile(r'[0-9][0-9,\-]*|[0-9a-f]{8}(-[0-9a-f]{1,12})*')
+
+
+def _command_kind(args, vocab, depth=0):
+    """'report' or 'other' for the command task would run for args, None when there is none
+    (task then runs default.command). Follows aliases; IDs alone mean `information`."""
+    names = TASK_COMMANDS | vocab['reports'] | set(vocab['aliases'])
+    ids = False
     for arg in args:
-        if arg.startswith('rc.') or arg.startswith('rc:'):
+        if arg == '--':
+            break                                   # the rest is text
+        if arg.startswith(('rc.', 'rc:', '+', '-')) or ':' in arg:
+            continue                                # overrides, tags, attributes
+        if _ID_RE.fullmatch(arg):
+            ids = True
             continue
-        if arg.startswith('+') or arg.startswith('-'):
+        if not re.fullmatch(r'[a-z_][a-z0-9._]*', arg):
             continue
-        if ':' in arg:
-            continue
-        if arg.isdigit():
-            continue
-        if arg.startswith('--') or (arg.startswith('-') and len(arg) == 2):
-            continue
-        if not re.match(r'^[a-z][a-z0-9._]*$', arg):
-            continue
-        if arg in _TASK_NONREPORT_COMMANDS:
-            return False  # definitely a command, not a report
-        return True  # bare word not in command list — likely a report
-    return True  # no bare word found — default report (e.g. bare 'tw' or 'tw +filter')
+        if arg in names:
+            name = arg
+        else:
+            matches = [n for n in names if n.startswith(arg)] if len(arg) >= vocab['abbreviation'] else []
+            if len(matches) > 1:
+                return 'other'                      # ambiguous: task refuses it, never a report
+            if not matches:
+                continue                            # a filter word
+            name = matches[0]
+        if name in vocab['aliases'] and depth < 5:
+            try:
+                return _command_kind(shlex.split(vocab['aliases'][name]), vocab, depth + 1)
+            except ValueError:
+                return 'other'
+        return 'report' if name in vocab['reports'] else 'other'
+    return 'other' if ids else None
+
+
+def _args_have_report(args, vocab):
+    """True when task would run a report for args: the only case where filter wrappers (which
+    reformat a report's dates) should see the output. Anything else (a write, information,
+    an unknown or ambiguous command) runs plainly, so its prompts reach the terminal and its
+    dates are parsed in the user's own dateformat. With no vocab (task can't run): False."""
+    if not vocab:
+        return False
+    kind = _command_kind(args, vocab)
+    if kind is None:
+        try:
+            kind = _command_kind(shlex.split(vocab['default']), vocab)
+        except ValueError:
+            kind = None
+    return kind == 'report'
 
 
 def run_with_timing(args):
@@ -3048,7 +3169,7 @@ def pass_through_to_task(args, debug_wrapper=False):
 
     try:
         # Filter wrappers: report-only, pipe task output through registered scripts.
-        if wrapper_mgr.get_filters() and _args_have_report(args):
+        if wrapper_mgr.get_filters() and _args_have_report(args, _task_vocab()):
             rc = wrapper_mgr.run_through_filters(args, debug_wrapper=debug_wrapper)
             if rc is not None:
                 return rc
