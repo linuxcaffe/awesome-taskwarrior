@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 tw - awesome-taskwarrior package manager and wrapper
-Version: 2.16.0
+Version: 2.16.1
 
 A unified wrapper for Taskwarrior that provides:
 - Transparent pass-through to task command
@@ -10,6 +10,14 @@ A unified wrapper for Taskwarrior that provides:
 - Per-file manifest tracking
 - Checksum verification
 - Dev mode indicator for local development
+
+Updates in v2.16.1:
+- Changed: tw --verify reports a changed config as "[~] name (modified)", not a failure (apps and
+  you edit configs, per CONVENTIONS); a changed hook or script still fails. It says when the
+  installed version isn't the registry's, whose checksums it compares against
+- Fixed: help topics lost indentation in 2.14.0 (the shell examples, install/verify continuation
+  lines) when they moved to HELP_TOPICS
+- Tests: tests/test_tw_registry.py (+3)
 
 Updates in v2.16.0 (step 4 of the 2026-10-18 consolidation plan):
 - Added: registry.d/index.json (make-awesome.py writes it; --index regenerates) gives tw every
@@ -217,7 +225,7 @@ import tempfile
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 
-VERSION = "2.16.0"
+VERSION = "2.16.1"
 
 # GitHub configuration
 GITHUB_REPO = "linuxcaffe/awesome-taskwarrior"
@@ -1878,7 +1886,11 @@ class AppManager:
             return True
         
         print(f"[tw] Verifying {app_name}...")
+        installed, current = self.manifest.get_version(app_name), meta.get('version')
+        if current and installed != current:
+            print(f"[tw] [i] v{installed} is installed; these checksums are v{current}'s (tw -u {app_name})")
         all_valid = True
+        modified = 0
         # Where the installer put each file, as it recorded it; the file type is only a guess
         recorded = {Path(f).name: Path(f) for f in self.manifest.get_files(app_name)}
         
@@ -1908,12 +1920,17 @@ class AppManager:
             
             if actual_checksum == expected_checksum:
                 print(f"[tw] [ok] {filename}")
+            elif file_type == 'config':
+                # Configs are yours and the app's to change (CONVENTIONS: apps write settings)
+                print(f"[tw] [~] {filename} (modified)")
+                modified += 1
             else:
                 print(f"[tw] [!] {filename} (checksum mismatch)")
                 all_valid = False
         
         if all_valid:
-            print(f"[tw] [ok] All files verified")
+            note = f" ({modified} config file{'s' if modified != 1 else ''} modified)" if modified else ""
+            print(f"[tw] [ok] All files verified{note}")
         else:
             print(f"[tw] [!] Verification failed")
         
@@ -2192,26 +2209,26 @@ Shell Execution:
   !!                 Repeat last shell command
   
   Examples:
-tw> exec ls -la
-tw> !grep "bug" notes.txt
-tw> !!
+    tw> exec ls -la
+    tw> !grep "bug" notes.txt
+    tw> !!
 
 How it Works:
   Every command you type is prepended with HEAD + PREFIX_STACK
   
   Example session:
-tw> :push +work proj:meetings
-tw +work proj:meetings> :head add
-tw add +work proj:meetings> Schedule standup for Friday
-# Executes: task add +work proj:meetings Schedule standup for Friday
-
-tw add +work proj:meetings> :head
-tw +work proj:meetings> list
-# Executes: task +work proj:meetings list
-
-tw +work proj:meetings> :pop
-tw +work> 5 modify +urgent
-# Executes: task +work 5 modify +urgent
+    tw> :push +work proj:meetings
+    tw +work proj:meetings> :head add
+    tw add +work proj:meetings> Schedule standup for Friday
+    # Executes: task add +work proj:meetings Schedule standup for Friday
+    
+    tw add +work proj:meetings> :head
+    tw +work proj:meetings> list
+    # Executes: task +work proj:meetings list
+    
+    tw +work proj:meetings> :pop
+    tw +work> 5 modify +urgent
+    # Executes: task +work 5 modify +urgent
 
 Templates:
   Built-in templates provide quick modifier sets:
@@ -2237,9 +2254,9 @@ Usage:
 How it Works:
   1. Reads metadata from registry.d/<app>.meta
   2. Outside dev mode, downloads the files from its base_url and checks
- their checksums
+     their checksums
   3. Runs installers/<app>.install, which places the files, adds any
- include to .taskrc, and records each file in ~/.task/config/.tw_manifest
+     include to .taskrc, and records each file in ~/.task/config/.tw_manifest
 
 File Placement:
   - hook files  -> ~/.task/hooks/
@@ -2285,9 +2302,10 @@ Usage:
 How it Works:
   1. Reads expected checksums from registry.d/<app>.meta
   2. Calculates SHA256 checksums of the installed files, found where the
- manifest says the installer put them (docs are skipped)
-  3. Compares expected vs actual
-  4. Reports any mismatches
+     manifest says the installer put them (docs are skipped)
+  3. Compares expected vs actual: a changed hook or script fails;
+     a changed config is reported as modified (apps and you edit configs)
+  4. Says so when the installed version isn't the registry's
 
 Use Cases:
   - Verify installation integrity

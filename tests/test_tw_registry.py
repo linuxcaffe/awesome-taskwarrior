@@ -238,3 +238,38 @@ def test_backup_keeps_same_named_files_apart(home):
     am._restore_files(backup, entries)
     assert one.read_text() == 'docs readme' and two.read_text() == 'config readme'
     assert hook.stat().st_mode & 0o111                 # mode kept by copy2
+
+
+# ── verify: configs are reported modified; a version gap is said ─────────────
+
+def test_verify_reports_modified_configs(home, capsys):
+    hook = home / '.task' / 'hooks' / 'on-add_v.py'
+    rc = home / '.task' / 'config' / 'v.rc'
+    for p, body in ((hook, b'hook'), (rc, b'edited by the app')):
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(body)
+    meta = tw.MetaFile.from_text('version=1.0\nfiles=on-add_v.py:hook,v.rc:config\nchecksums='
+                                 f"{hashlib.sha256(b'hook').hexdigest()},{hashlib.sha256(b'shipped').hexdigest()}\n")
+    am = tw.AppManager(tw.PathManager())
+    am.registry.get_meta = lambda name: meta
+    for p in (hook, rc):
+        am.manifest.add('v', '1.0', str(p))
+    assert am.verify('v') is True
+    out = capsys.readouterr().out
+    assert '[~] v.rc (modified)' in out and '(1 config file modified)' in out
+    hook.write_bytes(b'tampered')
+    assert am.verify('v') is False                      # a hook must still match
+    assert 'on-add_v.py (checksum mismatch)' in capsys.readouterr().out
+
+
+def test_verify_says_when_versions_differ(home, capsys):
+    am = tw.AppManager(tw.PathManager())
+    am.manifest.add('v', '1.0', str(home / 'x'))
+    am.registry.get_meta = lambda name: tw.MetaFile.from_text('version=1.1\nfiles=x:script\nchecksums=abc\n')
+    am.verify('v')
+    assert "v1.0 is installed; these checksums are v1.1's" in capsys.readouterr().out
+
+
+def test_help_topics_keep_their_indentation():
+    assert '\n    tw> exec ls -la\n' in tw.HELP_TOPICS['shell']
+    assert '\n     manifest says the installer put them' in tw.HELP_TOPICS['verify']
