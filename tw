@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 tw - awesome-taskwarrior package manager and wrapper
-Version: 2.15.0
+Version: 2.16.0
 
 A unified wrapper for Taskwarrior that provides:
 - Transparent pass-through to task command
@@ -10,6 +10,19 @@ A unified wrapper for Taskwarrior that provides:
 - Per-file manifest tracking
 - Checksum verification
 - Dev mode indicator for local development
+
+Updates in v2.16.0 (step 4 of the 2026-10-18 consolidation plan):
+- Added: registry.d/index.json (make-awesome.py writes it; --index regenerates) gives tw every
+  .meta in one request; without it tw falls back to the GitHub API listing + one fetch per .meta
+- Changed: one _fetch() (urllib) for every download: index, metas, installers, staged files
+  (curl subprocesses and urllib->tempfile copies gone); MetaFile.from_text parses index entries
+- Changed: install/remove share one installer environment (_installer_env, _run_installer); a
+  downloaded or own-staged installer is always cleaned up (try/finally); dry run shows meta dests
+- Fixed: tw -u backed up files by name only, so two files with one name (two README.md) shared a
+  backup; backups keep the whole path. The on-* chmod guess went (copy2 keeps modes)
+- Changed: the manifest is the one record of what's installed (Manifest.apps; tw -v, tw -l);
+  tw --tags fetches metas in parallel
+- Tests: tests/test_tw_registry.py (15)
 
 Updates in v2.15.0 (step 3 of the 2026-10-18 consolidation plan):
 - Changed: context multiplexing is one class, Cmx, around one TaskRC (activate, use, add, remove,
@@ -204,7 +217,7 @@ import tempfile
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 
-VERSION = "2.15.0"
+VERSION = "2.16.0"
 
 # GitHub configuration
 GITHUB_REPO = "linuxcaffe/awesome-taskwarrior"
@@ -1023,50 +1036,65 @@ class WrapperManager:
 
 
 
+def _fetch(url, timeout=30, headers=None):
+    """The bytes at url, or None (said at debug level 1). Every download tw makes goes here."""
+    try:
+        req = Request(url, headers=headers or {})
+        with urlopen(req, timeout=timeout) as response:
+            return response.read()
+    except (URLError, HTTPError, OSError, ValueError) as e:
+        debug(f"Fetch failed: {url}: {e}", 1)
+        return None
+
+
 class RegistryManager:
-    """Manages registry access - local files or GitHub API"""
+    """The registry: registry.d/ beside tw in dev mode, else GitHub.
+
+    From GitHub, tw first reads registry.d/index.json (every app's .meta text, written by
+    make-awesome.py) in one request; without it, it lists registry.d through the GitHub API and
+    fetches each .meta. Metas are cached for the run."""
     
+    INDEX_URL = f"{GITHUB_RAW_BASE}/registry.d/index.json"
+
     def __init__(self, paths):
         self.paths = paths
         self.is_dev_mode = paths.is_dev_mode
+        self._meta_cache = {}
+        self._index = None          # {name: .meta text}, {} once it has failed
     
+    def _remote_index(self):
+        if self._index is None:
+            self._index = {}
+            data = _fetch(self.INDEX_URL)
+            try:
+                metas = json.loads(data)['metas'] if data else {}
+                if isinstance(metas, dict):
+                    self._index = metas
+            except (ValueError, KeyError, TypeError) as e:
+                debug(f"Registry index unreadable: {e}", 1)
+            debug(f"Registry index: {len(self._index)} app(s)", 2)
+        return self._index
+
     def list_apps(self):
-        """List all available applications from registry"""
+        """All application names in the registry, sorted"""
         if self.is_dev_mode:
-            return self._list_local_apps()
-        else:
-            return self._list_github_apps()
-    
-    def _list_local_apps(self):
-        """List apps from local registry.d/ directory"""
-        debug("Listing apps from local registry", 2)
-        apps = []
-        for meta_path in self.paths.local_registry.glob("*.meta"):
-            apps.append(meta_path.stem)
-        return sorted(apps)
-    
-    def _list_github_apps(self):
-        """List apps from GitHub registry.d/ via API"""
+            debug("Listing apps from local registry", 2)
+            return sorted(p.stem for p in self.paths.local_registry.glob("*.meta"))
+        if self._remote_index():
+            return sorted(self._remote_index())
         debug("Fetching apps from GitHub registry", 2)
+        data = _fetch(f"{GITHUB_API_BASE}/contents/registry.d", timeout=10,
+                      headers={'Accept': 'application/vnd.github.v3+json'})
         try:
-            url = f"{GITHUB_API_BASE}/contents/registry.d"
-            req = Request(url)
-            req.add_header('Accept', 'application/vnd.github.v3+json')
-            
-            with urlopen(req, timeout=10) as response:
-                data = json.loads(response.read().decode())
-            
-            apps = [item['name'][:-5] for item in data if item['name'].endswith('.meta')]
-            debug(f"Found {len(apps)} apps on GitHub", 2)
-            return sorted(apps)
-        
-        except (URLError, HTTPError) as e:
-            print(f"[tw] [!] Failed to fetch registry from GitHub: {e}")
+            return sorted(item['name'][:-5] for item in json.loads(data)
+                          if item['name'].endswith('.meta'))
+        except (TypeError, ValueError, KeyError):
+            print("[tw] [!] Failed to fetch registry from GitHub")
             return []
     
     def get_metas(self, app_names, workers=8):
-        """{name: MetaFile} for the apps that have one, in the order given. Outside dev mode each
-        is an HTTPS fetch, so they run in parallel; get_meta caches them for this run."""
+        """{name: MetaFile} for the apps that have one, in the order given. Outside dev mode without
+        an index each is an HTTPS fetch, so they run in parallel; get_meta caches them for this run."""
         from concurrent.futures import ThreadPoolExecutor
         names = list(app_names)
         with ThreadPoolExecutor(max_workers=max(1, min(workers, len(names)))) as pool:
@@ -1074,88 +1102,53 @@ class RegistryManager:
         return {n: m for n, m in zip(names, metas) if m}
 
     def get_meta(self, app_name):
-        """Get MetaFile object for an app (cached for this run)"""
-        cache = self.__dict__.setdefault('_meta_cache', {})
-        if app_name not in cache:
-            cache[app_name] = self._get_meta(app_name)
-        return cache[app_name]
+        """MetaFile for an app, or None (cached for this run)"""
+        if app_name not in self._meta_cache:
+            self._meta_cache[app_name] = self._get_meta(app_name)
+        return self._meta_cache[app_name]
 
     def _get_meta(self, app_name):
-        """Get MetaFile object for an app"""
         if self.is_dev_mode:
             meta_path = self.paths.local_registry / f"{app_name}.meta"
-            if meta_path.exists():
-                return MetaFile(meta_path)
-        else:
-            # Fetch .meta from GitHub
-            url = f"{GITHUB_RAW_BASE}/registry.d/{app_name}.meta"
-            try:
-                debug(f"Fetching {app_name}.meta from GitHub", 2)
-                with urlopen(url, timeout=10) as response:
-                    content = response.read().decode()
-                
-                # Create temporary file
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.meta', delete=False) as f:
-                    f.write(content)
-                    temp_path = f.name
-                
-                meta = MetaFile(temp_path)
-                os.unlink(temp_path)
-                return meta
-            
-            except (URLError, HTTPError) as e:
-                debug(f"Failed to fetch {app_name}.meta: {e}", 1)
-                return None
-        
-        return None
+            return MetaFile(meta_path) if meta_path.exists() else None
+        text = self._remote_index().get(app_name)
+        if text is None:
+            data = _fetch(f"{GITHUB_RAW_BASE}/registry.d/{app_name}.meta", timeout=10)
+            text = data.decode() if data else None
+        return MetaFile.from_text(text) if text is not None else None
     
-    def get_installer(self, app_name):
-        """Get path to installer script (local or downloaded temp file)"""
+    def get_installer(self, app_name, dest_dir=None):
+        """Path to an app's installer: the local file in dev mode, else downloaded into dest_dir
+        (a new temp dir when None; the caller removes it). None when there is none."""
         if self.is_dev_mode:
             installer_path = self.paths.local_installers / f"{app_name}.install"
             return installer_path if installer_path.exists() else None
-        else:
-            # Download installer from GitHub
-            url = f"{GITHUB_RAW_BASE}/installers/{app_name}.install"
-            try:
-                debug(f"Downloading {app_name}.install from GitHub", 2)
-                with urlopen(url, timeout=10) as response:
-                    content = response.read().decode()
-                
-                # Create temporary file
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.install', delete=False) as f:
-                    f.write(content)
-                    temp_path = f.name
-                
-                # Make executable
-                os.chmod(temp_path, 0o755)
-                return Path(temp_path)
-            
-            except (URLError, HTTPError) as e:
-                debug(f"Failed to download {app_name}.install: {e}", 1)
-                return None
+        data = _fetch(f"{GITHUB_RAW_BASE}/installers/{app_name}.install")
+        if data is None:
+            return None
+        dest = Path(dest_dir or tempfile.mkdtemp(prefix=f'tw-installer-{app_name}-'))
+        installer = dest / f"{app_name}.install"
+        installer.write_bytes(data)
+        installer.chmod(0o755)
+        return installer
 
 class MetaFile:
     """Parses and manages .meta files for applications"""
     
-    def __init__(self, meta_path):
-        self.meta_path = Path(meta_path)
+    def __init__(self, meta_path=None, text=None):
+        self.meta_path = Path(meta_path) if meta_path else None
+        if text is None and self.meta_path and self.meta_path.exists():
+            text = self.meta_path.read_text()
         self.data = {}
-        self._parse()
-    
-    def _parse(self):
-        """Parse the .meta file"""
-        if not self.meta_path.exists():
-            return
-        
-        with open(self.meta_path, 'r') as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith('#'):
-                    continue
-                if '=' in line:
-                    key, value = line.split('=', 1)
-                    self.data[key.strip()] = value.strip()
+        for line in (text or '').splitlines():
+            line = line.strip()
+            if line and not line.startswith('#') and '=' in line:
+                key, value = line.split('=', 1)
+                self.data[key.strip()] = value.strip()
+
+    @classmethod
+    def from_text(cls, text):
+        return cls(text=text)
     
     def get(self, key, default=None):
         """Get a value from the meta file"""
@@ -1281,6 +1274,13 @@ class Manifest:
         """Check if an app is installed"""
         return any(e['app'] == app for e in self.entries)
     
+    def apps(self):
+        """{app: version} of every installed app, in manifest order"""
+        result = {}
+        for e in self.entries:
+            result.setdefault(e['app'], e['version'])
+        return result
+
     def get_version(self, app):
         """Get installed version of an app"""
         for e in self.entries:
@@ -1360,40 +1360,8 @@ class AppManager:
         self.manifest = Manifest(paths.manifest_file)
         self.registry = RegistryManager(paths)
     
-    def install(self, app_name, dry_run=False, stage_dir=None):
-        """Install an application using its installer script"""
-        debug(f"AppManager.install: Getting installer for {app_name}", 2)
-        cleanup_stage = False  # True when we own stage_dir and must clean it up
-        if stage_dir:
-            # Files already staged — run installer from stage_dir so SCRIPT_DIR resolves correctly
-            installer_path = stage_dir / f"{app_name}.install"
-            is_temp_file = False  # stage_dir cleaned up by caller
-            if not installer_path.exists():
-                print(f"[tw] [X] Installer not in stage dir: {app_name}")
-                return False
-        elif not self.paths.is_dev_mode:
-            # Non-dev mode: stage installer + companion files so SCRIPT_DIR resolves correctly
-            meta = self.registry.get_meta(app_name)
-            if not meta:
-                print(f"[tw] [X] Meta not found for: {app_name}")
-                return False
-            stage_dir = self._stage_downloads(app_name, meta)
-            if not stage_dir:
-                return False
-            installer_path = stage_dir / f"{app_name}.install"
-            is_temp_file = False
-            cleanup_stage = True
-        else:
-            installer_path = self.registry.get_installer(app_name)
-            is_temp_file = False  # dev mode uses local file
-
-        if not installer_path:
-            print(f"[tw] [X] Installer not found: {app_name}")
-            return False
-        
-        debug(f"AppManager.install: Installer path: {installer_path}", 2)
-        
-        # Set environment variables for the installer
+    def _installer_env(self, dry_run=False):
+        """What an installer is told: where everything goes."""
         env = os.environ.copy()
         env.update({
             'INSTALL_DIR': str(self.paths.task_dir),
@@ -1403,131 +1371,97 @@ class AppManager:
             'DOCS_DIR': str(self.paths.docs_dir),
             'LOGS_DIR': str(self.paths.logs_dir),
             'TASKRC': str(self.paths.taskrc),
-            'TW_COMMON': str(self.paths.lib_dir / 'tw-common.sh')
+            'TW_COMMON': str(self.paths.lib_dir / 'tw-common.sh'),
         })
-        
         if dry_run:
             env['TW_DRY_RUN'] = '1'
-            print(f"[tw] DRY RUN: Would execute: bash {installer_path} install")
-            
-            # Show what would be installed
-            meta = self.registry.get_meta(app_name)
-            if meta:
-                files = meta.get_files()
+        return env
+
+    def _run_installer(self, installer_path, action):
+        """bash INSTALLER install|remove; True when it exits 0."""
+        try:
+            result = subprocess.run(['bash', str(installer_path), action], env=self._installer_env())
+            return result.returncode == 0
+        except OSError as e:
+            print(f"[tw] [X] Error running installer: {e}")
+            return False
+
+    def install(self, app_name, dry_run=False, stage_dir=None):
+        """Install an application with its installer, run from a folder holding its files (so the
+        installer's SCRIPT_DIR finds them): stage_dir when given (tw -u staged it), else a fresh
+        stage outside dev mode, else the local installers/ in dev mode."""
+        debug(f"AppManager.install: Getting installer for {app_name}", 2)
+        own_stage = None
+        try:
+            if stage_dir:
+                installer_path = stage_dir / f"{app_name}.install"
+            elif not self.paths.is_dev_mode:
+                meta = self.registry.get_meta(app_name)
+                if not meta:
+                    print(f"[tw] [X] Meta not found for: {app_name}")
+                    return False
+                own_stage = stage_dir = self._stage_downloads(app_name, meta)
+                if not stage_dir:
+                    return False
+                installer_path = stage_dir / f"{app_name}.install"
+            else:
+                installer_path = self.registry.get_installer(app_name)
+
+            if not installer_path or not installer_path.exists():
+                print(f"[tw] [X] Installer not found: {app_name}")
+                return False
+            debug(f"AppManager.install: Installer path: {installer_path}", 2)
+
+            if dry_run:
+                print(f"[tw] DRY RUN: Would execute: bash {installer_path} install")
+                meta = self.registry.get_meta(app_name)
+                files = meta.get_files() if meta else []
                 if files:
                     print(f"[tw] Would install {len(files)} file(s):")
                     for filename, file_type in files:
-                        target_dir = self._get_target_dir(file_type)
-                        print(f"[tw]   {filename} -> {target_dir}/")
-            
-            # Clean up
-            if is_temp_file and installer_path:
-                os.unlink(installer_path)
-            if cleanup_stage and stage_dir:
-                shutil.rmtree(stage_dir, ignore_errors=True)
-            return True
+                        dest = meta.get_dest(filename, self.paths.task_dir)
+                        print(f"[tw]   {filename} -> {dest or str(self._get_target_dir(file_type)) + '/'}")
+                return True
 
-        # Execute installer
-        try:
-            result = subprocess.run(
-                ['bash', str(installer_path), 'install'],
-                env=env,
-                capture_output=False,
-                text=True
-            )
-
-            # Clean up
-            if is_temp_file and installer_path:
-                os.unlink(installer_path)
-            if cleanup_stage and stage_dir:
-                shutil.rmtree(stage_dir, ignore_errors=True)
-
-            if result.returncode == 0:
+            if self._run_installer(installer_path, 'install'):
                 print(f"[tw] [+] Installed: {app_name}")
                 return True
-            else:
-                print(f"[tw] [X] Installation failed: {app_name}")
-                return False
-
-        except Exception as e:
-            # Clean up
-            if is_temp_file and installer_path:
-                try:
-                    os.unlink(installer_path)
-                except:
-                    pass
-            if cleanup_stage and stage_dir:
-                shutil.rmtree(stage_dir, ignore_errors=True)
-            print(f"[tw] [X] Error running installer: {e}")
+            print(f"[tw] [X] Installation failed: {app_name}")
             return False
+        finally:
+            if own_stage:
+                shutil.rmtree(own_stage, ignore_errors=True)
     
     def remove(self, app_name):
-        """Remove an application using its installer script"""
+        """Remove an application with its installer's remove; without an installer, delete the
+        files the manifest lists. Either way, drop its manifest lines and repair includes."""
         if not self.manifest.is_installed(app_name):
             print(f"[tw] [!] Not installed: {app_name}")
             return False
         
         debug(f"AppManager.remove: Getting installer for {app_name}", 2)
         installer_path = self.registry.get_installer(app_name)
-        is_temp_file = not self.paths.is_dev_mode
-        
         if installer_path:
-            # Use installer's remove function
-            env = os.environ.copy()
-            env.update({
-                'INSTALL_DIR': str(self.paths.task_dir),
-                'HOOKS_DIR': str(self.paths.hooks_dir),
-                'SCRIPTS_DIR': str(self.paths.scripts_dir),
-                'CONFIG_DIR': str(self.paths.config_dir),
-                'DOCS_DIR': str(self.paths.docs_dir),
-                'LOGS_DIR': str(self.paths.logs_dir),
-                'TASKRC': str(self.paths.taskrc),
-                'TW_COMMON': str(self.paths.lib_dir / 'tw-common.sh')
-            })
-            
             try:
-                result = subprocess.run(
-                    ['bash', str(installer_path), 'remove'],
-                    env=env,
-                    capture_output=False
-                )
-                
-                # Clean up temp file if needed
-                if is_temp_file and installer_path:
-                    os.unlink(installer_path)
-                
-                if result.returncode == 0:
-                    self.manifest.remove_app(app_name)
-                    _repair_after_remove(self.paths, app_name)
-                    print(f"[tw] [+] Removed: {app_name}")
-                    return True
-                else:
-                    print(f"[tw] [X] Removal failed: {app_name}")
-                    return False
-                    
-            except Exception as e:
-                # Clean up temp file if needed
-                if is_temp_file and installer_path:
-                    try:
-                        os.unlink(installer_path)
-                    except:
-                        pass
-                print(f"[tw] [X] Error running installer: {e}")
+                ok = self._run_installer(installer_path, 'remove')
+            finally:
+                if not self.paths.is_dev_mode:
+                    shutil.rmtree(installer_path.parent, ignore_errors=True)
+            if not ok:
+                print(f"[tw] [X] Removal failed: {app_name}")
                 return False
         else:
-            # Fallback: use manifest to remove files
             print(f"[tw] Installer not found, using manifest for removal")
-            files = self.manifest.get_files(app_name)
-            for file_path in files:
+            for file_path in self.manifest.get_files(app_name):
                 path = Path(file_path)
                 if path.exists():
                     path.unlink()
                     print(f"[tw]   Removed: {file_path}")
-            
-            self.manifest.remove_app(app_name)
-            _repair_after_remove(self.paths, app_name)
-            print(f"[tw] [+] Removed: {app_name}")
-            return True
+
+        self.manifest.remove_app(app_name)
+        _repair_after_remove(self.paths, app_name)
+        print(f"[tw] [+] Removed: {app_name}")
+        return True
     
     def update(self, app_name):
         """Update an application safely using stage-then-install
@@ -1578,16 +1512,7 @@ class AppManager:
         print(f"[tw] Preflight passed - all files downloaded and verified")
         
         # Step 2: Backup current installed files (from manifest)
-        backup_dir = Path(tempfile.mkdtemp(prefix=f'tw-backup-{app_name}-'))
-        debug(f"Backup directory: {backup_dir}", 2)
-        
-        installed_files = self.manifest.get_files(app_name)
-        for file_path in installed_files:
-            src = Path(file_path)
-            if src.exists():
-                dst = backup_dir / src.name
-                shutil.copy2(src, dst)
-                debug(f"Backed up: {src} -> {dst}", 2)
+        backup_dir = self._backup_files(app_name)
         
         # Also backup manifest entries for this app
         backup_manifest = [e.copy() for e in self.manifest.entries if e['app'] == app_name]
@@ -1631,104 +1556,79 @@ class AppManager:
         
         This does NOT install anything - it just verifies that all files
         can be downloaded and checksums match before we touch the old version.
+        The installer is staged beside them, so its SCRIPT_DIR finds them.
         
         Returns stage_dir Path on success, None on failure.
         """
-        base_url = meta.get_base_url()
+        base_url = meta.get_base_url().rstrip('/')
         if not base_url:
             print(f"[tw] [X] No base_url in meta for {app_name}")
             return None
-        
-        # Strip trailing slash from base_url to avoid double-slash
-        base_url = base_url.rstrip('/')
-        
         files = meta.get_files()
-        checksums = meta.get_checksums()
-        
         if not files:
             print(f"[tw] [X] No files listed in meta for {app_name}")
             return None
+        checksums = meta.get_checksums()
         
-        # Create staging directory
         stage_dir = Path(tempfile.mkdtemp(prefix=f'tw-stage-{app_name}-'))
         debug(f"Staging directory: {stage_dir}", 2)
-        
+
+        def fail(message):
+            print(f"[tw] [X] {message}")
+            shutil.rmtree(stage_dir, ignore_errors=True)
+            return None
+
         for i, (filename, file_type) in enumerate(files):
-            url = f"{base_url}/{filename}"
-            staged_path = stage_dir / filename
-            
-            debug(f"Staging: {url} -> {staged_path}", 2)
             print(f"[tw]   Downloading: {filename}")
-            
-            try:
-                result = subprocess.run(
-                    ['curl', '-fsSL', url, '-o', str(staged_path)],
-                    capture_output=True, text=True, timeout=30
-                )
-                if result.returncode != 0:
-                    print(f"[tw] [X] Download failed: {filename}")
-                    debug(f"curl error: {result.stderr}", 1)
-                    shutil.rmtree(stage_dir, ignore_errors=True)
-                    return None
-            except subprocess.TimeoutExpired:
-                print(f"[tw] [X] Download timed out: {filename}")
-                shutil.rmtree(stage_dir, ignore_errors=True)
-                return None
-            except Exception as e:
-                print(f"[tw] [X] Download error: {filename}: {e}")
-                shutil.rmtree(stage_dir, ignore_errors=True)
-                return None
-            
+            data = _fetch(f"{base_url}/{filename}")
+            if data is None:
+                return fail(f"Download failed: {filename}")
+            staged_path = stage_dir / filename
+            staged_path.parent.mkdir(parents=True, exist_ok=True)
+            staged_path.write_bytes(data)
             # Verify checksum if available (skip docs - git may alter them)
-            if file_type == 'doc':
-                debug(f"Skipping checksum for doc: {filename}", 2)
-            elif checksums and i < len(checksums) and checksums[i]:
-                actual = self._calculate_checksum(staged_path)
+            if file_type != 'doc' and i < len(checksums) and checksums[i]:
+                actual = hashlib.sha256(data).hexdigest()
                 if actual != checksums[i]:
-                    print(f"[tw] [X] Checksum mismatch: {filename}")
-                    debug(f"Expected: {checksums[i]}", 1)
-                    debug(f"Got:      {actual}", 1)
-                    shutil.rmtree(stage_dir, ignore_errors=True)
-                    return None
+                    debug(f"Expected: {checksums[i]}  Got: {actual}", 1)
+                    return fail(f"Checksum mismatch: {filename}")
                 debug(f"Checksum verified: {filename}", 2)
         
         print(f"[tw] [+] All {len(files)} files staged and verified")
-
-        # Also stage the installer script so install() can run it from stage_dir
-        if not self.paths.is_dev_mode:
-            installer_url = f"{GITHUB_RAW_BASE}/installers/{app_name}.install"
-            installer_staged = stage_dir / f"{app_name}.install"
-            try:
-                result = subprocess.run(
-                    ['curl', '-fsSL', installer_url, '-o', str(installer_staged)],
-                    capture_output=True, text=True, timeout=30
-                )
-                if result.returncode == 0:
-                    installer_staged.chmod(0o755)
-                    debug(f"Staged installer: {installer_staged}", 2)
-                else:
-                    debug(f"Could not stage installer (non-fatal): {result.stderr}", 1)
-            except Exception as e:
-                debug(f"Could not stage installer (non-fatal): {e}", 1)
-        else:
-            # Dev mode: copy local installer into stage_dir so SCRIPT_DIR works
+        if self.paths.is_dev_mode:
             local_installer = self.paths.local_installers / f"{app_name}.install"
             if local_installer.exists():
                 shutil.copy2(local_installer, stage_dir / f"{app_name}.install")
-
+        elif not self.registry.get_installer(app_name, dest_dir=stage_dir):
+            debug(f"Could not stage installer for {app_name}", 1)    # install() says so
         return stage_dir
     
+    @staticmethod
+    def _backup_path(backup_dir, original):
+        """Where a file's backup goes: its whole path under backup_dir, so two files with one name
+        (two README.md) never share a backup."""
+        return Path(backup_dir) / Path(original).resolve().relative_to('/')
+
+    def _backup_files(self, app_name):
+        """Copy the app's installed files (as the manifest lists them) to a new temp dir."""
+        backup_dir = Path(tempfile.mkdtemp(prefix=f'tw-backup-{app_name}-'))
+        debug(f"Backup directory: {backup_dir}", 2)
+        for file_path in self.manifest.get_files(app_name):
+            if Path(file_path).exists():
+                dst = self._backup_path(backup_dir, file_path)
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(file_path, dst)
+                debug(f"Backed up: {file_path} -> {dst}", 2)
+        return backup_dir
+
     def _restore_files(self, backup_dir, backup_manifest):
-        """Copy backed-up files back to their places (the manifest's paths)."""
+        """Copy backed-up files back to their places (the manifest's paths); copy2 keeps modes."""
         for entry in backup_manifest:
             original_path = Path(entry['file'])
-            backup_file = backup_dir / original_path.name
+            backup_file = self._backup_path(backup_dir, original_path)
             if backup_file.exists():
                 original_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(backup_file, original_path)
-                # Restore executable bit if it was executable
-                if original_path.suffix in ('.py', '.sh', '') and original_path.name.startswith('on-'):
-                    original_path.chmod(original_path.stat().st_mode | 0o755)
                 debug(f"Restored: {backup_file} -> {original_path}", 2)
 
     def _restore_backup(self, app_name, backup_dir, backup_manifest):
@@ -1761,12 +1661,7 @@ class AppManager:
     
     def list_installed(self, tag_filter=None):
         """List all installed and available applications with optional tag filtering"""
-        # Get installed apps from manifest
-        installed = {}
-        for entry in self.manifest.entries:
-            app = entry['app']
-            if app not in installed:
-                installed[app] = entry['version']
+        installed = self.manifest.apps()
         
         # Get all available apps from registry
         available = self.registry.list_apps()
@@ -1854,19 +1749,9 @@ class AppManager:
         """
         tag_counts = {}
         
-        # Scan all apps in registry
-        apps = self.registry.list_apps()
-        for app_name in apps:
-            # Filter by app names if provided
-            if app_names and app_name not in app_names:
-                continue
-            
-            meta = self.registry.get_meta(app_name)
-            if not meta:
-                continue
-            tags = meta.get_tags()
-            
-            for tag in tags:
+        apps = [a for a in self.registry.list_apps() if not app_names or a in app_names]
+        for meta in self.registry.get_metas(apps).values():
+            for tag in meta.get_tags():
                 tag_counts[tag] = tag_counts.get(tag, 0) + 1
         
         if not tag_counts:
@@ -2477,31 +2362,11 @@ def get_taskwarrior_version():
     return result.stdout.strip() if result.returncode == 0 and result.stdout.strip() else "unknown"
 
 def get_installed_extensions(paths):
-    """Get list of installed extensions with versions from manifest"""
-    extensions = {}
-    manifest_file = paths.config_dir / ".tw_manifest"
-    
-    if not manifest_file.exists():
-        return extensions
-    
+    """{app: version} from the manifest"""
     try:
-        with open(manifest_file, 'r') as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                # Format: appname|version|filepath|checksum|timestamp
-                parts = line.split('|')
-                if len(parts) >= 2:
-                    app_name = parts[0]
-                    version = parts[1]
-                    # Store unique apps (manifest has one line per file)
-                    if app_name not in extensions:
-                        extensions[app_name] = version
-    except:
-        pass
-    
-    return extensions
+        return Manifest(paths.manifest_file).apps()
+    except OSError:
+        return {}
 
 def _app_matches(registry, app_name, tag_filter):
     """Does the app's registry entry match the tag filter? None when there's no entry. Asks the

@@ -10,13 +10,14 @@ This tool provides a full workflow from development through deployment:
 - --meta:     Generate .meta registry entry only
 - --install:  Generate .install (and .meta if run standalone)
 - --push:     Git commit/push + registry update
+- --index:    Regenerate registry.d/index.json (fleet mode)
 
 Pipeline order: debug → testing → timing → stdhelp → meta → install → push
 
 Single command: make-awesome.py "commit message"  — runs full pipeline
 Flag combo:     make-awesome.py --meta --push "msg"  — runs selected stages in order
 
-Version: 4.9.0
+Version: 4.12.0
 """
 
 import sys
@@ -29,7 +30,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
 
-VERSION = "4.10.2"
+VERSION = "4.12.0"
 
 # Mode detection
 # Fleet mode  — running from the awesome-taskwarrior dir (where awesome.rc lives)
@@ -2435,6 +2436,33 @@ def push_project_repo(commit_msg: str) -> bool:
         return False
 
 
+def registry_index_text(registry_path: Path) -> str:
+    """registry.d/index.json's content: every app's .meta text, verbatim, by name. tw reads it in one
+    request for tw -l / -i / --tags (its own parser reads the text, so there is one format)."""
+    metas = {p.stem: p.read_text() for p in sorted((registry_path / 'registry.d').glob('*.meta'))}
+    import json
+    return json.dumps({'format': 1, 'metas': metas}, indent=1, sort_keys=True) + '\n'
+
+
+def write_registry_index(registry_path: Path) -> bool:
+    """Rewrite registry.d/index.json from registry.d/*.meta. True when it changed."""
+    index = registry_path / 'registry.d' / 'index.json'
+    text = registry_index_text(registry_path)
+    if index.exists() and index.read_text() == text:
+        return False
+    index.write_text(text)
+    return True
+
+
+def cmd_index() -> int:
+    """--index: regenerate registry.d/index.json [fleet-mode only]."""
+    if write_registry_index(SCRIPT_DIR):
+        success("registry.d/index.json updated")
+    else:
+        msg("registry.d/index.json already current")
+    return 0
+
+
 def push_registry(project_name: str) -> bool:
     """Copy .install/.meta to registry repo, commit --only those files, push."""
     registry_path = Path.home() / 'dev' / 'awesome-taskwarrior'
@@ -2470,20 +2498,22 @@ def push_registry(project_name: str) -> bool:
         shutil.copy(meta_file, registry_path / 'registry.d' / meta_file.name)
         success(f"Copied {install_file.name} -> installers/")
         success(f"Copied {meta_file.name} -> registry.d/")
+        if write_registry_index(registry_path):
+            success("Updated registry.d/index.json")
 
         # Switch to registry repo
         os.chdir(registry_path)
 
-        # Stage only our two files
+        # Stage only our files
         subprocess.run(['git', 'add',
                        f'installers/{install_file.name}',
-                       f'registry.d/{meta_file.name}'], check=True)
+                       f'registry.d/{meta_file.name}', 'registry.d/index.json'], check=True)
 
         # Commit --only so other dirty files in the registry are untouched
         result = subprocess.run(['git', 'commit', '--only', '-m',
                                f"Updated {project_name}",
                                f'installers/{install_file.name}',
-                               f'registry.d/{meta_file.name}'],
+                               f'registry.d/{meta_file.name}', 'registry.d/index.json'],
                               capture_output=True, text=True)
 
         if result.returncode != 0:
@@ -3591,6 +3621,8 @@ def _sync_fleet_registry(apps: list, pushed_names: list, message: str):
 
     if not synced:
         return
+    if write_registry_index(registry_path):
+        synced.append('registry.d/index.json')
 
     msg(f"\n[registry] Syncing {len(synced)} file(s) to awesome-taskwarrior...")
     r = _git(registry_path, 'add', *synced)
@@ -4001,6 +4033,8 @@ def main():
                        help='Find registry apps missing from awesome.rc and hunt for dev dirs [fleet-mode only]')
     parser.add_argument('--apply', action='store_true',
                        help='With --discover: write found entries into awesome.rc [fleet-mode only]')
+    parser.add_argument('--index', action='store_true',
+                       help='Regenerate registry.d/index.json from registry.d/*.meta [fleet-mode only]')
     parser.add_argument('--checksum', action='store_true',
                        help='Recalculate .meta checksums across fleet [fleet-mode only]')
     parser.add_argument('--nointeract', action='store_true',
@@ -4017,7 +4051,7 @@ def main():
     # -------------------------------------------------------------------------
     fleet_flags   = (args.fleet or args.list is not None or args.add or args.remove
                      or args.query is not None or args.discover or args.grep
-                     or args.ipush is not None)
+                     or args.ipush is not None or args.index)
     pipeline_flags = (args.commit_message or args.gitignore or args.debug or args.testing
                       or args.timing or args.envar or args.stdhelp or args.meta
                       or args.install or args.push is not None)
@@ -4039,6 +4073,9 @@ def main():
 
     if args.commit_message:
         return cmd_pipeline(args.commit_message)
+
+    if args.index:
+        return cmd_index()
 
     if (args.fleet or args.list is not None or args.add or args.remove
             or args.discover or args.query is not None or args.grep):
