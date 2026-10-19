@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 tw - awesome-taskwarrior package manager and wrapper
-Version: 2.10.2
+Version: 2.13.1
 
 A unified wrapper for Taskwarrior that provides:
 - Transparent pass-through to task command
@@ -10,6 +10,19 @@ A unified wrapper for Taskwarrior that provides:
 - Per-file manifest tracking
 - Checksum verification
 - Dev mode indicator for local development
+
+Updates in v2.13.1 (step 1 of the 2026-10-18 consolidation plan):
+- Fixed: dot-shortcut notices (`[tw] . -> task N`) go to stderr: `tw . export` is clean JSON
+- Fixed: `tw --install --dry-run APP` works (a tw flag is never another flag's argument), and
+  `tw -i +tag` / `tw -R` never take a tag as the app name
+- Fixed: a leading `-tag` goes to task (`tw -home next`); only `-x` / `--xxx` are unknown flags
+- Fixed: tw --verify checks the paths the manifest records, then a meta entry's dest; meta entries
+  name:type:dest parse (the type was read as `type:dest`); systemd/hooks/scripts types map
+- Fixed: completions read ~/.task/config/.tw_manifest (and tw-common.sh's TW_MANIFEST default)
+- Fixed: no `installed/` folder is made beside the tw script
+- Fixed: help topics (paths, remove steps, --list output, real app names and tags)
+- Fixed: `tw @- last` drops earlier sets' context.cmx:<set>.* keys too
+- Tests: tests/test_tw_review4.py (25)
 
 Updates in v2.13.0 (the 2026-10-17 review's four minor findings):
 - Fixed: --timing captured task's stdout, so a confirmation prompt never showed while task
@@ -164,7 +177,7 @@ import tempfile
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 
-VERSION = "2.13.0"
+VERSION = "2.13.1"
 
 # GitHub configuration
 GITHUB_REPO = "linuxcaffe/awesome-taskwarrior"
@@ -324,7 +337,6 @@ class PathManager:
         self.local_registry = self.tw_root / "registry.d"
         self.local_installers = self.tw_root / "installers"
         self.lib_dir = self.tw_root / "lib"
-        self.installed_dir = self.tw_root / "installed"
         self.manifest_file = self.config_dir / ".tw_manifest"
         
         # Determine mode: local (dev) or remote (production)
@@ -338,14 +350,9 @@ class PathManager:
         """Create all required directories"""
         for dir_path in [
             self.hooks_dir, self.scripts_dir, self.config_dir,
-            self.docs_dir, self.logs_dir, self.installed_dir
+            self.docs_dir, self.logs_dir
         ]:
             dir_path.mkdir(parents=True, exist_ok=True)
-        
-        # Only create registry and installers dirs in dev mode
-        if self.is_dev_mode:
-            self.local_registry.mkdir(parents=True, exist_ok=True)
-            self.local_installers.mkdir(parents=True, exist_ok=True)
 
 class TaskRC:
     """Fast .taskrc reader/writer — no subprocesses.
@@ -1069,17 +1076,29 @@ class MetaFile:
         if not files_str:
             return []
         
+        return [(name, ftype) for name, ftype, _ in self._file_entries()]
+
+    def _file_entries(self):
+        """[(filename, type, dest or None)]: an entry is name[:type[:dest]], type defaulting to 'file'."""
         result = []
-        for item in files_str.split(','):
-            item = item.strip()
-            if ':' in item:
-                filename, file_type = item.split(':', 1)
-                result.append((filename.strip(), file_type.strip()))
-            else:
-                # Default to 'file' type if not specified
-                result.append((item, 'file'))
-        
+        for item in self.get('files', '').split(','):
+            parts = [p.strip() for p in item.strip().split(':', 2)]
+            if parts[0]:
+                result.append((parts[0], parts[1] if len(parts) > 1 else 'file',
+                               parts[2] if len(parts) > 2 and parts[2] else None))
         return result
+
+    def get_dest(self, filename, task_dir):
+        """Where an entry's third field puts the file, or None: `~/...` or absolute as written,
+        `docs/x.md` under task_dir; a bare folder name (`scripts`) just restates the type's folder."""
+        for name, _, dest in self._file_entries():
+            if name == filename and dest:
+                p = Path(dest).expanduser()
+                if p.is_absolute():
+                    return p
+                if '/' in dest:
+                    return Path(task_dir) / dest
+        return None
     
     def get_base_url(self):
         """Get base URL for file downloads"""
@@ -1880,6 +1899,8 @@ class AppManager:
         
         print(f"[tw] Verifying {app_name}...")
         all_valid = True
+        # Where the installer put each file, as it recorded it; the file type is only a guess
+        recorded = {Path(f).name: Path(f) for f in self.manifest.get_files(app_name)}
         
         for i, (filename, file_type) in enumerate(files):
             if i >= len(checksums):
@@ -1894,9 +1915,8 @@ class AppManager:
                 debug(f"Skipping checksum for doc: {filename}", 2)
                 continue
             
-            # Find file path
-            target_dir = self._get_target_dir(file_type)
-            file_path = target_dir / filename
+            file_path = (recorded.get(filename) or meta.get_dest(filename, self.paths.task_dir)
+                         or self._get_target_dir(file_type) / filename)
             
             if not file_path.exists():
                 print(f"[tw] [!] File not found: {file_path}")
@@ -1923,9 +1943,12 @@ class AppManager:
         """Get target directory for a file type"""
         type_map = {
             'hook': self.paths.hooks_dir,
+            'hooks': self.paths.hooks_dir,
             'script': self.paths.scripts_dir,
+            'scripts': self.paths.scripts_dir,
             'config': self.paths.config_dir,
-            'doc': self.paths.docs_dir
+            'doc': self.paths.docs_dir,
+            'systemd': self.paths.home / '.config' / 'systemd' / 'user',
         }
         return type_map.get(file_type, self.paths.task_dir)
     
@@ -2220,7 +2243,7 @@ Templates:
   Usage: :tpl meeting
 
 History:
-  Command history is saved to ~/.tw_shell_history
+  Command history is saved to ~/.task/config/.tw_shell_history
   Use arrow keys to navigate previous commands
 """,
         'install': """
@@ -2235,10 +2258,10 @@ Usage:
 
 How it Works:
   1. Reads metadata from registry.d/<app>.meta
-  2. Downloads files via curl from specified base_url
-  3. Places files in appropriate directories (hooks/, scripts/, config/)
-  4. Tracks installation in ~/.task/.tw_manifest
-  5. Copies README to ~/.task/docs/
+  2. Outside dev mode, downloads the files from its base_url and checks
+     their checksums
+  3. Runs installers/<app>.install, which places the files, adds any
+     include to .taskrc, and records each file in ~/.task/config/.tw_manifest
 
 File Placement:
   - hook files  -> ~/.task/hooks/
@@ -2247,8 +2270,8 @@ File Placement:
   - doc files    -> ~/.task/docs/
 
 Example:
-  tw --install tw-recurrence-hooks
-  tw --install --dry-run tw-need_priority
+  tw --install recurrence-overhaul
+  tw --install --dry-run need-priority
 """,
         'remove': """
 Package Removal (tw --remove)
@@ -2260,18 +2283,17 @@ Usage:
   tw --remove <app>         Remove an application
 
 How it Works:
-  1. Runs the application's installer with --remove flag (if available)
-  2. Falls back to manifest-based removal if installer not found
-  3. Removes all tracked files
-  4. Updates manifest
+  1. Runs the application's installer as `<app>.install remove`
+  2. Falls back to deleting the manifest's files if there is no installer
+  3. Drops the app's manifest lines
+  4. Comments out any .taskrc include left pointing at a missing file
 
 Safety:
-  - Only removes files tracked in the manifest
-  - Preserves user data and task database
-  - Installer's --remove can perform custom cleanup
+  - Preserves user data and the task database
+  - The installer's remove can perform custom cleanup
 
 Example:
-  tw --remove tw-recurrence-hooks
+  tw --remove recurrence-overhaul
 """,
         'verify': """
 Package Verification (tw --verify)
@@ -2284,7 +2306,8 @@ Usage:
 
 How it Works:
   1. Reads expected checksums from registry.d/<app>.meta
-  2. Calculates SHA256 checksums of installed files
+  2. Calculates SHA256 checksums of the installed files, found where the
+     manifest says the installer put them (docs are skipped)
   3. Compares expected vs actual
   4. Reports any mismatches
 
@@ -2294,21 +2317,22 @@ Use Cases:
   - Troubleshoot issues
 
 Example:
-  tw --verify tw-recurrence-hooks
+  tw --verify recurrence-overhaul
 """,
         'list': """
-List Installed Packages (tw --list)
-====================================
+List Packages (tw --list)
+=========================
 
-Show all installed applications and their versions.
+Show every application in the registry, marking installed ones and updates.
 
 Usage:
-  tw --list                 List all installed packages
+  tw --list                 List all applications
+  tw --list +hook -python   Only those tagged hook and not python
 
 Output Format:
-  [tw] Installed applications:
-  [tw]   app-name (vX.Y.Z)
-  [tw]   another-app (vA.B.C)
+  [tw] [*] app-name (v1.2.0) [hook, python]       installed
+  [tw] [↑] other-app (v1.0.0→1.1.0) [script]      update available
+  [tw] [ ] third-app (v0.3.0) [config]            not installed
 
 Example:
   tw --list
@@ -2333,7 +2357,7 @@ Information Shown:
   - README location (if installed)
 
 Example:
-  tw --info tw-recurrence-hooks
+  tw --info recurrence-overhaul
 """,
     }
     
@@ -2399,19 +2423,31 @@ def _split_tw_args(argv):
     """(argparse's args, the rest). argparse sees only tw's own leading flags (and the argument a
     flag takes); from the first word that isn't one of them, everything passes through. A dash
     word that isn't a tw flag (`-hook` in `tw -l -hook`, `-tag` in `tw -p -tag next`) is an
-    excluded tag or task's own, never a cluster of short flags."""
+    excluded tag or task's own, never a cluster of short flags. A tw flag never becomes another
+    flag's argument: `tw --install --dry-run APP` is `--dry-run --install APP`."""
     flags_with_args = ['-I', '-r', '-u', '-i', '-R', '-A', '--install', '--remove',
                        '--update', '--info', '--readme', '--attach', '--verify', '--generate-completion',
                        '--install-completion']
+    optional_arg = ('-i', '--info', '-R', '--readme')       # `tw -i +python`: a tag, not an app
     parser_args, rest = [], []
-    expect_flag_arg = False
+    waiting = None          # index in parser_args of a flag still waiting for its argument
     for i, arg in enumerate(argv):
-        if expect_flag_arg:
+        is_flag = _is_tw_flag(arg) or arg.split('=')[0] == '--gen'
+        if (waiting is not None and not is_flag and parser_args[waiting] in optional_arg
+                and arg.startswith(('+', '-'))):
+            rest = list(argv[i:])
+            break
+        if waiting is not None and not is_flag:
             parser_args.append(arg)
-            expect_flag_arg = False
-        elif _is_tw_flag(arg) or arg.split('=')[0] == '--gen':
-            parser_args.append(arg)
-            expect_flag_arg = arg.split('=')[0] in flags_with_args and '=' not in arg
+            waiting = None
+        elif is_flag:
+            if waiting is not None:
+                parser_args.insert(waiting, arg)    # goes in front, so the argument still follows
+                waiting += 1
+            else:
+                parser_args.append(arg)
+                if arg.split('=')[0] in flags_with_args and '=' not in arg:
+                    waiting = len(parser_args) - 1
         else:
             rest = list(argv[i:])
             break
@@ -2419,49 +2455,19 @@ def _split_tw_args(argv):
 
 
 def validate_first_arg_flag(args):
-    """
-    Validate that flags are only recognized when:
-    1. They are the first argument
-    2. They have a trailing space (not part of another word)
-    3. They are known flags
-    
-    Returns: (is_valid_flag, error_message)
-    """
-    if not args or len(args) == 0:
+    """Is the first argument one of tw's flags? Returns (is_tw_flag, error_message).
+
+    A flag counts only as a whole word (`-lena` is not `-l`). A first word that isn't a tw flag
+    is task's: `-home` excludes a tag, `--` ends the filter. Only a word shaped like a mistyped
+    flag is an error: one letter (`-x`) or a double dash (`--isntall`)."""
+    if not args or not args[0].startswith('-'):
         return (False, None)
-    
     first_arg = args[0]
-    
-    # If first arg doesn't start with -, it's not a flag
-    if not first_arg.startswith('-'):
-        return (False, None)
-    
-    known_short = TW_SHORT_FLAGS
-    known_long = TW_LONG_FLAGS
-    
-    # Check if it's a known flag (exact match)
-    if first_arg in known_short or first_arg in known_long:
+    if _is_tw_flag(first_arg):
         return (True, None)
-    
-    # Check for flags with = syntax (e.g., --debug=2)
-    if '=' in first_arg:
-        flag_part = first_arg.split('=')[0]
-        if flag_part in known_long:
-            return (True, None)
-    
-    # Check if it starts with a known flag but has no space (e.g., -lena)
-    # This should NOT match - flags must be standalone
-    for flag in known_short:
-        if first_arg.startswith(flag) and len(first_arg) > len(flag):
-            # This is something like "-lena" which should not match "-l"
-            # Treat as unknown flag
-            return (False, f"Unknown flag: {first_arg}")
-    
-    # Unknown flag starting with - or --
-    if first_arg.startswith('-'):
-        return (False, f"Unknown flag: {first_arg}")
-    
-    return (False, None)
+    if first_arg == '--' or re.fullmatch(r'-[^-].+', first_arg):
+        return (False, None)                # task's own: a tag exclusion, or --
+    return (False, f"Unknown flag: {first_arg}")
 
 def resolve_dot_shortcut(dot, debug_wrapper=False):
     """Resolve dot-shortcuts to task IDs or short UUIDs.
@@ -2483,7 +2489,7 @@ def resolve_dot_shortcut(dot, debug_wrapper=False):
     
     label = labels.get(dot)
     if not label:
-        print(f"[tw] [X] Unknown dot-shortcut: {dot}")
+        print(f"[tw] [X] Unknown dot-shortcut: {dot}", file=sys.stderr)
         return None
     
     if debug_wrapper:
@@ -2502,7 +2508,7 @@ def resolve_dot_shortcut(dot, debug_wrapper=False):
                     task_id = line.split()[0]
                     if debug_wrapper:
                         print(f"[tw-debug] Resolved . -> {task_id}", file=sys.stderr)
-                    print(f"[tw] . -> task {task_id}")
+                    print(f"[tw] . -> task {task_id}", file=sys.stderr)
                     return task_id
         except Exception as e:
             if debug_wrapper:
@@ -2525,7 +2531,7 @@ def resolve_dot_shortcut(dot, debug_wrapper=False):
                     if task_id and task_id != '0':
                         if debug_wrapper:
                             print(f"[tw-debug] Resolved .. -> {task_id}", file=sys.stderr)
-                        print(f"[tw] .. -> task {task_id}")
+                        print(f"[tw] .. -> task {task_id}", file=sys.stderr)
                         return task_id
         except Exception as e:
             if debug_wrapper:
@@ -2551,13 +2557,13 @@ def resolve_dot_shortcut(dot, debug_wrapper=False):
                         short_uuid = full_uuid[:8]
                         if debug_wrapper:
                             print(f"[tw-debug] Resolved {dot} -> {short_uuid}", file=sys.stderr)
-                        print(f"[tw] {dot} -> task {short_uuid}")
+                        print(f"[tw] {dot} -> task {short_uuid}", file=sys.stderr)
                         return short_uuid
         except Exception as e:
             if debug_wrapper:
                 print(f"[tw-debug] Error resolving {dot}: {e}", file=sys.stderr)
     
-    print(f"[tw] [X] No {label} found")
+    print(f"[tw] [X] No {label} found", file=sys.stderr)
     return None
 
 
@@ -2825,7 +2831,7 @@ def remove_context_from_cmx(context_name):
             'cmx.contexts':      '',
             'context.cmx.read':  '',
             'context.cmx.write': '',
-        })
+        }, drop=_is_cmx_set_key)
         print("Cleared all contexts")
         return 0
     elif len(new_list) == 1:
@@ -3314,8 +3320,6 @@ _tw_get_available_apps() {
         registry_dir="$TW_REGISTRY_DIR"
     elif [[ -d "$HOME/dev/awesome-taskwarrior/registry.d" ]]; then
         registry_dir="$HOME/dev/awesome-taskwarrior/registry.d"
-    else
-        registry_dir="$HOME/.task/registry"
     fi
     
     if [[ -d "$registry_dir" ]]; then
@@ -3325,7 +3329,7 @@ _tw_get_available_apps() {
 
 # Get installed apps from manifest
 _tw_get_installed_apps() {
-    local manifest="$HOME/.task/.tw_manifest"
+    local manifest="$HOME/.task/config/.tw_manifest"
     if [[ -f "$manifest" ]]; then
         cut -d'|' -f1 "$manifest" | sort -u
     fi
@@ -3492,8 +3496,6 @@ _tw_available_apps() {
         registry_dir="$TW_REGISTRY_DIR"
     elif [[ -d "$HOME/dev/awesome-taskwarrior/registry.d" ]]; then
         registry_dir="$HOME/dev/awesome-taskwarrior/registry.d"
-    else
-        registry_dir="$HOME/.task/registry"
     fi
     
     if [[ -d "$registry_dir" ]]; then
@@ -3505,7 +3507,7 @@ _tw_available_apps() {
 
 # Get installed apps from manifest
 _tw_installed_apps() {
-    local manifest="$HOME/.task/.tw_manifest"
+    local manifest="$HOME/.task/config/.tw_manifest"
     if [[ -f "$manifest" ]]; then
         local -a apps
         apps=(${(f)"$(cut -d'|' -f1 "$manifest" | sort -u)"})
@@ -3598,8 +3600,6 @@ function __fish_tw_available_apps
         set registry_dir "$TW_REGISTRY_DIR"
     else if test -d "$HOME/dev/awesome-taskwarrior/registry.d"
         set registry_dir "$HOME/dev/awesome-taskwarrior/registry.d"
-    else
-        set registry_dir "$HOME/.task/registry"
     end
     
     if test -d "$registry_dir"
@@ -3608,7 +3608,7 @@ function __fish_tw_available_apps
 end
 
 function __fish_tw_installed_apps
-    set -l manifest "$HOME/.task/.tw_manifest"
+    set -l manifest "$HOME/.task/config/.tw_manifest"
     if test -f "$manifest"
         cut -d'|' -f1 "$manifest" | sort -u
     end
@@ -4149,7 +4149,7 @@ def main():
         row("-l +tag -tag","--list +tag -tag",       "Filter applications by tag")
         row("-i",          "--info",                 "Show info for all available apps")
         row("-i APP APP",  "--info APP APP",         "Show info for specific apps")
-        row("-i +python",  "--info +python",         "Show info matching tag filter")
+        row("-i +hook",    "--info +hook",           "Show info matching tag filter")
         row("",            "TW_DEBUG_WRAPPER=1",     "Show argument parsing flow")
         print("\nPager and Attach:")
         row("-p",          "--pager",                "Page default report")

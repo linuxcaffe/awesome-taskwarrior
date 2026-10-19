@@ -34,7 +34,7 @@ set -euo pipefail
 : "${LOGS_DIR:=$INSTALL_DIR/logs}"
 : "${TASKRC:=$HOME/.taskrc}"
 : "${TW_DEBUG:=0}"
-: "${TW_MANIFEST:=$INSTALL_DIR/.tw_manifest}"
+: "${TW_MANIFEST:=$CONFIG_DIR/.tw_manifest}"
 
 #------------------------------------------------------------------------------
 # MESSAGING FUNCTIONS
