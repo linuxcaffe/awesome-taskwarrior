@@ -17,7 +17,7 @@ Pipeline order: debug → testing → timing → stdhelp → meta → install �
 Single command: make-awesome.py "commit message"  — runs full pipeline
 Flag combo:     make-awesome.py --meta --push "msg"  — runs selected stages in order
 
-Version: 4.12.0
+Version: 4.13.0
 """
 
 import sys
@@ -30,7 +30,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
 
-VERSION = "4.12.0"
+VERSION = "4.13.0"
 
 # Mode detection
 # Fleet mode  — running from the awesome-taskwarrior dir (where awesome.rc lives)
@@ -1265,6 +1265,9 @@ class ProjectInfo:
         self.checksums = []
         # Wrapper-specific fields (list of dicts: keyword, script, type)
         self.wrappers = []
+        # Symlinks the installer makes: (name, target, type), e.g. one hook file serving two
+        # events: links=on-modify_recurrence.py:on-add_recurrence.py:hook
+        self.links = []
 
 
 def detect_project_info() -> ProjectInfo:
@@ -1416,6 +1419,19 @@ def detect_files() -> List[Tuple[str, str]]:
     return files
 
 
+LINK_DIRS = {'hook': '$HOOKS_DIR', 'script': '$SCRIPTS_DIR', 'config': '$CONFIG_DIR'}
+
+
+def parse_links(value: str) -> list:
+    """links= value -> [(name, target, type)]: name:target:type, comma-separated."""
+    links = []
+    for entry in value.split(','):
+        parts = [p.strip() for p in entry.split(':')]
+        if len(parts) == 3 and all(parts):
+            links.append(tuple(parts))
+    return links
+
+
 def load_files_from_meta(meta_file: Path) -> list:
     """Parse files= line from .meta. Returns list of 2-tuples (name, type) or
     3-tuples (name, type, dest) when a custom destination is specified."""
@@ -1489,6 +1505,8 @@ def prompt_for_metadata(info: ProjectInfo) -> bool:
                         info.license = line.split('=', 1)[1].strip()
                     elif line.startswith('type='):
                         info.type = line.split('=', 1)[1].strip()
+                    elif line.startswith('links='):
+                        info.links = parse_links(line.split('=', 1)[1])
                     elif line.startswith('wrapper.'):
                         # Indexed:  wrapper.1.keyword=theme
                         # Legacy:   wrapper.keyword=theme  (treated as index 1)
@@ -1733,6 +1751,8 @@ def generate_meta_file(info: ProjectInfo) -> bool:
             f.write(f"repo={repo_url}\n")
             f.write(f"base_url={base_url}\n")
             f.write(f"files={files_list}\n")
+            if info.links:
+                f.write("links=" + ",".join(f"{n}:{t}:{ty}" for n, t, ty in info.links) + "\n")
             f.write(f"tags={info.tags}\n\n")
             f.write(f"checksums={checksums_list}\n\n")
             f.write(f"author={info.author}\n")
@@ -1915,6 +1935,13 @@ def generate_installer(info: ProjectInfo) -> bool:
                 f.write(f'    curl -fsSL "$BASE_URL/{filename}" -o "{dp}" 2>/dev/null || true\n')
                 f.write(f'    debug_msg "Downloaded doc: {dp}" 2\n\n')
 
+            # Symlinks (links=): ln -sfn replaces an old link or file in place, so an install
+            # over a hand-made link never writes through it
+            for name, target, ltype in info.links:
+                ldir = LINK_DIRS.get(ltype, '$TASK_DIR')
+                f.write(f'    ln -sfn "{target}" "{ldir}/{name}"\n')
+                f.write(f'    debug_msg "Linked: {ldir}/{name} -> {target}" 2\n\n')
+
             # Manifest tracking
             f.write('    # Track in manifest\n')
             f.write('    debug_msg "Writing to manifest" 2\n')
@@ -1939,6 +1966,9 @@ def generate_installer(info: ProjectInfo) -> bool:
 
                 f.write(f'    echo "$APPNAME|$VERSION|{manifest_path}||$TIMESTAMP" >> "$MANIFEST_FILE"\n')
                 f.write(f'    debug_msg "Manifest entry: {manifest_path}" 3\n')
+            for name, _, ltype in info.links:
+                manifest_path = f"{LINK_DIRS.get(ltype, '$TASK_DIR')}/{name}"
+                f.write(f'    echo "$APPNAME|$VERSION|{manifest_path}||$TIMESTAMP" >> "$MANIFEST_FILE"\n')
             
             # Finish install function
             f.write('\n')
@@ -1983,7 +2013,7 @@ def generate_installer(info: ProjectInfo) -> bool:
             f.write('    fi\n\n')
             f.write('    # Remove files based on manifest\n')
             f.write('    grep "^$APPNAME|" "$MANIFEST_FILE" | cut -d"|" -f3 | while read -r file; do\n')
-            f.write('        if [ -f "$file" ]; then\n')
+            f.write('        if [ -f "$file" ] || [ -L "$file" ]; then   # -L: a link, even dangling\n')
             f.write('            rm "$file"\n')
             f.write('            debug_msg "Removed: $file" 2\n')
             f.write('            tw_msg "Removed: $(basename $file)"\n')
