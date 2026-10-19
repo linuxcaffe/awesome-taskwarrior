@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 tw - awesome-taskwarrior package manager and wrapper
-Version: 2.14.0
+Version: 2.15.0
 
 A unified wrapper for Taskwarrior that provides:
 - Transparent pass-through to task command
@@ -10,6 +10,20 @@ A unified wrapper for Taskwarrior that provides:
 - Per-file manifest tracking
 - Checksum verification
 - Dev mode indicator for local development
+
+Updates in v2.15.0 (step 3 of the 2026-10-18 consolidation plan):
+- Changed: context multiplexing is one class, Cmx, around one TaskRC (activate, use, add, remove,
+  pause, restore, show, rebuild_if_stale); handle_context_command owns every @ form (~90 lines
+  left main()); `@ + work` (spaced) works; `@ 0` stays `task context 0`
+- Fixed: `tw @` said "Context multiplexing active" for a paused or replaced set (it read
+  cmx.contexts without checking context=); @0 drops the set's context.cmx:<set>.* keys too
+- Fixed: TaskRC followed a circular include until RecursionError; it reads each file once and
+  finds includes as task does (_include_target, /usr/share/taskwarrior too)
+- Changed: the shell's :context reads the taskrc (no `task _get`)
+- Changed: one classifier, command_of() -> (kind, name); _find_report_name and its command list
+  are gone. TW_REPORT / NICEDATES_REPORT carry the report task will run (alias, abbreviation and
+  default.command resolved; '' for non-reports); pre-exec env built once (_phase_env)
+- Tests: tests/test_tw_cmx_classify.py (32)
 
 Updates in v2.14.0 (step 2 of the 2026-10-18 consolidation plan):
 - Changed: one flag table (TW_FLAGS) drives the argument split, argparse (build_parser), tw -h
@@ -190,7 +204,7 @@ import tempfile
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 
-VERSION = "2.14.0"
+VERSION = "2.15.0"
 
 # GitHub configuration
 GITHUB_REPO = "linuxcaffe/awesome-taskwarrior"
@@ -390,6 +404,7 @@ class TaskRC:
         self.TASKRC_PATH = Path(os.environ.get('TASKRC') or Path.home() / '.taskrc').expanduser()
         self._data = {}          # key -> value, all files merged
         self._primary_lines = [] # raw lines from the primary file only (for writing)
+        self._seen = set()       # files already read: a circular include is read once
         self._loaded = False
     
     def _load(self):
@@ -399,9 +414,14 @@ class TaskRC:
         self._primary_lines = self._read_file(self.TASKRC_PATH, primary=True)
     
     def _read_file(self, path, primary=False):
-        """Read one rc file, following includes. Returns raw lines if primary=True."""
+        """Read one rc file, following includes as task does (_include_target), each file once.
+        Returns raw lines if primary=True."""
         lines = []
         try:
+            real = Path(path).resolve()
+            if real in self._seen:
+                return lines
+            self._seen.add(real)
             with open(path, 'r') as f:
                 raw = f.readlines()
         except OSError:
@@ -416,12 +436,11 @@ class TaskRC:
                 continue
             
             # Follow include directives
-            if stripped.startswith('include '):
-                inc_path_str = stripped[8:].strip()
-                inc_path = Path(inc_path_str).expanduser()
-                if not inc_path.is_absolute():
-                    inc_path = path.parent / inc_path
-                self._read_file(inc_path, primary=False)
+            m = _INCLUDE_RE.match(stripped)
+            if m:
+                target = _include_target(m.group(2), Path(path))
+                if target:
+                    self._read_file(target, primary=False)
                 continue
             
             # Parse key=value
@@ -819,8 +838,18 @@ class WrapperManager:
             if info.get('type') == 'pre-exec'
         ]
 
-    def run_pre_exec(self, task_args, session_id):
-        """Call all pre-exec wrappers with TW_PRE_EXEC_PHASE=pre.
+    @staticmethod
+    def _phase_env(phase, task_args, session_id, report):
+        env = os.environ.copy()
+        env['TW_PRE_EXEC_PHASE']   = phase
+        env['TW_REPORT']           = report or ''
+        env['TW_PRE_EXEC_SESSION'] = session_id
+        env['TW_TASK_ARGS']        = json.dumps(task_args)
+        return env
+
+    def run_pre_exec(self, task_args, session_id, report=''):
+        """Call all pre-exec wrappers with TW_PRE_EXEC_PHASE=pre. report is the report task will
+        run (alias, abbreviation and default.command resolved), '' for anything else.
 
         Returns list of resolved script paths that ran successfully (for post-exec),
         or None if any script exits non-zero (signals task should be aborted).
@@ -828,18 +857,13 @@ class WrapperManager:
         pre_exec = self.get_pre_exec()
         if not pre_exec:
             return []
-        report = _find_report_name(task_args) or ''
         ran = []
         for w in pre_exec:
             script_path = self.resolve_script(w['script'])
             if not script_path:
                 debug(f"WrapperManager: pre-exec script not found: {w['script']}", 1)
                 continue
-            env = os.environ.copy()
-            env['TW_PRE_EXEC_PHASE']   = 'pre'
-            env['TW_REPORT']           = report
-            env['TW_PRE_EXEC_SESSION'] = session_id
-            env['TW_TASK_ARGS']        = json.dumps(task_args)
+            env = self._phase_env('pre', task_args, session_id, report)
             result = subprocess.run([script_path], env=env, check=False)
             if result.returncode != 0:
                 debug(f"WrapperManager: pre-exec aborted by {w['script']} (rc={result.returncode})", 1)
@@ -847,19 +871,14 @@ class WrapperManager:
             ran.append(script_path)
         return ran
 
-    def run_post_exec(self, ran_scripts, task_args, session_id):
+    def run_post_exec(self, ran_scripts, task_args, session_id, report=''):
         """Call pre-exec wrappers again with TW_PRE_EXEC_PHASE=post for cleanup.
 
         Runs in reverse registration order so cleanups unwind correctly.
         Always called (in finally), regardless of task exit code.
         """
-        report = _find_report_name(task_args) or ''
         for script_path in reversed(ran_scripts):
-            env = os.environ.copy()
-            env['TW_PRE_EXEC_PHASE']   = 'post'
-            env['TW_REPORT']           = report
-            env['TW_PRE_EXEC_SESSION'] = session_id
-            env['TW_TASK_ARGS']        = json.dumps(task_args)
+            env = self._phase_env('post', task_args, session_id, report)
             try:
                 subprocess.run([script_path], env=env, check=False)
             except Exception as e:
@@ -875,7 +894,7 @@ class WrapperManager:
             return str(candidate)
         return None
 
-    def run_through_filters(self, task_args, debug_wrapper=False):
+    def run_through_filters(self, task_args, debug_wrapper=False, report=None):
         """Run task via PTY (preserving colors) and pipe output through filter wrappers.
 
         Uses a pseudo-terminal so task produces full color/width output, then
@@ -977,9 +996,8 @@ class WrapperManager:
 
         # Set NICEDATES_REPORT so filter scripts can honour nice.reports=
         filter_env = os.environ.copy()
-        report_name = _find_report_name(task_args)
-        if report_name:
-            filter_env['NICEDATES_REPORT'] = report_name
+        if report:
+            filter_env['NICEDATES_REPORT'] = report
 
         current_input = output
         for i, script_path in enumerate(resolved):
@@ -2082,15 +2100,13 @@ class TaskShell:
         """A context's read filter as one parenthesised group, for the modifier stack; [] if it
         isn't defined. Reads 2.6.2's context.<name>.read (else the older context.<name>) and
         changes nothing: the shell runs with rc.context=none, so the stack is the context."""
-        for key in (f"rc.context.{name}.read", f"rc.context.{name}"):
-            p = run_task(["rc.hooks=off", "_get", key], capture_output=True, text=True)
-            text = (p.stdout or '').strip()
-            if text:
-                try:
-                    return ['('] + shlex.split(text) + [')']
-                except ValueError:
-                    return ['('] + text.split() + [')']
-        return []
+        text = Cmx().filter(name)
+        if not text:
+            return []
+        try:
+            return ['('] + shlex.split(text) + [')']
+        except ValueError:
+            return ['('] + text.split() + [')']
     
     def _show_help(self, detailed=False):
         """Show shell help"""
@@ -2601,280 +2617,221 @@ def resolve_dot_shortcut(dot, debug_wrapper=False):
     return result
 
 
-def handle_context_command(args):
-    """Handle @ context commands - alias for 'context' with @+/- extensions"""
-    if not args:
-        # tw @ with no args -> show current context
-        # First check if cmx is active
-        current_cmx = get_cmx_contexts()
-        if current_cmx:
-            print(f"Context multiplexing active: {current_cmx}")
-            combined_read = TaskRC().get('context.cmx.read')
-            if combined_read:
-                print(f"Combined filter: {combined_read}")
-            return 0
-        else:
-            # No cmx, show regular context
-            return run_task(['context']).returncode
-    
-    first_arg = args[0]
-    
-    # Check for @+ (add context)
-    if first_arg.startswith('+'):
-        context_name = first_arg[1:]
-        return add_context_to_cmx(context_name)
-    
-    # Check for @- (remove context)
-    if first_arg.startswith('-'):
-        context_name = first_arg[1:]
-        return remove_context_from_cmx(context_name)
-    
-    # Otherwise, pass through to task context
-    # tw @ list  -> task context list
-    # tw @ work  -> task context work
-    return run_task(['context'] + args).returncode
+class Cmx:
+    """Context multiplexing: several contexts at once, their filters joined with `and`.
 
-def get_cmx_contexts():
-    """Get current cmx.contexts value — reads .taskrc directly."""
-    return TaskRC().get('cmx.contexts')
-
-
-def is_cmx_active():
-    """Return True if cmx is the currently active context (not paused/cleared)."""
-    ctx = TaskRC().get('context', '')
-    return ctx == 'cmx' or ctx.startswith('cmx:')
-
-
-def rebuild_cmx_if_stale():
-    """Rebuild combined cmx filter if CMX_STALE_MARKER exists.
-
-    Called once at startup. If the marker is absent this is a no-op (one
-    Path.exists() check). If present, rebuilds context.cmx.read/write from
-    the current context definitions, then removes the marker.
-
-    Producer convention: any app that modifies a context definition should
-    touch ~/.task/config/.cmx_stale so tw picks up the change automatically.
+    All state lives in the taskrc (read and written through one TaskRC, no subprocesses):
+        context=cmx:<a,b>                the active context, named after the set, so task's
+                                         own messages say "Context 'cmx:a,b' applied."
+        context.cmx:<a,b>.read/.write    the combined filter, where task looks for it
+        context.cmx.read/.write          the same, for tw and other readers
+        cmx.contexts=a,b                 the set; kept while paused (@0) so @@ restores it
+    A set of one is just a regular context (context=<name>, no cmx keys).
     """
-    if not CMX_STALE_MARKER.exists():
-        return
-    rc = TaskRC()
-    active = rc.get('context', '')
-    if active != 'cmx' and not active.startswith('cmx:'):
-        # CMX is paused or inactive — clear marker without rebuilding.
-        # (Rebuild will happen when @@ re-activates the set.)
-        CMX_STALE_MARKER.unlink(missing_ok=True)
-        return
-    current_cmx = rc.get('cmx.contexts')
-    if not current_cmx:
-        CMX_STALE_MARKER.unlink(missing_ok=True)
-        return
-    # Rebuild silently — set_cmx_context writes updated filters to .taskrc
-    try:
-        set_cmx_context(current_cmx, silent=True)
-    except Exception:
-        pass  # don't break normal tw operation if rebuild fails
-    CMX_STALE_MARKER.unlink(missing_ok=True)
-    debug(f"cmx rebuilt from stale marker: {current_cmx}", 1)
 
-def is_context_defined(context_name):
-    """Check if a context is defined — reads .taskrc + includes directly."""
-    rc = TaskRC()
-    # A context exists if it has either a .read or legacy plain filter key
-    return bool(rc.get(f'context.{context_name}.read') or
-                rc.get(f'context.{context_name}'))
+    CLEARED = {'cmx.contexts': '', 'context.cmx.read': '', 'context.cmx.write': ''}
 
-def get_context_filter(context_name, filter_type='read'):
-    """Get the read or write filter for a context — no subprocess."""
-    rc = TaskRC()
-    val = rc.get(f'context.{context_name}.{filter_type}')
-    if not val and filter_type == 'read':
-        # Fall back to legacy single-key context definition
-        val = rc.get(f'context.{context_name}')
-    return val
+    def __init__(self, rc=None):
+        self.rc = rc or TaskRC()
 
-def build_combined_filter(rc, contexts_str, filter_type='read'):
-    """Build combined filter from comma-separated contexts.
-    
-    Takes a TaskRC instance to avoid re-parsing files per call.
-    """
-    if not contexts_str:
-        return ""
-    
-    parts = []
-    for ctx in [c.strip() for c in contexts_str.split(',') if c.strip()]:
-        f = rc.get(f'context.{ctx}.{filter_type}')
-        if not f and filter_type == 'read':
-            f = rc.get(f'context.{ctx}')  # legacy fallback
-        if f:
-            parts.append(f"( {f} )")
-    
-    return " and ".join(parts) if parts else ""
+    @staticmethod
+    def is_set_key(key):
+        """context.cmx:<set>.read/.write: one per set ever activated, unless dropped."""
+        return key.startswith('context.cmx:')
 
-def set_cmx_context(contexts_str, silent=False):
-    """Set the cmx context — direct .taskrc writes, zero subprocesses.
+    @property
+    def active(self):
+        """Is a cmx set the active context (not paused or cleared)?"""
+        ctx = self.rc.get('context')
+        return ctx == 'cmx' or ctx.startswith('cmx:')
 
-    silent=True suppresses the confirmation prints (used by rebuild_cmx_if_stale).
-    """
-    try:
-        rc = TaskRC()
+    @property
+    def saved(self):
+        """The set in cmx.contexts, active or paused."""
+        return [c.strip() for c in self.rc.get('cmx.contexts').split(',') if c.strip()]
 
-        if not contexts_str:
-            # Clear everything in one write
-            rc.set_keys({
-                'context':           '',
-                'cmx.contexts':      '',
-                'context.cmx.read':  '',
-                'context.cmx.write': '',
-            }, drop=_is_cmx_set_key)
+    @property
+    def current(self):
+        """The active set ([] when cmx is paused or off)."""
+        return self.saved if self.active else []
+
+    def filter(self, name, kind='read'):
+        """A context's read or write filter; the read filter falls back to the pre-2.6 single key
+        (context.<name>=filter). '' when it isn't defined."""
+        f = self.rc.get(f'context.{name}.{kind}')
+        if not f and kind == 'read':
+            f = self.rc.get(f'context.{name}')
+        return f
+
+    def defined(self, name):
+        return bool(self.filter(name))
+
+    def combined(self, names, kind='read'):
+        return ' and '.join(f'( {f} )' for f in (self.filter(n, kind) for n in names) if f)
+
+    def _write(self, updates):
+        self.rc.set_keys(updates, drop=self.is_set_key)     # earlier sets' context.cmx:<set>.* go
+
+    def activate(self, names, silent=False):
+        """Make names the active set (no names: clear every context). 0, or 1 when one isn't defined."""
+        if not names:
+            self._write({'context': '', **self.CLEARED})
             if not silent:
                 print("Cleared all contexts")
             return 0
-
-        # Validate all contexts exist (reads only, no subprocesses)
-        contexts = [c.strip() for c in contexts_str.split(',') if c.strip()]
-        for ctx in contexts:
-            if not is_context_defined(ctx):
+        for name in names:
+            if not self.defined(name):
                 if not silent:
-                    print(f"[tw] Error: Context '{ctx}' is not defined")
-                    print(f"[tw] Use 'task context define {ctx} <filter>' to define it first")
+                    self._undefined(name)
                 return 1
-
-        # Build combined filters using same rc instance (already loaded)
-        combined_read  = build_combined_filter(rc, contexts_str, 'read')
-        combined_write = build_combined_filter(rc, contexts_str, 'write')
-
-        # Write everything in one pass.
-        # Context name encodes the active set so TW's own message is informative:
-        #   "Context 'cmx:work,morning' applied."
-        # Filter is written under the matching key (context.cmx:work,morning.read)
-        # so TW's filter lookup works, AND under context.cmx.read for tw's own use.
-        context_name = f'cmx:{contexts_str}'
-        updates = {
-            'context':      context_name,
-            'cmx.contexts': contexts_str,
-        }
-        if combined_read:
-            updates[f'context.{context_name}.read'] = combined_read
-            updates['context.cmx.read'] = combined_read
-        if combined_write:
-            updates[f'context.{context_name}.write'] = combined_write
-            updates['context.cmx.write'] = combined_write
-
-        rc.set_keys(updates, drop=_is_cmx_set_key)   # earlier sets' context.cmx:<set>.* go
-
+        joined = ','.join(names)
+        read, write = self.combined(names, 'read'), self.combined(names, 'write')
+        updates = {'context': f'cmx:{joined}', 'cmx.contexts': joined}
+        if read:
+            updates[f'context.cmx:{joined}.read'] = updates['context.cmx.read'] = read
+        if write:
+            updates[f'context.cmx:{joined}.write'] = updates['context.cmx.write'] = write
+        self._write(updates)
         if not silent:
-            print(f"Activated contexts: {contexts_str}")
-            if combined_read:
-                print(f"Combined filter: {combined_read}")
+            print(f"Activated contexts: {joined}")
+            if read:
+                print(f"Combined filter: {read}")
         return 0
 
-    except Exception as e:
-        print(f"[tw] Error setting context: {e}", file=sys.stderr)
-        return 1
+    def use(self, name):
+        """One regular context instead of a set."""
+        self._write({'context': name, **self.CLEARED})
+        print(f"Context: {name}")
+        return 0
 
-def get_active_context():
-    """Get the currently active context name — reads .taskrc directly."""
-    return TaskRC().get('context')
-
-def _is_cmx_set_key(key):
-    """context.cmx:<set>.read/.write: one per set ever activated, unless dropped."""
-    return key.startswith('context.cmx:')
-
-
-def clear_cmx_keys():
-    """Clear all cmx-related keys — direct .taskrc write, no subprocesses."""
-    TaskRC().set_keys({
-        'cmx.contexts':      '',
-        'context.cmx.read':  '',
-        'context.cmx.write': '',
-    }, drop=_is_cmx_set_key)
-
-def demote_to_regular_context(context_name):
-    """Demote from cmx back to a single regular context — one .taskrc write."""
-    TaskRC().set_keys({
-        'context':           context_name,
-        'cmx.contexts':      '',
-        'context.cmx.read':  '',
-        'context.cmx.write': '',
-    }, drop=_is_cmx_set_key)
-    print(f"Context: {context_name}")
-
-def add_context_to_cmx(context_name):
-    """Add a context to the current cmx set.
-    
-    If a regular (non-cmx) context is active, promote it into cmx first,
-    then add the new context alongside it.
-    """
-    if not is_context_defined(context_name):
-        print(f"[tw] Error: Context '{context_name}' is not defined")
-        print(f"[tw] Use 'task context define {context_name} <filter>' to define it first")
-        return 1
-    
-    current_cmx = get_cmx_contexts() if is_cmx_active() else ''
-
-    if current_cmx:
-        # Already in cmx mode - add to existing set
-        current_list = [c.strip() for c in current_cmx.split(',')]
-        if context_name in current_list:
-            print(f"Context '{context_name}' is already active")
-            return 0
-        new_contexts = f"{current_cmx},{context_name}"
-    else:
-        # Not in cmx mode - check for active regular context to promote
-        active = get_active_context()
-        if active and active != 'cmx' and not active.startswith('cmx:') and is_context_defined(active):
-            # Promote the existing regular context into cmx alongside new one
-            if active == context_name:
-                print(f"Context '{context_name}' is already active")
+    def add(self, name):
+        """@+: add a context to the active set. An active regular context joins the set with it;
+        with no context active, it simply becomes the context."""
+        if not self.defined(name):
+            self._undefined(name)
+            return 1
+        current = self.current
+        if not current:
+            active = self.rc.get('context')
+            if not active or self.active or not self.defined(active):
+                self.rc.set_keys({'context': name})
+                print(f"Context: {name}")
                 return 0
-            new_contexts = f"{active},{context_name}"
-        else:
-            # No active context - just set as regular context (no need for cmx)
-            TaskRC().set_keys({'context': context_name})
-            print(f"Context: {context_name}")
+            current = [active]                      # promote the regular context into a set
+        if name in current:
+            print(f"Context '{name}' is already active")
             return 0
-    
-    return set_cmx_context(new_contexts)
+        return self.activate(current + [name])
 
-def remove_context_from_cmx(context_name):
-    """Remove a context from the current cmx set.
-    
-    If only one context remains after removal, demote back to regular
-    context= and clear all cmx keys.
-    If no contexts remain, clear everything.
+    def remove(self, name):
+        """@-: take a context out of the active set; one left becomes a regular context."""
+        current = self.current
+        if not current:
+            print("No cmx contexts are currently active")
+            return 0
+        if name not in current:
+            print(f"Context '{name}' is not in the active set")
+            return 0
+        rest = [c for c in current if c != name]
+        if len(rest) == 1:
+            return self.use(rest[0])
+        return self.activate(rest)
+
+    def pause(self):
+        """@0: no context, but the set stays in cmx.contexts for @@."""
+        saved = self.rc.get('cmx.contexts')
+        self._write({'context': '', 'context.cmx.read': '', 'context.cmx.write': ''})
+        if saved:
+            print(f"[tw] Context cleared  (CMX set preserved: {saved} — restore with 'tw @@')")
+        else:
+            print("[tw] Context cleared")
+        return 0
+
+    def restore(self):
+        """@@: activate the saved set again, its filters rebuilt from the current definitions."""
+        if not self.saved:
+            print("[tw] No saved CMX set to restore  (use '@+ <context>' to build one)")
+            return 1
+        return self.activate(self.saved)
+
+    def show(self):
+        """@ alone: the active set and its filter, else task's own `context` output."""
+        if self.saved and self.active:
+            print(f"Context multiplexing active: {self.rc.get('cmx.contexts')}")
+            if self.rc.get('context.cmx.read'):
+                print(f"Combined filter: {self.rc.get('context.cmx.read')}")
+            return 0
+        return run_task(['context']).returncode
+
+    def rebuild_if_stale(self):
+        """Rebuild the active set's filters when CMX_STALE_MARKER exists, then remove the marker.
+        Called at every start: without the marker it is one Path.exists(). Producer convention:
+        an app that changes a context definition touches ~/.task/config/.cmx_stale."""
+        if not CMX_STALE_MARKER.exists():
+            return
+        if self.active and self.saved:      # paused or off: @@ rebuilds when it comes back
+            try:
+                self.activate(self.saved, silent=True)
+            except Exception:
+                pass                        # never break normal tw operation over a rebuild
+            debug(f"cmx rebuilt from stale marker: {self.saved}", 1)
+        CMX_STALE_MARKER.unlink(missing_ok=True)
+
+    @staticmethod
+    def _undefined(name):
+        print(f"[tw] Error: Context '{name}' is not defined")
+        print(f"[tw] Use 'task context define {name} <filter>' to define it first")
+
+
+def handle_context_command(word, rest, debug_wrapper=False):
+    """tw's @ forms (word is the first argument, rest what follows it):
+        @              show the context / active cmx set     @ <args>   task context <args>
+        @+ <name>      add to the cmx set (@+name too)        @- <name>  remove from it (@-name)
+        @0             pause: no context, set kept            @@         restore the set
+        @: <name> ...  one command in that context            @_ ...     one command in none
+        @?             task context show                      @<name>    task context <name>
     """
-    current = get_cmx_contexts() if is_cmx_active() else ''
+    if debug_wrapper:
+        print(f"[tw-debug] Context command: {word} {rest}", file=sys.stderr)
+    cmx = Cmx()
+    if word == '@':
+        if not rest:
+            return cmx.show()
+        if not rest[0].startswith(('+', '-')):
+            return run_task(['context'] + rest).returncode     # `@ list`, `@ work`, `@ none`
+        word, rest = '@' + rest[0], rest[1:]                    # `@ +work` is `@+work`
+    try:
+        return _context_op(cmx, word, rest)
+    except OSError:
+        return 1                    # TaskRC.set_keys has said what went wrong
 
-    if not current:
-        print("No cmx contexts are currently active")
-        return 0
-    
-    current_list = [c.strip() for c in current.split(',')]
-    
-    if context_name not in current_list:
-        print(f"Context '{context_name}' is not in the active set")
-        return 0
-    
-    # Remove the context
-    new_list = [c for c in current_list if c != context_name]
-    
-    if len(new_list) == 0:
-        # No contexts left - clear everything
-        TaskRC().set_keys({
-            'context':           '',
-            'cmx.contexts':      '',
-            'context.cmx.read':  '',
-            'context.cmx.write': '',
-        }, drop=_is_cmx_set_key)
-        print("Cleared all contexts")
-        return 0
-    elif len(new_list) == 1:
-        # One context left - demote to regular context
-        demote_to_regular_context(new_list[0])
-        return 0
-    else:
-        # Multiple remain - rebuild cmx
-        return set_cmx_context(','.join(new_list))
+
+def _context_op(cmx, word, rest):
+    if word == '@0':
+        return cmx.pause()
+    if word == '@@':
+        return cmx.restore()
+    if word == '@?':
+        return run_task(['context', 'show']).returncode
+    if word == '@_':
+        return run_task(['rc.context:none'] + rest).returncode
+    if word == '@:':
+        if not rest:
+            print("[tw] Error: @: requires a context name")
+            print("[tw] Usage: tw @: contextname [task args]")
+            return 1
+        return run_task([f'rc.context:{rest[0]}'] + rest[1:]).returncode
+    if word in ('@+', '@-'):
+        if not rest:
+            print(f"[tw] Error: {word} requires a context name")
+            return 1
+        word, rest = word + rest[0], rest[1:]
+    if word.startswith('@+'):
+        return cmx.add(word[2:])
+    if word.startswith('@-'):
+        return cmx.remove(word[2:])
+    return run_task(['context', word[1:]] + rest).returncode
+
 
 def attach_file_to_task(task_id):
     """Attach a file to a task using ranger file browser"""
@@ -2984,44 +2941,8 @@ def run_with_pager(task_args):
         return pass_through_to_task(task_args)
 
 
-# Task commands that modify state or produce non-report output: _find_report_name skips them.
-# (Whether filter wrappers run is decided by _args_have_report, which knows the reports.)
-_TASK_NONREPORT_COMMANDS = {
-    'add', 'modify', 'done', 'delete', 'rm', 'denotate', 'annotate',
-    'append', 'prepend', 'duplicate', 'start', 'stop', 'import', 'export',
-    'purge', 'undo', 'sync', 'execute', 'edit', 'logo', 'diagnostics',
-    'show', 'config', 'context', 'help', 'version', 'calc', 'columns',
-    'commands', 'reports', 'stats', 'tags', 'projects', 'timesheet',
-    'burndown', 'history', 'ghistory', 'calendar',
-}
-
-def _find_report_name(args):
-    """Return the report name from args, or None if no report word found.
-
-    Skips rc.* overrides, tags, attribute:value pairs, numbers, and flags.
-    Returns the LAST bare lowercase word that is not a known task command,
-    matching Taskwarrior's convention of 'task <filter...> <report>' where
-    the report name always comes last (e.g. 'tw proj:foo list' → 'list').
-    """
-    candidates = []
-    for arg in args:
-        if arg.startswith('rc.') or arg.startswith('rc:'):
-            continue
-        if arg.startswith('+') or arg.startswith('-'):
-            continue
-        if ':' in arg:
-            continue
-        if arg.isdigit():
-            continue
-        if arg.startswith('--') or (arg.startswith('-') and len(arg) == 2):
-            continue
-        if re.match(r'^[a-z][a-z0-9._]*$', arg) and arg not in _TASK_NONREPORT_COMMANDS:
-            candidates.append(arg)
-    return candidates[-1] if candidates else None
-
-
 def _task_vocab():
-    """What _args_have_report needs from the taskrc: report names, aliases, abbreviation.minimum and
+    """What command_of needs from the taskrc: report names, aliases, abbreviation.minimum and
     default.command, from one read-only `task _show` (about 20 ms). None when task can't run."""
     try:
         r = run_task(['rc.hooks=off', 'rc.verbose=nothing', '_show'],
@@ -3051,9 +2972,10 @@ def _task_vocab():
 _ID_RE = re.compile(r'[0-9][0-9,\-]*|[0-9a-f]{8}(-[0-9a-f]{1,12})*')
 
 
-def _command_kind(args, vocab, depth=0):
-    """'report' or 'other' for the command task would run for args, None when there is none
-    (task then runs default.command). Follows aliases; IDs alone mean `information`."""
+def _classify(args, vocab, depth=0):
+    """(kind, name) of the command task would run for args: kind 'report' or 'other', name the
+    command with abbreviation and alias resolved. Ambiguous: ('other', None). IDs alone mean
+    information. (None, None) when there is no command (task then runs default.command)."""
     names = TASK_COMMANDS | vocab['reports'] | set(vocab['aliases'])
     ids = False
     for arg in args:
@@ -3071,17 +2993,31 @@ def _command_kind(args, vocab, depth=0):
         else:
             matches = [n for n in names if n.startswith(arg)] if len(arg) >= vocab['abbreviation'] else []
             if len(matches) > 1:
-                return 'other'                      # ambiguous: task refuses it, never a report
+                return 'other', None                # ambiguous: task refuses it, never a report
             if not matches:
                 continue                            # a filter word
             name = matches[0]
         if name in vocab['aliases'] and depth < 5:
             try:
-                return _command_kind(shlex.split(vocab['aliases'][name]), vocab, depth + 1)
+                return _classify(shlex.split(vocab['aliases'][name]), vocab, depth + 1)
             except ValueError:
-                return 'other'
-        return 'report' if name in vocab['reports'] else 'other'
-    return 'other' if ids else None
+                return 'other', None
+        return ('report' if name in vocab['reports'] else 'other'), name
+    return ('other', 'information') if ids else (None, None)
+
+
+def command_of(args, vocab):
+    """(kind, name) of what task runs for args, default.command included: ('report', 'next') for
+    a bare `tw`, ('other', 'delete') for `tw 5 del`. (None, None) with no vocab (task can't run)."""
+    if not vocab:
+        return None, None
+    kind, name = _classify(args, vocab)
+    if kind is None:
+        try:
+            kind, name = _classify(shlex.split(vocab['default']), vocab)
+        except ValueError:
+            kind, name = None, None
+    return kind, name
 
 
 def _args_have_report(args, vocab):
@@ -3089,15 +3025,7 @@ def _args_have_report(args, vocab):
     reformat a report's dates) should see the output. Anything else (a write, information,
     an unknown or ambiguous command) runs plainly, so its prompts reach the terminal and its
     dates are parsed in the user's own dateformat. With no vocab (task can't run): False."""
-    if not vocab:
-        return False
-    kind = _command_kind(args, vocab)
-    if kind is None:
-        try:
-            kind = _command_kind(shlex.split(vocab['default']), vocab)
-        except ValueError:
-            kind = None
-    return kind == 'report'
+    return command_of(args, vocab)[0] == 'report'
 
 
 def run_with_timing(args):
@@ -3255,16 +3183,22 @@ def pass_through_to_task(args, debug_wrapper=False):
 
     # Pre-exec wrappers: run before task so they can patch config before task
     # reads it. run_pre_exec() returns None to abort, [] if none registered.
+    # What task will run (one `task _show`, about 20 ms), only when a wrapper wants to know
+    kind, name = (None, None)
+    if wrapper_mgr.get_pre_exec() or wrapper_mgr.get_filters():
+        kind, name = command_of(args, _task_vocab())
+    report = name if kind == 'report' else ''
+
     ran_pre_exec = []
     if wrapper_mgr.get_pre_exec():
-        ran_pre_exec = wrapper_mgr.run_pre_exec(args, session_id)
+        ran_pre_exec = wrapper_mgr.run_pre_exec(args, session_id, report)
         if ran_pre_exec is None:
             return 1  # a pre-exec script signalled abort
 
     try:
         # Filter wrappers: report-only, pipe task output through registered scripts.
-        if wrapper_mgr.get_filters() and _args_have_report(args, _task_vocab()):
-            rc = wrapper_mgr.run_through_filters(args, debug_wrapper=debug_wrapper)
+        if wrapper_mgr.get_filters() and report:
+            rc = wrapper_mgr.run_through_filters(args, debug_wrapper=debug_wrapper, report=report)
             if rc is not None:
                 return rc
 
@@ -3276,7 +3210,7 @@ def pass_through_to_task(args, debug_wrapper=False):
 
     finally:
         if ran_pre_exec:
-            wrapper_mgr.run_post_exec(ran_pre_exec, args, session_id)
+            wrapper_mgr.run_post_exec(ran_pre_exec, args, session_id, report)
 
 def _completion_flags():
     return [f for f in TW_FLAGS if not f.hidden]
@@ -3918,9 +3852,8 @@ def show_help():
 
 def main():
     """Main entry point"""
-    # Rebuild cmx combined filter if a context definition was changed externally.
-    # No-op when marker absent (one Path.exists() check).
-    rebuild_cmx_if_stale()
+    # Rebuild the cmx filters if a context definition was changed elsewhere (no marker: no-op)
+    Cmx().rebuild_if_stale()
 
     # Debug support via TW_DEBUG_WRAPPER environment variable
     # Set TW_DEBUG_WRAPPER=1 to see argument parsing flow
@@ -3949,97 +3882,9 @@ def main():
             if debug_wrapper:
                 print(f"[tw-debug] After dot resolution: sys.argv = {sys.argv}", file=sys.stderr)
         
-        # Check for @ context command (special case - not a flag)
+        # @ context forms: @, @+, @-, @0, @@, @:, @_, @?, @<name>
         if sys.argv[1].startswith('@'):
-            if debug_wrapper:
-                print(f"[tw-debug] Context command detected: {sys.argv[1]}", file=sys.stderr)
-            
-            # Handle different @ formats:
-            # tw @            show current context
-            # tw @ list       pass through to task context
-            # tw @+ work      add context to cmx set
-            # tw @- morning   remove context from cmx set
-            # tw @0           pause context (clears context=, preserves cmx.contexts)
-            # tw @@           restore previously saved cmx set
-            # tw @: ctxname   one-shot context override (rc.context:name)
-            # tw @_ [args]    one-shot no-context (rc.context:none)
-            # tw @?           context show
-            
-            if sys.argv[1] == '@':
-                # Simple @ - pass remaining args as-is
-                return handle_context_command(sys.argv[2:])
-            
-            elif sys.argv[1] == '@0':
-                # @0 = pause context: clear active context but preserve cmx.contexts
-                # so the set can be quickly restored with @@.
-                if debug_wrapper:
-                    print(f"[tw-debug] @0 -> pausing context, preserving cmx.contexts", file=sys.stderr)
-                rc = TaskRC()
-                saved_cmx = rc.get('cmx.contexts')
-                rc.set_keys({
-                    'context':           '',
-                    'context.cmx.read':  '',
-                    'context.cmx.write': '',
-                })
-                if saved_cmx:
-                    print(f"[tw] Context cleared  (CMX set preserved: {saved_cmx} — restore with 'tw @@')")
-                else:
-                    print("[tw] Context cleared")
-                return 0
-            
-            elif sys.argv[1] == '@@':
-                # @@ = restore previously saved cmx set (after @0 pause)
-                if debug_wrapper:
-                    print(f"[tw-debug] @@ -> restoring saved cmx set", file=sys.stderr)
-                saved_cmx = TaskRC().get('cmx.contexts')
-                if not saved_cmx:
-                    print("[tw] No saved CMX set to restore  (use '@+ <context>' to build one)")
-                    return 1
-                return set_cmx_context(saved_cmx)
-
-            elif sys.argv[1] == '@?':
-                # @? = context show
-                if debug_wrapper:
-                    print(f"[tw-debug] @? -> task context show", file=sys.stderr)
-                return run_task(['context', 'show']).returncode
-            
-            elif sys.argv[1] == '@:':
-                # @: contextname [args] = one-shot context override
-                if len(sys.argv) > 2:
-                    ctx_name = sys.argv[2]
-                    rest = sys.argv[3:]
-                    if debug_wrapper:
-                        print(f"[tw-debug] @: -> task rc.context:{ctx_name} {rest}", file=sys.stderr)
-                    return run_task([f'rc.context:{ctx_name}'] + rest).returncode
-                else:
-                    print("[tw] Error: @: requires a context name")
-                    print("[tw] Usage: tw @: contextname [task args]")
-                    return 1
-            
-            elif sys.argv[1] == '@_':
-                # @_ [args] = one-shot no-context override
-                rest = sys.argv[2:]
-                if debug_wrapper:
-                    print(f"[tw-debug] @_ -> task rc.context:none {rest}", file=sys.stderr)
-                return run_task(['rc.context:none'] + rest).returncode
-            
-            elif sys.argv[1] == '@+':
-                # @+ with space - combine with next arg
-                if len(sys.argv) > 2:
-                    return handle_context_command(['+' + sys.argv[2]] + sys.argv[3:])
-                else:
-                    print("[tw] Error: @+ requires a context name")
-                    return 1
-            elif sys.argv[1] == '@-':
-                # @- with space - combine with next arg
-                if len(sys.argv) > 2:
-                    return handle_context_command(['-' + sys.argv[2]] + sys.argv[3:])
-                else:
-                    print("[tw] Error: @- requires a context name")
-                    return 1
-            else:
-                # @+context or @-context (no space)
-                return handle_context_command([sys.argv[1][1:]] + sys.argv[2:])
+            return handle_context_command(sys.argv[1], sys.argv[2:], debug_wrapper)
         
         # Check for wrapper commands (e.g., tw 42 ann.1)
         # Wrappers are registered in ~/.task/config/.tw_wrappers

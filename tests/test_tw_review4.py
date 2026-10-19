@@ -178,7 +178,7 @@ def test_cmx_remove_last_drops_set_keys(tmp_path, monkeypatch):
     rc.write_text('context.work.read=+work\ncontext=cmx:work\ncmx.contexts=work\n'
                   'context.cmx:work.read=( +work )\ncontext.cmx.read=( +work )\n')
     monkeypatch.setenv('TASKRC', str(rc))
-    assert tw.remove_context_from_cmx('work') == 0
+    assert tw.Cmx().remove('work') == 0
     keys = [l.split('=')[0] for l in rc.read_text().splitlines()]
     assert 'context.cmx:work.read' not in keys
     assert 'context.work.read' in keys

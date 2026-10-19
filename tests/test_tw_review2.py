@@ -140,14 +140,14 @@ def test_symlinked_taskrc_stays_a_symlink(rc, tmp_path, monkeypatch):
 
 
 def test_cmx_drops_earlier_sets(rc):
-    assert tw.set_cmx_context('work', silent=True) == 0
-    assert tw.set_cmx_context('work,home', silent=True) == 0
+    assert tw.Cmx().activate(['work'], silent=True) == 0
+    assert tw.Cmx().activate(['work', 'home'], silent=True) == 0
     keys = [l.split('=')[0] for l in rc.read_text().splitlines() if '=' in l]
     assert 'context.cmx:work,home.read' in keys
     assert 'context.cmx:work.read' not in keys
     assert 'context.cmx.read' in keys and 'context.work.read' in keys
     assert '# a comment' in rc.read_text()
-    tw.set_cmx_context('', silent=True)
+    tw.Cmx().activate([], silent=True)
     assert not [k for k in (l.split('=')[0] for l in rc.read_text().splitlines()) if k.startswith('context.cmx:')]
 
 
@@ -190,13 +190,13 @@ def test_bang_bang_never_runs_a_task_line(shell):
     assert shell.shell_ran == []
 
 
-def test_context_reads_the_262_key_and_changes_nothing(shell, monkeypatch):
+def test_context_reads_the_262_key_and_changes_nothing(shell, monkeypatch, tmp_path):
+    rc = tmp_path / 'ctx.taskrc'
+    before = 'context=work\ncontext.home=old-style\ncontext.home.read=project:home or +errand\n'
+    rc.write_text(before)
+    monkeypatch.setenv('TASKRC', str(rc))
     calls = []
-    def run(cmd, *a, **k):
-        calls.append(cmd)
-        out = 'project:home or +errand' if cmd[-1] == 'rc.context.home.read' else ''
-        return subprocess.CompletedProcess(cmd, 0, stdout=out)
-    monkeypatch.setattr(tw.subprocess, 'run', run)
+    monkeypatch.setattr(tw.subprocess, 'run', lambda cmd, *a, **k: calls.append(cmd))
     shell.handle_line(':context home')
     assert shell.prefix_stack == ['(', 'project:home', 'or', '+errand', ')']
-    assert not any(c[:2] == ['task', 'context'] for c in calls)
+    assert calls == [] and rc.read_text() == before        # read straight from the taskrc
