@@ -44,8 +44,9 @@ def fake_bin(tmp_path, monkeypatch):
 # ── dot shortcuts: notices on stderr ─────────────────────────────────────────
 
 def test_dot_notice_stays_off_stdout(fake_bin, tmp_path):
-    # `newest` lists task 7; anything else (the real command) prints JSON
-    script(fake_bin / 'task', 'case "$*" in *newest*) echo "7 2026-10-18 buy milk";; '
+    # the shortcut's query finds task 7; the real command (`7 export`) prints its JSON
+    script(fake_bin / 'task', 'case "$*" in *status:pending*) '
+                              'echo "[{\\"id\\":7,\\"entry\\":\\"20261018T000000Z\\"}]";; '
                               '*) echo "[{\\"id\\":7}]";; esac\n')
     env = dict(os.environ, HOME=str(tmp_path), PATH=os.environ['PATH'])
     (tmp_path / '.task' / 'config').mkdir(parents=True)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 tw - awesome-taskwarrior package manager and wrapper
-Version: 2.13.1
+Version: 2.14.0
 
 A unified wrapper for Taskwarrior that provides:
 - Transparent pass-through to task command
@@ -10,6 +10,18 @@ A unified wrapper for Taskwarrior that provides:
 - Per-file manifest tracking
 - Checksum verification
 - Dev mode indicator for local development
+
+Updates in v2.14.0 (step 2 of the 2026-10-18 consolidation plan):
+- Changed: one flag table (TW_FLAGS) drives the argument split, argparse (build_parser), tw -h
+  (show_help) and the bash/zsh/fish completions; help topics live in HELP_TOPICS
+- Fixed: tw --gtk / tw --tui were refused as unknown flags (the long-flag list had drifted)
+- Fixed: completions offer -R, -g, -t, --timing, --install-completion; task's words still
+  complete after -p, -s, --timing; --debug's level only after = (as tw reads it)
+- Changed: one run_task() starts task (argv[0] 'task', the binary from PATH; exit 127 without one)
+- Changed: dot shortcuts are one export query each (hooks off), not a parse of the newest report
+- Changed: tw -p is a pipe, not a shell string (no quoting, argv[0] 'task' as for calendar)
+- Fixed: tw --timing hid task's coloured `.data rw` and `Filtered N tasks` debug lines
+- Tests: tests/test_tw_flags_run_task.py (33)
 
 Updates in v2.13.1 (step 1 of the 2026-10-18 consolidation plan):
 - Fixed: dot-shortcut notices (`[tw] . -> task N`) go to stderr: `tw . export` is clean JSON
@@ -165,6 +177,7 @@ import os
 import re
 import subprocess
 import argparse
+from typing import NamedTuple
 from pathlib import Path
 from datetime import datetime
 import hashlib
@@ -177,7 +190,7 @@ import tempfile
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 
-VERSION = "2.13.1"
+VERSION = "2.14.0"
 
 # GitHub configuration
 GITHUB_REPO = "linuxcaffe/awesome-taskwarrior"
@@ -480,17 +493,81 @@ class TaskRC:
             raise
 
 
-# tw's own flags. A wrapper keyword never dispatches after one of these, except the prefix
-# flags, which go in front of an ordinary command (`tw --timing 42 ann`).
-TW_SHORT_FLAGS = ['-I', '-r', '-R', '-u', '-l', '-i', '-v', '-h', '-s', '-p', '-A', '-g', '-t']
-TW_LONG_FLAGS = ['--install', '--remove', '--readme', '--update', '--list', '--info',
-                 '--verify', '--tags', '--dry-run', '--debug', '--timing',
-                 '--version', '--help', '--shell', '--pager', '--attach', '--generate-completion', '--install-completion']
+class Flag(NamedTuple):
+    """One of tw's own flags. kind says what argument it takes:
+        flag  none                                  arg   the next word
+        opt   the next word, unless that is a flag or a +/-tag (`tw -i`, `tw -i APP`)
+        eq    a value only as --flag=VALUE (`--debug=2`)
+        many  the following words (hidden --gen, after -g)
+    param is what the help shows after it; complete is what its argument completes to (apps,
+    installed, topics, shells, ids, levels); passthrough means task's words follow it, so the
+    shell completions keep offering them; hidden flags are only for another flag's use."""
+    short: str
+    long: str
+    kind: str
+    help: str
+    param: str = ''
+    complete: str = None
+    passthrough: bool = False
+    hidden: bool = False
+
+
+# tw's flags: this table drives the argument split, argparse, `tw -h` and the bash/zsh/fish
+# completions. A wrapper keyword never dispatches after one of these, except the prefix flags,
+# which go in front of an ordinary command (`tw --timing 42 ann`).
+TW_FLAGS = [
+    Flag('-A', '--attach',              'arg',  'Attach file to task using ranger', 'TASKID', 'ids'),
+    Flag('',   '--debug',               'eq',   'Enable debug output (1-3)', '[=LEVEL]', 'levels',
+         passthrough=True),
+    Flag('',   '--dry-run',             'flag', 'Show what would be done'),
+    Flag('',   '--generate-completion', 'arg',  'Generate shell completion script', 'SHELL', 'shells'),
+    Flag('-g', '--gtk',                 'flag', 'Launch GTK GUI (add, context, triage, active)',
+         '[subcmd]', passthrough=True),
+    Flag('',   '--gen',                 'many', 'Generate cached GTK reports', hidden=True),
+    Flag('-h', '--help',                'flag', 'Show help or help on a topic', '[TOPIC]', 'topics'),
+    Flag('-i', '--info',                'opt',  'Show app info (all if no name)', '[APP]', 'apps'),
+    Flag('-I', '--install',             'arg',  'Install an application', 'APP', 'apps'),
+    Flag('',   '--install-completion',  'arg',  'Install shell completion script', 'SHELL', 'shells'),
+    Flag('-l', '--list',                'flag', 'List installed/available applications', '[+/-tags]'),
+    Flag('-p', '--pager',               'flag', 'Use pager for task output', '[cmd]', passthrough=True),
+    Flag('-R', '--readme',              'opt',  'List docs or open README for app', '[APP]'),
+    Flag('-r', '--remove',              'arg',  'Remove an application', 'APP', 'installed'),
+    Flag('-s', '--shell',               'flag', 'Start interactive shell', '[cmd]',
+         passthrough=True),
+    Flag('',   '--tags',                'flag', 'List all available tags', '[APP..]'),
+    Flag('',   '--timing',              'flag', 'Show per-hook timing breakdown', '[cmd]',
+         passthrough=True),
+    Flag('-t', '--tui',                 'flag', 'Launch terminal UI (tw-tui)', passthrough=True),
+    Flag('-u', '--update',              'arg',  'Update an application', 'APP', 'installed'),
+    Flag('',   '--verify',              'arg',  'Verify application checksums', 'APP', 'installed'),
+    Flag('-v', '--version',             'flag', 'Show tw and taskwarrior versions'),
+]
+TW_SHORT_FLAGS = [f.short for f in TW_FLAGS if f.short and not f.hidden]
+TW_LONG_FLAGS = [f.long for f in TW_FLAGS if not f.hidden]
+TW_HIDDEN_FLAGS = [f.long for f in TW_FLAGS if f.hidden]
 TW_PREFIX_FLAGS = ('--debug', '--timing')
+
+
+def _flag_names(f):
+    return [n for n in (f.short, f.long) if n]
 
 
 def _is_tw_flag(arg):
     return arg in TW_SHORT_FLAGS or arg.split('=')[0] in TW_LONG_FLAGS
+
+
+def run_task(args, **kwargs):
+    """subprocess.run of `task args` (kwargs as for subprocess.run; check defaults to False).
+    argv[0] stays 'task' while the binary found on PATH runs: task derives its own path from
+    argv[0] for sub-processes, and a full path there gets mangled (calendar --details=full turned
+    /usr/local/bin/task into /usr/lotask). Without a task on PATH: says so, returns exit 127."""
+    argv = ['task'] + list(args)
+    exe = shutil.which('task')
+    if not exe:
+        print("[tw] Error: task executable not found", file=sys.stderr)
+        return subprocess.CompletedProcess(argv, 127, '', '')
+    kwargs.setdefault('check', False)
+    return subprocess.run(argv, executable=exe, **kwargs)
 
 
 # Taskwarrior 2.6.2's commands (`task _commands`; 2.6.2 is fixed, so the list is too).
@@ -1999,14 +2076,14 @@ class TaskShell:
     
     def _run_task(self, args):
         """Execute task command with full passthrough of stdout/stderr"""
-        subprocess.run(["task", "rc.context=none"] + args, check=False)
+        run_task(["rc.context=none"] + args)
     
     def _get_context(self, name):
         """A context's read filter as one parenthesised group, for the modifier stack; [] if it
         isn't defined. Reads 2.6.2's context.<name>.read (else the older context.<name>) and
         changes nothing: the shell runs with rc.context=none, so the stack is the context."""
         for key in (f"rc.context.{name}.read", f"rc.context.{name}"):
-            p = subprocess.run(["task", "rc.hooks=off", "_get", key], capture_output=True, text=True)
+            p = run_task(["rc.hooks=off", "_get", key], capture_output=True, text=True)
             text = (p.stdout or '').strip()
             if text:
                 try:
@@ -2179,10 +2256,10 @@ Examples:
         finally:
             self._save_history()
 
-def show_help_topic(topic):
-    """Show detailed help for a specific topic"""
-    topics = {
-        'shell': """
+# `tw -h TOPIC`. A topic's first line is its title; the part before " (" is its summary in
+# `tw -h` and the shell completions.
+HELP_TOPICS = {
+    'shell': """
 Interactive Shell (tw --shell)
 ==============================
 
@@ -2214,26 +2291,26 @@ Shell Execution:
   !!                 Repeat last shell command
   
   Examples:
-    tw> exec ls -la
-    tw> !grep "bug" notes.txt
-    tw> !!
+tw> exec ls -la
+tw> !grep "bug" notes.txt
+tw> !!
 
 How it Works:
   Every command you type is prepended with HEAD + PREFIX_STACK
   
   Example session:
-    tw> :push +work proj:meetings
-    tw +work proj:meetings> :head add
-    tw add +work proj:meetings> Schedule standup for Friday
-    # Executes: task add +work proj:meetings Schedule standup for Friday
-    
-    tw add +work proj:meetings> :head
-    tw +work proj:meetings> list
-    # Executes: task +work proj:meetings list
-    
-    tw +work proj:meetings> :pop
-    tw +work> 5 modify +urgent
-    # Executes: task +work 5 modify +urgent
+tw> :push +work proj:meetings
+tw +work proj:meetings> :head add
+tw add +work proj:meetings> Schedule standup for Friday
+# Executes: task add +work proj:meetings Schedule standup for Friday
+
+tw add +work proj:meetings> :head
+tw +work proj:meetings> list
+# Executes: task +work proj:meetings list
+
+tw +work proj:meetings> :pop
+tw +work> 5 modify +urgent
+# Executes: task +work 5 modify +urgent
 
 Templates:
   Built-in templates provide quick modifier sets:
@@ -2246,7 +2323,7 @@ History:
   Command history is saved to ~/.task/config/.tw_shell_history
   Use arrow keys to navigate previous commands
 """,
-        'install': """
+    'install': """
 Package Installation (tw --install)
 ===================================
 
@@ -2259,9 +2336,9 @@ Usage:
 How it Works:
   1. Reads metadata from registry.d/<app>.meta
   2. Outside dev mode, downloads the files from its base_url and checks
-     their checksums
+ their checksums
   3. Runs installers/<app>.install, which places the files, adds any
-     include to .taskrc, and records each file in ~/.task/config/.tw_manifest
+ include to .taskrc, and records each file in ~/.task/config/.tw_manifest
 
 File Placement:
   - hook files  -> ~/.task/hooks/
@@ -2273,7 +2350,7 @@ Example:
   tw --install recurrence-overhaul
   tw --install --dry-run need-priority
 """,
-        'remove': """
+    'remove': """
 Package Removal (tw --remove)
 ==============================
 
@@ -2295,7 +2372,7 @@ Safety:
 Example:
   tw --remove recurrence-overhaul
 """,
-        'verify': """
+    'verify': """
 Package Verification (tw --verify)
 ===================================
 
@@ -2307,7 +2384,7 @@ Usage:
 How it Works:
   1. Reads expected checksums from registry.d/<app>.meta
   2. Calculates SHA256 checksums of the installed files, found where the
-     manifest says the installer put them (docs are skipped)
+ manifest says the installer put them (docs are skipped)
   3. Compares expected vs actual
   4. Reports any mismatches
 
@@ -2319,7 +2396,7 @@ Use Cases:
 Example:
   tw --verify recurrence-overhaul
 """,
-        'list': """
+    'list': """
 List Packages (tw --list)
 =========================
 
@@ -2337,7 +2414,7 @@ Output Format:
 Example:
   tw --list
 """,
-        'info': """
+    'info': """
 Package Information (tw --info)
 ================================
 
@@ -2359,29 +2436,29 @@ Information Shown:
 Example:
   tw --info recurrence-overhaul
 """,
-    }
-    
-    if topic in topics:
-        print(topics[topic])
+}
+
+
+def help_topic_summary(topic):
+    return HELP_TOPICS[topic].strip().split('\n')[0].split(' (')[0]
+
+
+def show_help_topic(topic):
+    """Show detailed help for a specific topic"""
+    if topic in HELP_TOPICS:
+        print(HELP_TOPICS[topic])
         return True
-    else:
-        # Show available topics
-        print(f"Unknown help topic: {topic}\n")
-        print("Available help topics:")
-        for t in sorted(topics.keys()):
-            print(f"  {t}")
-        print("\nUsage: tw --help <topic>")
-        return False
+    print(f"Unknown help topic: {topic}\n")
+    print("Available help topics:")
+    for t in sorted(HELP_TOPICS):
+        print(f"  {t}")
+    print("\nUsage: tw --help <topic>")
+    return False
 
 def get_taskwarrior_version():
-    """Get taskwarrior version"""
-    try:
-        result = subprocess.run(['task', '--version'], 
-                              capture_output=True, text=True, check=True)
-        # Output is like "2.6.2\n"
-        return result.stdout.strip()
-    except:
-        return "unknown"
+    """Taskwarrior's version ("2.6.2"), or "unknown" """
+    result = run_task(['--version'], capture_output=True, text=True)
+    return result.stdout.strip() if result.returncode == 0 and result.stdout.strip() else "unknown"
 
 def get_installed_extensions(paths):
     """Get list of installed extensions with versions from manifest"""
@@ -2419,20 +2496,38 @@ def _app_matches(registry, app_name, tag_filter):
     return tag_filter.matches(meta.get_tags())
 
 
+# How argparse takes each kind of flag (help=SUPPRESS: tw prints its own help)
+_ARGPARSE_KIND = {
+    'flag': lambda f: dict(action='store_true', help=argparse.SUPPRESS),
+    'arg':  lambda f: dict(metavar=f.param.strip('[]') or None, help=argparse.SUPPRESS),
+    'opt':  lambda f: dict(nargs='?', const='', metavar=f.param.strip('[]') or None,
+                           help=argparse.SUPPRESS),
+    'eq':   lambda f: dict(nargs='?', const='1', help=argparse.SUPPRESS),
+    'many': lambda f: dict(nargs='*', help=argparse.SUPPRESS),
+}
+
+
+def build_parser():
+    """argparse for tw's leading flags, from TW_FLAGS."""
+    parser = argparse.ArgumentParser(prog='tw', add_help=False,
+                                     description='awesome-taskwarrior package manager and wrapper')
+    for f in TW_FLAGS:
+        parser.add_argument(*_flag_names(f), **_ARGPARSE_KIND[f.kind](f))
+    return parser
+
+
 def _split_tw_args(argv):
     """(argparse's args, the rest). argparse sees only tw's own leading flags (and the argument a
     flag takes); from the first word that isn't one of them, everything passes through. A dash
     word that isn't a tw flag (`-hook` in `tw -l -hook`, `-tag` in `tw -p -tag next`) is an
     excluded tag or task's own, never a cluster of short flags. A tw flag never becomes another
     flag's argument: `tw --install --dry-run APP` is `--dry-run --install APP`."""
-    flags_with_args = ['-I', '-r', '-u', '-i', '-R', '-A', '--install', '--remove',
-                       '--update', '--info', '--readme', '--attach', '--verify', '--generate-completion',
-                       '--install-completion']
-    optional_arg = ('-i', '--info', '-R', '--readme')       # `tw -i +python`: a tag, not an app
+    flags_with_args = {n for f in TW_FLAGS if f.kind in ('arg', 'opt') for n in _flag_names(f)}
+    optional_arg = {n for f in TW_FLAGS if f.kind == 'opt' for n in _flag_names(f)}  # `tw -i +tag`
     parser_args, rest = [], []
     waiting = None          # index in parser_args of a flag still waiting for its argument
     for i, arg in enumerate(argv):
-        is_flag = _is_tw_flag(arg) or arg.split('=')[0] == '--gen'
+        is_flag = _is_tw_flag(arg) or arg.split('=')[0] in TW_HIDDEN_FLAGS
         if (waiting is not None and not is_flag and parser_args[waiting] in optional_arg
                 and arg.startswith(('+', '-'))):
             rest = list(argv[i:])
@@ -2469,102 +2564,41 @@ def validate_first_arg_flag(args):
         return (False, None)                # task's own: a tag exclusion, or --
     return (False, f"Unknown flag: {first_arg}")
 
+# The dot shortcuts: (label, status, newest by, what to return)
+DOT_SHORTCUTS = {
+    '.':    ('most recently added task',     'pending',   'entry',    'id'),
+    '..':   ('most recently modified task',  'pending',   'modified', 'id'),
+    '...':  ('most recently completed task', 'completed', 'end',      'uuid'),
+    '....': ('most recently deleted task',   'deleted',   'end',      'uuid'),
+}
+
+
 def resolve_dot_shortcut(dot, debug_wrapper=False):
-    """Resolve dot-shortcuts to task IDs or short UUIDs.
-    
-    .    = ID of most recently added task
-    ..   = ID of most recently modified task
-    ...  = short UUID (8 char) of most recently completed task
-    ....  = short UUID (8 char) of most recently deleted task
-    
-    All queries use rc.context:none to work regardless of active context.
-    Returns the resolved ID/UUID string, or None on failure.
-    """
-    labels = {
-        '.':    'most recently added task',
-        '..':   'most recently modified task',
-        '...':  'most recently completed task',
-        '....': 'most recently deleted task',
-    }
-    
-    label = labels.get(dot)
-    if not label:
+    """The task a dot shortcut means: an ID for a pending task, the short (8-char) UUID for a
+    completed or deleted one (they have no ID). Ignores the active context. Notices go to stderr,
+    so `tw . export` stays clean. Returns the ID/UUID string, or None."""
+    if dot not in DOT_SHORTCUTS:
         print(f"[tw] [X] Unknown dot-shortcut: {dot}", file=sys.stderr)
         return None
-    
+    label, status, newest_by, want = DOT_SHORTCUTS[dot]
     if debug_wrapper:
         print(f"[tw-debug] Resolving {dot} -> {label}", file=sys.stderr)
-    
-    if dot == '.':
-        try:
-            result = subprocess.run(
-                ['task', 'rc.context:none', 'rc.verbose:nothing', 'newest', 'limit:1'],
-                capture_output=True, text=True, check=False
-            )
-            # Parse the ID from the first column of output
-            for line in result.stdout.strip().split('\n'):
-                line = line.strip()
-                if line and line.split()[0].isdigit():
-                    task_id = line.split()[0]
-                    if debug_wrapper:
-                        print(f"[tw-debug] Resolved . -> {task_id}", file=sys.stderr)
-                    print(f"[tw] . -> task {task_id}", file=sys.stderr)
-                    return task_id
-        except Exception as e:
-            if debug_wrapper:
-                print(f"[tw-debug] Error resolving .: {e}", file=sys.stderr)
-    
-    elif dot == '..':
-        # Most recently modified pending task
-        try:
-            result = subprocess.run(
-                ['task', 'rc.context:none', 'rc.verbose:nothing',
-                 'status:pending', 'export'],
-                capture_output=True, text=True, check=False
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                tasks = json.loads(result.stdout)
-                if tasks:
-                    # Sort by modified timestamp, most recent first
-                    tasks.sort(key=lambda t: t.get('modified', ''), reverse=True)
-                    task_id = str(tasks[0].get('id', ''))
-                    if task_id and task_id != '0':
-                        if debug_wrapper:
-                            print(f"[tw-debug] Resolved .. -> {task_id}", file=sys.stderr)
-                        print(f"[tw] .. -> task {task_id}", file=sys.stderr)
-                        return task_id
-        except Exception as e:
-            if debug_wrapper:
-                print(f"[tw-debug] Error resolving ..: {e}", file=sys.stderr)
-    
-    elif dot in ('...', '....'):
-        # Completed or deleted - need UUID
-        status = 'completed' if dot == '...' else 'deleted'
-        sort_field = 'end'
-        try:
-            result = subprocess.run(
-                ['task', 'rc.context:none', 'rc.verbose:nothing',
-                 f'status:{status}', 'export'],
-                capture_output=True, text=True, check=False
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                tasks = json.loads(result.stdout)
-                if tasks:
-                    # Sort by end timestamp, most recent first
-                    tasks.sort(key=lambda t: t.get(sort_field, ''), reverse=True)
-                    full_uuid = tasks[0].get('uuid', '')
-                    if full_uuid:
-                        short_uuid = full_uuid[:8]
-                        if debug_wrapper:
-                            print(f"[tw-debug] Resolved {dot} -> {short_uuid}", file=sys.stderr)
-                        print(f"[tw] {dot} -> task {short_uuid}", file=sys.stderr)
-                        return short_uuid
-        except Exception as e:
-            if debug_wrapper:
-                print(f"[tw-debug] Error resolving {dot}: {e}", file=sys.stderr)
-    
-    print(f"[tw] [X] No {label} found", file=sys.stderr)
-    return None
+    r = run_task(['rc.context:none', 'rc.verbose:nothing', 'rc.hooks:off', f'status:{status}', 'export'],
+                 capture_output=True, text=True)
+    try:
+        tasks = json.loads(r.stdout) if r.returncode == 0 and r.stdout.strip() else []
+    except ValueError as e:
+        if debug_wrapper:
+            print(f"[tw-debug] Error resolving {dot}: {e}", file=sys.stderr)
+        tasks = []
+    tasks = [t for t in tasks if t.get(want) and t.get(newest_by)]
+    if not tasks:
+        print(f"[tw] [X] No {label} found", file=sys.stderr)
+        return None
+    found = max(tasks, key=lambda t: t[newest_by])
+    result = str(found['id']) if want == 'id' else found['uuid'][:8]
+    print(f"[tw] {dot} -> task {result}", file=sys.stderr)
+    return result
 
 
 def handle_context_command(args):
@@ -2581,7 +2615,7 @@ def handle_context_command(args):
             return 0
         else:
             # No cmx, show regular context
-            return subprocess.run(['task', 'context'], check=False).returncode
+            return run_task(['context']).returncode
     
     first_arg = args[0]
     
@@ -2598,7 +2632,7 @@ def handle_context_command(args):
     # Otherwise, pass through to task context
     # tw @ list  -> task context list
     # tw @ work  -> task context work
-    return subprocess.run(['task', 'context'] + args, check=False).returncode
+    return run_task(['context'] + args).returncode
 
 def get_cmx_contexts():
     """Get current cmx.contexts value — reads .taskrc directly."""
@@ -2855,19 +2889,8 @@ def attach_file_to_task(task_id):
             print("[tw] macOS: brew install ranger")
             return 1
         
-        # Find task executable
-        task_bin = shutil.which('task')
-        if not task_bin:
-            print("[tw] Task executable not found")
-            return 1
-        
         # Get task description
-        result = subprocess.run(
-            [task_bin, task_id, 'info'],
-            capture_output=True,
-            text=True,
-            check=False
-        )
+        result = run_task([task_id, 'info'], capture_output=True, text=True)
         
         if result.returncode != 0:
             print(f"[tw] Error: Could not find task {task_id}")
@@ -2916,10 +2939,7 @@ def attach_file_to_task(task_id):
         annotation = f"{label}: {selected_file}" if label else selected_file
         
         # Add annotation to task
-        result = subprocess.run(
-            [task_bin, task_id, 'annotate', '--', annotation],
-            check=False
-        )
+        result = run_task([task_id, 'annotate', '--', annotation])
         
         if result.returncode == 0:
             print(f"[tw] + Attached: {annotation}")
@@ -2934,54 +2954,35 @@ def attach_file_to_task(task_id):
         return 1
 
 def run_with_pager(task_args):
-    """Run task command with pager - simple pipe like tless"""
-    try:
-        # Get terminal width
-        cols = os.popen('tput cols', 'r').read().strip()
-        
-        # Find task executable
-        task_bin = shutil.which('task')
-        if not task_bin:
-            print("[tw] Task executable not found")
-            return 1
-        
-        # Find pager
-        pager = shutil.which('less') or shutil.which('more')
-        if not pager:
-            # No pager, just run task normally
-            return pass_through_to_task(task_args)
-        
-        # Build shell command - try to override ALL possible limits
-        args_str = ' '.join(shlex.quote(arg) for arg in task_args) if task_args else ''
-        
-        # Override multiple limit/lines settings to catch all reports
-        # Some reports use 'limit', some use 'lines'
-        overrides = (
-            f"rc._forcecolor=on "
-            f"rc.defaultwidth={cols} "
-            f"rc.limit=0 "
-            f"rc.report.next.limit=0 "
-            f"rc.report.next.lines=0 "  # next uses 'lines' not 'limit'!
-            f"rc.report.list.limit=0 "
-            f"rc.report.all.limit=0 "
-            f"rc.report.ls.limit=0"
-        )
-        
-        shell_cmd = f"{task_bin} {args_str} {overrides} 2>/dev/null | {pager} -R -X"
-        
-        # Debug
-        if os.environ.get('TW_DEBUG_WRAPPER', '0') != '0':
-            print(f"[tw-debug] Pager shell command:", file=sys.stderr)
-            print(f"[tw-debug]   {shell_cmd}", file=sys.stderr)
-        
-        # Execute the pipeline
-        result = subprocess.run(shell_cmd, shell=True, check=False)
-        return result.returncode
-        
-    except Exception as e:
-        print(f"[tw] Error using pager: {e}", file=sys.stderr)
-        # Fall back to normal execution
+    """`task ARGS | less -R -X`, with colour forced, the terminal's width, and the reports' limits
+    lifted. task's stderr is dropped (its notices would land in the pager). Returns the pager's
+    exit code; without less or more, runs task plainly."""
+    pager = shutil.which('less') or shutil.which('more')
+    exe = shutil.which('task')
+    if not pager or not exe:
         return pass_through_to_task(task_args)
+    cols = shutil.get_terminal_size().columns
+    # Some reports use 'limit', some 'lines' (next uses lines)
+    overrides = ['rc._forcecolor=on', f'rc.defaultwidth={cols}', 'rc.limit=0',
+                 'rc.report.next.limit=0', 'rc.report.next.lines=0', 'rc.report.list.limit=0',
+                 'rc.report.all.limit=0', 'rc.report.ls.limit=0']
+    argv = ['task'] + list(task_args) + overrides
+    if os.environ.get('TW_DEBUG_WRAPPER', '0') != '0':
+        print(f"[tw-debug] Pager pipeline: {shlex.join(argv)} 2>/dev/null | {pager} -R -X",
+              file=sys.stderr)
+    try:
+        task = subprocess.Popen(argv, executable=exe, stdout=subprocess.PIPE,
+                                stderr=subprocess.DEVNULL)
+        rc = subprocess.run([pager, '-R', '-X'], stdin=task.stdout, check=False).returncode
+        task.stdout.close()
+        task.wait()
+        return rc
+    except KeyboardInterrupt:
+        return 130
+    except OSError as e:
+        print(f"[tw] Error using pager: {e}", file=sys.stderr)
+        return pass_through_to_task(task_args)
+
 
 # Task commands that modify state or produce non-report output: _find_report_name skips them.
 # (Whether filter wrappers run is decided by _args_have_report, which knows the reports.)
@@ -3023,7 +3024,7 @@ def _task_vocab():
     """What _args_have_report needs from the taskrc: report names, aliases, abbreviation.minimum and
     default.command, from one read-only `task _show` (about 20 ms). None when task can't run."""
     try:
-        r = subprocess.run(['task', 'rc.hooks=off', 'rc.verbose=nothing', '_show'],
+        r = run_task(['rc.hooks=off', 'rc.verbose=nothing', '_show'],
                            capture_output=True, text=True, timeout=10)
     except (OSError, subprocess.TimeoutExpired):
         return None
@@ -3115,13 +3116,6 @@ def run_with_timing(args):
     """
     import time
 
-    task_bin = shutil.which('task')
-    if not task_bin:
-        print("[tw] Error: task executable not found")
-        return 1
-
-    cmd = [task_bin, 'rc.debug.hooks=1'] + args
-
     # Set TW_TIMING=1 so instrumented hooks self-report
     env = os.environ.copy()
     env['TW_TIMING'] = '1'
@@ -3130,13 +3124,7 @@ def run_with_timing(args):
     try:
         # stdout and stdin stay the terminal's, so task's confirmation prompts show and can be
         # answered; only stderr (Hook:/Perf lines, [timing] reports) is captured.
-        result = subprocess.run(
-            cmd,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=False,
-            env=env,
-        )
+        result = run_task(['rc.debug.hooks=1'] + args, stderr=subprocess.PIPE, text=True, env=env)
     except Exception as e:
         print(f"[tw] Error running task: {e}", file=sys.stderr)
         return 1
@@ -3166,7 +3154,8 @@ def run_with_timing(args):
         re.compile(r'^Configuration override'),
         re.compile(r'^Applying context'),
         re.compile(r'^Detected context'),
-        re.compile(r'^\s+\S+\.data\s+rw'),
+        re.compile(r'^\s*\S+\.data\s+r[w-]'),
+        re.compile(r'^Filtered \d+ tasks'),
         re.compile(r'^\s+MODIFICATION '),
         re.compile(r'^DEBUG'),
         re.compile(r'^Parse Tree'),
@@ -3180,6 +3169,7 @@ def run_with_timing(args):
     ]
 
     # Parse stderr: extract timing data, suppress debug noise, pass real messages
+    ansi_re = re.compile(r'\x1b\[[0-9;]*m')
     for line in result.stderr.splitlines():
         m = calling_re.match(line)
         if m:
@@ -3192,7 +3182,7 @@ def run_with_timing(args):
         if perf_start_re.match(line):
             perf = {k: int(v) for k, v in perf_kv_re.findall(line)}
             continue
-        if any(r.match(line) for r in debug_res):
+        if any(r.match(ansi_re.sub('', line)) for r in debug_res):
             continue
         # Real message (project notices, hook feedback) — pass through
         print(line, file=sys.stderr)
@@ -3278,20 +3268,7 @@ def pass_through_to_task(args, debug_wrapper=False):
             if rc is not None:
                 return rc
 
-        # Find task executable
-        task_bin = shutil.which('task')
-        if not task_bin:
-            print("[tw] Error: task executable not found")
-            return 1
-
-        # Execute task with arguments.
-        # Pass 'task' as argv[0] (not the full path) so that Taskwarrior
-        # can derive its own path correctly when spawning sub-processes
-        # (e.g. calendar --details=full). Using the full path as argv[0]
-        # causes Taskwarrior to mangle the path (bug: /usr/local/bin/task
-        # becomes /usr/lotask when the 'cal' substring is stripped).
-        result = subprocess.run(['task'] + args, executable=task_bin, check=False)
-        return result.returncode
+        return run_task(args).returncode
 
     except Exception as e:
         print(f"[tw] Error executing task: {e}")
@@ -3301,8 +3278,52 @@ def pass_through_to_task(args, debug_wrapper=False):
         if ran_pre_exec:
             wrapper_mgr.run_post_exec(ran_pre_exec, args, session_id)
 
+def _completion_flags():
+    return [f for f in TW_FLAGS if not f.hidden]
+
+
+def _tw_command_flags():
+    """Flags after which no task words follow (completion stops offering task's)."""
+    return [n for f in _completion_flags() if not f.passthrough for n in _flag_names(f)]
+
+
+# What each `complete` value offers, per shell
+_BASH_WORDS = {
+    'apps':      '"$(_tw_get_available_apps)"',
+    'installed': '"$(_tw_get_installed_apps)"',
+    'topics':    '"$(_tw_get_help_topics)"',
+    'ids':       '"$(task _ids 2>/dev/null)"',
+    'shells':    '"bash zsh fish"',
+}
+_ZSH_ACTIONS = {
+    'apps': '_tw_available_apps', 'installed': '_tw_installed_apps', 'topics': '_tw_help_topics',
+    'shells': '_tw_shell_types', 'ids': ' ', 'levels': '(1 2 3)',
+}
+_FISH_WORDS = {
+    'apps': '(__fish_tw_available_apps)', 'installed': '(__fish_tw_installed_apps)',
+    'topics': '(__fish_tw_help_topics)', 'shells': 'bash zsh fish', 'ids': '(task _ids 2>/dev/null)',
+    'levels': '1 2 3',
+}
+
+
+def _bash_arg_cases():
+    """The `case "${prev}"` arms: flags grouped by what their argument completes to. --debug's
+    level goes after `=`, not as the next word, so it has none."""
+    groups = {}
+    for f in _completion_flags():
+        if f.complete in _BASH_WORDS and f.kind != 'eq':
+            groups.setdefault(f.complete, []).extend(_flag_names(f))
+    return ''.join(
+        f'        {"|".join(names)})\n'
+        f'            COMPREPLY=( $(compgen -W {_BASH_WORDS[c]} -- ${{cur}}) )\n'
+        f'            return 0\n'
+        f'            ;;\n'
+        for c, names in groups.items())
+
+
 def generate_bash_completion():
     """Generate bash completion script for tw"""
+    flags = ' '.join(n for f in _completion_flags() for n in _flag_names(f))
     return '''# Bash completion for tw (awesome-taskwarrior package manager)
 # Generated by: tw --generate-completion bash
 #
@@ -3321,7 +3342,7 @@ _tw_get_available_apps() {
     elif [[ -d "$HOME/dev/awesome-taskwarrior/registry.d" ]]; then
         registry_dir="$HOME/dev/awesome-taskwarrior/registry.d"
     fi
-    
+
     if [[ -d "$registry_dir" ]]; then
         ls "$registry_dir"/*.meta 2>/dev/null | xargs -n1 basename | sed 's/\\.meta$//'
     fi
@@ -3337,35 +3358,35 @@ _tw_get_installed_apps() {
 
 # Get help topics
 _tw_get_help_topics() {
-    echo "shell install remove verify list info"
+    echo "@@TOPICS@@"
 }
 
 # Main completion function for tw
 _tw() {
     local cur prev opts base
-    
+
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
-    
+
     # tw-specific flags
-    local tw_flags="-I --install -r --remove -R --readme -u --update -l --list -i --info --verify --tags --dry-run --debug -v --version -h --help -s --shell -p --pager -A --attach --generate-completion -g --gtk -t --tui"
-    
+    local tw_flags="@@FLAGS@@"
+
     # Check if we're completing a tw command or should pass through to task
     local i=1
     local found_tw_cmd=0
-    
-    # Look for tw-specific flags in the command line
+
+    # Look for tw flags that take no task words after them
     while [[ $i -lt $COMP_CWORD ]]; do
         case "${COMP_WORDS[$i]}" in
-            -I|--install|-r|--remove|-R|--readme|-u|--update|-l|--list|-i|--info|--verify|--tags|--dry-run|--debug|-v|--version|-h|--help|-s|--shell|-p|--pager|-A|--attach|--generate-completion)
+            @@TW_CMD_FLAGS@@)
                 found_tw_cmd=1
                 break
                 ;;
         esac
         ((i++))
     done
-    
+
     # Handle completions based on previous word
     case "${prev}" in
         tw)
@@ -3380,44 +3401,8 @@ _tw() {
                 return 0
             fi
             ;;
-        -I|--install)
-            # Complete with available apps from registry
-            COMPREPLY=( $(compgen -W "$(_tw_get_available_apps)" -- ${cur}) )
-            return 0
-            ;;
-        -r|--remove|-u|--update|--verify)
-            # Complete with installed apps
-            COMPREPLY=( $(compgen -W "$(_tw_get_installed_apps)" -- ${cur}) )
-            return 0
-            ;;
-        -i|--info)
-            # Complete with all available apps
-            COMPREPLY=( $(compgen -W "$(_tw_get_available_apps)" -- ${cur}) )
-            return 0
-            ;;
-        -h|--help)
-            # Complete with help topics
-            COMPREPLY=( $(compgen -W "$(_tw_get_help_topics)" -- ${cur}) )
-            return 0
-            ;;
-        -A|--attach)
-            # Complete with task IDs
-            local task_ids=$(task _ids 2>/dev/null)
-            COMPREPLY=( $(compgen -W "${task_ids}" -- ${cur}) )
-            return 0
-            ;;
-        --generate-completion)
-            # Complete with shell types
-            COMPREPLY=( $(compgen -W "bash zsh fish" -- ${cur}) )
-            return 0
-            ;;
-        --debug)
-            # Complete with debug levels
-            COMPREPLY=( $(compgen -W "1 2 3" -- ${cur}) )
-            return 0
-            ;;
-    esac
-    
+@@ARG_CASES@@    esac
+
     # If we found a tw command earlier, don't pass through to task
     if [[ $found_tw_cmd -eq 1 ]]; then
         # For tag filtering on --list, --info
@@ -3442,14 +3427,14 @@ _tw() {
         esac
         return 0
     fi
-    
+
     # Pass through to task completion
     # Try to source the task completion if available
     if declare -f _task >/dev/null 2>&1; then
         _task
         return 0
     fi
-    
+
     # Fallback: basic task command completion
     case "${cur}" in
         +*)
@@ -3469,16 +3454,40 @@ _tw() {
             COMPREPLY=( $(compgen -W "${task_cmds}" -- ${cur}) )
             ;;
     esac
-    
+
     return 0
 }
 
 # Register the completion function
 complete -F _tw tw
-'''
+'''.replace('@@TOPICS@@', ' '.join(HELP_TOPICS)).replace('@@FLAGS@@', flags) \
+   .replace('@@TW_CMD_FLAGS@@', '|'.join(_tw_command_flags())).replace('@@ARG_CASES@@', _bash_arg_cases())
+
+
+def _zsh_spec(f):
+    """One _arguments spec: '(-I --install)'{-I,--install}'[Install an application]:app:action'."""
+    desc = f.help.replace(']', '\\]').replace("'", "'\\''")
+    action = _ZSH_ACTIONS.get(f.complete)
+    label = f.param.strip('[]=').lower() or f.complete or 'arg'
+    if f.kind == 'eq':
+        names, arg = [f.long + '=-'], f'::{label}:{action or " "}'
+    else:
+        names = _flag_names(f)
+        if f.kind == 'arg':
+            arg = f':{label}:{action or " "}'
+        elif f.kind == 'opt' or action:
+            arg = f'::{label}:{action or " "}'
+        else:
+            arg = ''
+    if len(names) > 1:
+        return f"'({' '.join(names)})'{{{','.join(names)}}}'[{desc}]{arg}'"
+    return f"'{names[0]}[{desc}]{arg}'"
+
 
 def generate_zsh_completion():
     """Generate zsh completion script for tw"""
+    specs = ''.join(f'        {_zsh_spec(f)} \\\n' for f in _completion_flags())
+    topics = ''.join(f"        '{t}:{help_topic_summary(t)}'\n" for t in HELP_TOPICS)
     return '''#compdef tw
 # Zsh completion for tw (awesome-taskwarrior package manager)
 # Generated by: tw --generate-completion zsh
@@ -3497,7 +3506,7 @@ _tw_available_apps() {
     elif [[ -d "$HOME/dev/awesome-taskwarrior/registry.d" ]]; then
         registry_dir="$HOME/dev/awesome-taskwarrior/registry.d"
     fi
-    
+
     if [[ -d "$registry_dir" ]]; then
         local -a apps
         apps=(${(f)"$(ls "$registry_dir"/*.meta 2>/dev/null | xargs -n1 basename | sed 's/\\.meta$//')"})
@@ -3519,13 +3528,7 @@ _tw_installed_apps() {
 _tw_help_topics() {
     local -a topics
     topics=(
-        'shell:Interactive shell guide'
-        'install:Package installation'
-        'remove:Package removal'
-        'verify:Package verification'
-        'list:List installed packages'
-        'info:Package information'
-    )
+@@TOPICS@@    )
     _describe 'help topics' topics
 }
 
@@ -3544,29 +3547,10 @@ _tw_shell_types() {
 _tw() {
     local curcontext="$curcontext" state line
     typeset -A opt_args
-    
-    # Check if we should delegate to task completion
-    local -a task_commands
-    task_commands=(${(f)"$(task _commands 2>/dev/null)"})
-    
+
     _arguments -C \\
-        '(-I --install)'{-I,--install}'[Install an application]:app:_tw_available_apps' \\
-        '(-r --remove)'{-r,--remove}'[Remove an application]:app:_tw_installed_apps' \\
-        '(-u --update)'{-u,--update}'[Update an application]:app:_tw_installed_apps' \\
-        '(-l --list)'{-l,--list}'[List installed applications]' \\
-        '(-i --info)'{-i,--info}'[Show application info]::app:_tw_available_apps' \\
-        '--verify[Verify application checksums]:app:_tw_installed_apps' \\
-        '--tags[List all available tags]' \\
-        '--dry-run[Show what would be done]' \\
-        '--debug[Enable debug output]::level:(1 2 3)' \\
-        '(-v --version)'{-v,--version}'[Show tw version]' \\
-        '(-h --help)'{-h,--help}'[Show help]::topic:_tw_help_topics' \\
-        '(-s --shell)'{-s,--shell}'[Start interactive shell]' \\
-        '(-p --pager)'{-p,--pager}'[Use pager for task output]' \\
-        '(-A --attach)'{-A,--attach}'[Attach file to task]:taskid' \\
-        '--generate-completion[Generate completion script]:shell:_tw_shell_types' \\
-        '*::task commands:->task_args'
-    
+@@SPECS@@        '*::task commands:->task_args'
+
     case $state in
         task_args)
             # Pass through to task completion if available
@@ -3583,10 +3567,26 @@ _tw() {
 }
 
 _tw "$@"
-'''
+'''.replace('@@TOPICS@@', topics).replace('@@SPECS@@', specs)
+
+
+def _fish_line(f):
+    line = 'complete -c tw'
+    if f.short:
+        line += f' -s {f.short[1:]}'
+    line += f' -l {f.long[2:]} -d "{f.help}"'
+    words = _FISH_WORDS.get(f.complete)
+    if words:
+        line += f' -x -a "{words}"'
+    elif f.kind == 'arg':
+        line += ' -x'
+    return line
+
 
 def generate_fish_completion():
     """Generate fish completion script for tw"""
+    lines = '\n'.join(_fish_line(f) for f in _completion_flags())
+    topics = '\n'.join(f'    echo "{t}"' for t in HELP_TOPICS)
     return '''# Fish completion for tw (awesome-taskwarrior package manager)
 # Generated by: tw --generate-completion fish
 #
@@ -3601,7 +3601,7 @@ function __fish_tw_available_apps
     else if test -d "$HOME/dev/awesome-taskwarrior/registry.d"
         set registry_dir "$HOME/dev/awesome-taskwarrior/registry.d"
     end
-    
+
     if test -d "$registry_dir"
         ls $registry_dir/*.meta 2>/dev/null | xargs -n1 basename | sed 's/\\.meta$//'
     end
@@ -3615,41 +3615,14 @@ function __fish_tw_installed_apps
 end
 
 function __fish_tw_help_topics
-    echo "shell"
-    echo "install"
-    echo "remove"
-    echo "verify"
-    echo "list"
-    echo "info"
-end
-
-function __fish_tw_needs_app
-    # Check if the previous argument is a flag that needs an app name
-    set -l cmd (commandline -opc)
-    if test (count $cmd) -ge 2
-        switch $cmd[-1]
-            case -I --install -r --remove -u --update --verify -i --info
-                return 0
-        end
-    end
-    return 1
-end
-
-function __fish_tw_needs_help_topic
-    set -l cmd (commandline -opc)
-    if test (count $cmd) -ge 2
-        switch $cmd[-1]
-            case -h --help
-                return 0
-        end
-    end
-    return 1
+@@TOPICS@@
 end
 
 function __fish_tw_using_command
+    # A tw flag after which no task words follow
     set -l cmd (commandline -opc)
     if test (count $cmd) -gt 1
-        for tw_cmd in -I --install -r --remove -u --update -l --list -i --info --verify --tags -v --version -h --help -s --shell -p --pager -A --attach --generate-completion
+        for tw_cmd in @@TW_CMD_FLAGS@@
             if contains -- $tw_cmd $cmd
                 return 0
             end
@@ -3658,25 +3631,8 @@ function __fish_tw_using_command
     return 1
 end
 
-# Completion specifications
-# Package management
-complete -c tw -s I -l install -d "Install an application" -x -a "(__fish_tw_available_apps)"
-complete -c tw -s r -l remove -d "Remove an application" -x -a "(__fish_tw_installed_apps)"
-complete -c tw -s u -l update -d "Update an application" -x -a "(__fish_tw_installed_apps)"
-complete -c tw -s l -l list -d "List installed applications"
-complete -c tw -s i -l info -d "Show application info" -x -a "(__fish_tw_available_apps)"
-complete -c tw -l verify -d "Verify application checksums" -x -a "(__fish_tw_installed_apps)"
-complete -c tw -l tags -d "List all available tags"
-complete -c tw -l dry-run -d "Show what would be done"
-complete -c tw -l debug -d "Enable debug output" -x -a "1 2 3"
-
-# Utility commands
-complete -c tw -s v -l version -d "Show tw version"
-complete -c tw -s h -l help -d "Show help" -x -a "(__fish_tw_help_topics)"
-complete -c tw -s s -l shell -d "Start interactive shell"
-complete -c tw -s p -l pager -d "Use pager for task output"
-complete -c tw -s A -l attach -d "Attach file to task" -x
-complete -c tw -l generate-completion -d "Generate completion script" -x -a "bash zsh fish"
+# tw's flags
+@@LINES@@
 
 # Tag completion (for --list, --info with filters)
 complete -c tw -n "__fish_tw_using_command" -a "+(__fish_use_subcommand; and task _tags)" -d "Include tag"
@@ -3687,13 +3643,18 @@ complete -c tw -n "__fish_tw_using_command" -a "-(__fish_use_subcommand; and tas
 complete -c tw -n "not __fish_tw_using_command" -a "(task _commands 2>/dev/null)" -d "Task command"
 complete -c tw -n "not __fish_tw_using_command" -a "+(__fish_use_subcommand; and task _tags)" -d "Include tag"
 complete -c tw -n "not __fish_tw_using_command" -a "-(__fish_use_subcommand; and task _tags)" -d "Exclude tag"
-'''
+'''.replace('@@TOPICS@@', topics).replace('@@TW_CMD_FLAGS@@', ' '.join(_tw_command_flags())) \
+   .replace('@@LINES@@', lines)
+
+
+COMPLETIONS = {
+    'bash': generate_bash_completion,
+    'zsh':  generate_zsh_completion,
+    'fish': generate_fish_completion,
+}
 
 def install_completion(shell):
     """Install completion script for the specified shell"""
-    import os
-    from pathlib import Path
-    
     shell = shell.lower()
     home = Path.home()
     
@@ -3701,19 +3662,19 @@ def install_completion(shell):
     if shell == 'bash':
         target_dir = home / '.bash_completion.d'
         target_file = target_dir / 'tw.sh'
-        script_content = generate_bash_completion()
+        script_content = COMPLETIONS[shell]()
         source_line = f'source {target_file}'
         rc_file = home / '.bashrc'
     elif shell == 'zsh':
         target_dir = home / '.zsh' / 'completion'
         target_file = target_dir / '_tw'
-        script_content = generate_zsh_completion()
+        script_content = COMPLETIONS[shell]()
         source_line = None  # zsh uses fpath, handled differently
         rc_file = home / '.zshrc'
     elif shell == 'fish':
         target_dir = home / '.config' / 'fish' / 'completions'
         target_file = target_dir / 'tw.fish'
-        script_content = generate_fish_completion()
+        script_content = COMPLETIONS[shell]()
         source_line = None  # fish auto-loads completions
         rc_file = None
     else:
@@ -3849,6 +3810,112 @@ def _md_viewer():
     return ['cat']
 
 
+def show_help():
+    """tw -h: the flag table, then the details of each feature."""
+    # General help - custom formatted table (inspired by task help)
+    print()
+    print("------ ------------- ---------------------------- --------------------------------------")
+    print(f"{'Usage:':7s} {'tw':13s} {'':28s} Runs rc.default.command, if specified.")
+    #       1234567 1234567890123 1234567890123456789012345678 description
+    for f in sorted((f for f in TW_FLAGS if not f.hidden), key=lambda f: f.long.lstrip('-')):
+        sep = '' if f.param.startswith('[=') else ' '
+        c1 = f"{f.short}{sep}{f.param}".strip() if f.short else ""
+        c2 = f"{f.long}{sep}{f.param}".strip()
+        print(f"       {c1:13s} {c2:28s} {f.help}")
+    # Helper for detail sections (same column widths as main table)
+    def row(c1, c2, desc):
+        print(f"       {c1:13s} {c2:28s} {desc}")
+    print("\nHelp Topics:")
+    for topic in HELP_TOPICS:
+        row(f"-h {topic}", f"--help {topic}", help_topic_summary(topic))
+    print("\nInteractive Shell:")
+    row("-s",          "--shell",                "Start with empty state")
+    row("-s add",      "--shell add",            "Start in 'add' mode")
+    row("-s add +work","--shell add +work",      "Start with command and modifiers")
+    row("-s +work",    "--shell +work proj:foo", "Start with modifiers only")
+    print("\nDebug and Filtering:")
+    row("",            "--debug[=LEVEL]",        "Enable debug output (1-3)")
+    row("",            "--tags [APP ..]",        "List tags (for specific apps)")
+    row("-l +tag -tag","--list +tag -tag",       "Filter applications by tag")
+    row("-i",          "--info",                 "Show info for all available apps")
+    row("-i APP APP",  "--info APP APP",         "Show info for specific apps")
+    row("-i +hook",    "--info +hook",           "Show info matching tag filter")
+    row("",            "TW_DEBUG_WRAPPER=1",     "Show argument parsing flow")
+    print("\nPager and Attach:")
+    row("-p",          "--pager",                "Page default report")
+    row("-p list",     "--pager list",           "Use pager for long output")
+    row("-p next +work","",                      "Page through filtered report")
+    row("-A 42",       "--attach 42",            "Attach file to task using ranger")
+    # Context and dot-shortcut sections use wider command column
+    def cmd_row(cmd, desc):
+        print(f"       {cmd:42s} {desc}")
+    print("\nContext Multiplexing (cmx):")
+    cmd_row("@",                        "Show current context / cmx state")
+    cmd_row("@  list",                  "List all defined contexts")
+    cmd_row("@  <name>",               "Set context (same as 'task context <name>')")
+    cmd_row("@+ <name>",               "Add context to multiplexed set")
+    cmd_row("@- <name>",               "Remove context from multiplexed set")
+    cmd_row("@0",                       "Pause cmx — clears context, preserves set for @@")
+    cmd_row("@@",                       "Restore saved cmx set (rebuilds filters fresh)")
+    print("       Active cmx context shows as 'cmx:<names>' in all task output.")
+    print("\nContext Shortcuts:")
+    cmd_row("@: <name> [args]",        "One-shot context override")
+    cmd_row("@_ [args]",               "One-shot no-context override")
+    cmd_row("@?",                       "Show active context details")
+    print("\nGTK GUI (requires: tw -I gtk):")
+    cmd_row("-g",                       "Run default report (next) or +READY")
+    cmd_row("-g next",                  "Run cached 'next' report")
+    cmd_row("-g add",                   "Quick-add task form")
+    cmd_row("-g context",               "Context switcher")
+    cmd_row("-g triage",                "Urgency triage loop")
+    cmd_row("-g active",                "Active task dashboard")
+    cmd_row("-g --gen next list",       "Generate/cache reports")
+    cmd_row("-g --gen",                 "Regenerate all cached reports")
+    cmd_row("-g +work",                 "Task manager with filter")
+    cmd_row("-g triage project:home",   "Triage with filter")
+    print("\nDot Shortcuts:")
+    cmd_row(".    [cmd]",               "Most recently added task (by ID)")
+    cmd_row("..   [cmd]",              "Most recently modified task (by ID)")
+    cmd_row("...  [cmd]",              "Most recently completed task (by UUID)")
+    cmd_row(".... [cmd]",              "Most recently deleted task (by UUID)")
+    print("\nTag Filtering:")
+    cmd_row("+tag",                     "Include tag in filter")
+    cmd_row("-tag",                     "Exclude tag from filter")
+    cmd_row("",                         "Applies to: --list, --info")
+    print("\nCompletion:")
+    row("",            "--install-completion",   "Install completion (recommended)")
+    row("",            "  bash | zsh | fish",    "")
+    row("",            "--generate-completion",  "Generate completion script (manual)")
+    row("",            "  bash | zsh | fish",    "")
+    
+    # Dynamic wrappers section
+    wmgr = WrapperManager()
+    wrappers = wmgr.list_wrappers()
+    if wrappers:
+        cmd_wrappers    = {k: v for k, v in wrappers.items() if v.get('type', 'command') == 'command'}
+        filter_wrappers = {k: v for k, v in wrappers.items() if v.get('type') == 'filter'}
+        if cmd_wrappers:
+            print("\nInstalled Command Wrappers:")
+            for kw, info in sorted(cmd_wrappers.items()):
+                desc = info.get('description', '')
+                cmd_row(f"<id> {kw}[.<N>]", f"{desc} (via {info['script']})")
+        if filter_wrappers:
+            print("\nInstalled Filter Wrappers (applied to all report output):")
+            for kw, info in sorted(filter_wrappers.items()):
+                desc = info.get('description', '')
+                cmd_row(f"{kw}", f"{desc} (via {info['script']})")
+        pre_exec_wrappers = {k: v for k, v in wrappers.items() if v.get('type') == 'pre-exec'}
+        if pre_exec_wrappers:
+            print("\nInstalled Pre-exec Wrappers (run before task, restored after):")
+            for kw, info in sorted(pre_exec_wrappers.items()):
+                desc = info.get('description', '')
+                cmd_row(f"{kw}", f"{desc} (via {info['script']})")
+    
+    print()
+    print("All other arguments are passed directly to Taskwarrior.")
+    print("For Taskwarrior help: tw help")
+
+
 def main():
     """Main entry point"""
     # Rebuild cmx combined filter if a context definition was changed externally.
@@ -3934,7 +4001,7 @@ def main():
                 # @? = context show
                 if debug_wrapper:
                     print(f"[tw-debug] @? -> task context show", file=sys.stderr)
-                return subprocess.run(['task', 'context', 'show'], check=False).returncode
+                return run_task(['context', 'show']).returncode
             
             elif sys.argv[1] == '@:':
                 # @: contextname [args] = one-shot context override
@@ -3943,7 +4010,7 @@ def main():
                     rest = sys.argv[3:]
                     if debug_wrapper:
                         print(f"[tw-debug] @: -> task rc.context:{ctx_name} {rest}", file=sys.stderr)
-                    return subprocess.run(['task', f'rc.context:{ctx_name}'] + rest, check=False).returncode
+                    return run_task([f'rc.context:{ctx_name}'] + rest).returncode
                 else:
                     print("[tw] Error: @: requires a context name")
                     print("[tw] Usage: tw @: contextname [task args]")
@@ -3954,7 +4021,7 @@ def main():
                 rest = sys.argv[2:]
                 if debug_wrapper:
                     print(f"[tw-debug] @_ -> task rc.context:none {rest}", file=sys.stderr)
-                return subprocess.run(['task', 'rc.context:none'] + rest, check=False).returncode
+                return run_task(['rc.context:none'] + rest).returncode
             
             elif sys.argv[1] == '@+':
                 # @+ with space - combine with next arg
@@ -4013,36 +4080,7 @@ def main():
         print(f"[tw-debug] args_for_parser = {args_for_parser}", file=sys.stderr)
         print(f"[tw-debug] remaining_args = {remaining_args}", file=sys.stderr)
     
-    parser = argparse.ArgumentParser(
-        description='awesome-taskwarrior package manager and wrapper',
-        add_help=False
-    )
-    
-    # Package management commands
-    parser.add_argument('-I', '--install', metavar='APP', help='Install an application')
-    parser.add_argument('-r', '--remove', metavar='APP', help='Remove an application')
-    parser.add_argument('-u', '--update', metavar='APP', help='Update an application')
-    parser.add_argument('-l', '--list', action='store_true', help='List installed applications')
-    parser.add_argument('-i', '--info', nargs='?', const='', metavar='APP', help='Show application info (all apps if no name given)')
-    parser.add_argument('--verify', metavar='APP', help='Verify application checksums')
-    parser.add_argument('--tags', action='store_true', help='List all available tags (optional: filter by app names)')
-    parser.add_argument('--dry-run', action='store_true', help='Show what would be done')
-    parser.add_argument('--debug', nargs='?', const='1', metavar='LEVEL', help='Enable debug output (1-3, default: 1)')
-    
-    # Utility commands
-    parser.add_argument('-v', '--version', action='store_true', help='Show tw version')
-    parser.add_argument('-h', '--help', action='store_true', help='Show this help')
-    parser.add_argument('-s', '--shell', action='store_true', help='Start interactive shell (optional: command and modifiers)')
-    parser.add_argument('-p', '--pager', action='store_true', help='Use pager for task output')
-    parser.add_argument('-A', '--attach', metavar='TASKID', help='Attach file to task using ranger')
-    parser.add_argument('--generate-completion', metavar='SHELL', help='Generate completion script (bash|zsh|fish)')
-    parser.add_argument('--install-completion', metavar='SHELL', help='Install completion script (bash|zsh|fish)')
-    
-    parser.add_argument('--timing', action='store_true', help='Show per-hook timing after task command')
-    parser.add_argument('-R', '--readme', nargs='?', const='', metavar='APP', help='List or open README docs')
-    parser.add_argument('-g', '--gtk', action='store_true', help='Launch GTK GUI (requires yad, jq)')
-    parser.add_argument('-t', '--tui', action='store_true', help='Launch terminal UI (tw-tui)')
-    parser.add_argument('--gen', nargs='*', metavar='REPORT', help=argparse.SUPPRESS)
+    parser = build_parser()
     
     # Parse ONLY the consecutive flags from the beginning
     # Use our pre-split args_for_parser instead of letting argparse scan everything
@@ -4098,157 +4136,25 @@ def main():
             # Topic-specific help
             return 0 if show_help_topic(remaining[0]) else 1
         
-        # General help - custom formatted table (inspired by task help)
-        print()
-        print("------ ------------- ---------------------------- --------------------------------------")
-        print(f"{'Usage:':7s} {'tw':13s} {'':28s} Runs rc.default.command, if specified.")
-        #       1234567 1234567890123 1234567890123456789012345678 description
-        entries = [
-            ("-A", "TASKID",   "--attach",              "TASKID", "Attach file to task using ranger"),
-            ("",   "",         "--debug",               "[LEVEL]", "Enable debug output (1-3)"),
-            ("",   "",         "--dry-run",             "",        "Show what would be done"),
-            ("",   "",         "--generate-completion",  "SHELL",  "Generate shell completion script"),
-            ("-g", "[subcmd]",  "--gtk",                "[subcmd]", "Launch GTK GUI (add|context|triage|active)"),
-            ("-h", "[TOPIC]",  "--help",                "[TOPIC]", "Show help or help on a topic"),
-            ("-i", "[APP]",    "--info",                "[APP]",   "Show app info (all if no name)"),
-            ("-I", "APP",      "--install",             "APP",     "Install an application"),
-            ("",   "",         "--install-completion",   "SHELL",  "Install shell completion script"),
-            ("-l", "[+/-tags]","--list",                "",        "List installed/available applications"),
-            ("-p", "",         "--pager",               "",        "Use pager for task output"),
-            ("-R", "[APP]",    "--readme",              "[APP]",   "List docs or open README for app"),
-            ("-r", "APP",      "--remove",              "APP",     "Remove an application"),
-            ("-s", "",         "--shell",               "",        "Start interactive shell"),
-            ("",   "",         "--tags",                "[APP..]", "List all available tags"),
-            ("-u", "APP",      "--update",              "APP",     "Update an application"),
-            ("-v", "",         "--version",             "",        "Show tw and taskwarrior versions"),
-            ("",   "",         "--verify",              "APP",     "Verify application checksums"),
-            ("",   "",         "--timing",              "[cmd]",   "Show per-hook timing breakdown"),
-        ]
-        for short, sparam, long, lparam, desc in entries:
-            c1 = f"{short} {sparam}".strip() if short else ""
-            c2 = f"{long} {lparam}".strip() if long else ""
-            print(f"       {c1:13s} {c2:28s} {desc}")
-        # Helper for detail sections (same column widths as main table)
-        def row(c1, c2, desc):
-            print(f"       {c1:13s} {c2:28s} {desc}")
-        print("\nHelp Topics:")
-        row("-h shell",    "--help shell",    "Interactive shell guide")
-        row("-h install",  "",                "Package installation")
-        row("-h remove",   "",                "Package removal")
-        row("-h verify",   "",                "Package verification")
-        row("-h list",     "",                "List installed packages")
-        row("-h info",     "",                "Package information")
-        print("\nInteractive Shell:")
-        row("-s",          "--shell",                "Start with empty state")
-        row("-s add",      "--shell add",            "Start in 'add' mode")
-        row("-s add +work","--shell add +work",      "Start with command and modifiers")
-        row("-s +work",    "--shell +work proj:foo", "Start with modifiers only")
-        print("\nDebug and Filtering:")
-        row("",            "--debug[=LEVEL]",        "Enable debug output (1-3)")
-        row("",            "--tags [APP ..]",        "List tags (for specific apps)")
-        row("-l +tag -tag","--list +tag -tag",       "Filter applications by tag")
-        row("-i",          "--info",                 "Show info for all available apps")
-        row("-i APP APP",  "--info APP APP",         "Show info for specific apps")
-        row("-i +hook",    "--info +hook",           "Show info matching tag filter")
-        row("",            "TW_DEBUG_WRAPPER=1",     "Show argument parsing flow")
-        print("\nPager and Attach:")
-        row("-p",          "--pager",                "Page default report")
-        row("-p list",     "--pager list",           "Use pager for long output")
-        row("-p next +work","",                      "Page through filtered report")
-        row("-A 42",       "--attach 42",            "Attach file to task using ranger")
-        # Context and dot-shortcut sections use wider command column
-        def cmd_row(cmd, desc):
-            print(f"       {cmd:42s} {desc}")
-        print("\nContext Multiplexing (cmx):")
-        cmd_row("@",                        "Show current context / cmx state")
-        cmd_row("@  list",                  "List all defined contexts")
-        cmd_row("@  <name>",               "Set context (same as 'task context <name>')")
-        cmd_row("@+ <name>",               "Add context to multiplexed set")
-        cmd_row("@- <name>",               "Remove context from multiplexed set")
-        cmd_row("@0",                       "Pause cmx — clears context, preserves set for @@")
-        cmd_row("@@",                       "Restore saved cmx set (rebuilds filters fresh)")
-        print("       Active cmx context shows as 'cmx:<names>' in all task output.")
-        print("\nContext Shortcuts:")
-        cmd_row("@: <name> [args]",        "One-shot context override")
-        cmd_row("@_ [args]",               "One-shot no-context override")
-        cmd_row("@?",                       "Show active context details")
-        print("\nGTK GUI (requires: tw -I gtk):")
-        cmd_row("-g",                       "Run default report (next) or +READY")
-        cmd_row("-g next",                  "Run cached 'next' report")
-        cmd_row("-g add",                   "Quick-add task form")
-        cmd_row("-g context",               "Context switcher")
-        cmd_row("-g triage",                "Urgency triage loop")
-        cmd_row("-g active",                "Active task dashboard")
-        cmd_row("-g --gen next list",       "Generate/cache reports")
-        cmd_row("-g --gen",                 "Regenerate all cached reports")
-        cmd_row("-g +work",                 "Task manager with filter")
-        cmd_row("-g triage project:home",   "Triage with filter")
-        print("\nDot Shortcuts:")
-        cmd_row(".    [cmd]",               "Most recently added task (by ID)")
-        cmd_row("..   [cmd]",              "Most recently modified task (by ID)")
-        cmd_row("...  [cmd]",              "Most recently completed task (by UUID)")
-        cmd_row(".... [cmd]",              "Most recently deleted task (by UUID)")
-        print("\nTag Filtering:")
-        cmd_row("+tag",                     "Include tag in filter")
-        cmd_row("-tag",                     "Exclude tag from filter")
-        cmd_row("",                         "Applies to: --list, --info")
-        print("\nCompletion:")
-        row("",            "--install-completion",   "Install completion (recommended)")
-        row("",            "  bash | zsh | fish",    "")
-        row("",            "--generate-completion",  "Generate completion script (manual)")
-        row("",            "  bash | zsh | fish",    "")
-        
-        # Dynamic wrappers section
-        wmgr = WrapperManager()
-        wrappers = wmgr.list_wrappers()
-        if wrappers:
-            cmd_wrappers    = {k: v for k, v in wrappers.items() if v.get('type', 'command') == 'command'}
-            filter_wrappers = {k: v for k, v in wrappers.items() if v.get('type') == 'filter'}
-            if cmd_wrappers:
-                print("\nInstalled Command Wrappers:")
-                for kw, info in sorted(cmd_wrappers.items()):
-                    desc = info.get('description', '')
-                    cmd_row(f"<id> {kw}[.<N>]", f"{desc} (via {info['script']})")
-            if filter_wrappers:
-                print("\nInstalled Filter Wrappers (applied to all report output):")
-                for kw, info in sorted(filter_wrappers.items()):
-                    desc = info.get('description', '')
-                    cmd_row(f"{kw}", f"{desc} (via {info['script']})")
-            pre_exec_wrappers = {k: v for k, v in wrappers.items() if v.get('type') == 'pre-exec'}
-            if pre_exec_wrappers:
-                print("\nInstalled Pre-exec Wrappers (run before task, restored after):")
-                for kw, info in sorted(pre_exec_wrappers.items()):
-                    desc = info.get('description', '')
-                    cmd_row(f"{kw}", f"{desc} (via {info['script']})")
-        
-        print()
-        print("All other arguments are passed directly to Taskwarrior.")
-        print("For Taskwarrior help: tw help")
+        show_help()
         return 0
     
     # Handle completion generation
     if args.generate_completion:
         shell = args.generate_completion.lower()
-        if shell == 'bash':
-            print(generate_bash_completion())
+        if shell in COMPLETIONS:
+            print(COMPLETIONS[shell]())
             return 0
-        elif shell == 'zsh':
-            print(generate_zsh_completion())
-            return 0
-        elif shell == 'fish':
-            print(generate_fish_completion())
-            return 0
-        else:
-            print(f"[tw] Error: Unknown shell type '{args.generate_completion}'")
-            print("[tw] Supported shells: bash, zsh, fish")
-            return 1
+        print(f"[tw] Error: Unknown shell type '{args.generate_completion}'")
+        print(f"[tw] Supported shells: {', '.join(COMPLETIONS)}")
+        return 1
     
     # Handle completion installation
     if args.install_completion:
         shell = args.install_completion.lower()
-        if shell not in ['bash', 'zsh', 'fish']:
+        if shell not in COMPLETIONS:
             print(f"[tw] Error: Unknown shell type '{args.install_completion}'")
-            print("[tw] Supported shells: bash, zsh, fish")
+            print(f"[tw] Supported shells: {', '.join(COMPLETIONS)}")
             return 1
         
         success, error = install_completion(shell)
