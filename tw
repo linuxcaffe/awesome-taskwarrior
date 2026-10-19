@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 tw - awesome-taskwarrior package manager and wrapper
-Version: 2.16.1
+Version: 2.17.0
 
 A unified wrapper for Taskwarrior that provides:
 - Transparent pass-through to task command
@@ -10,6 +10,15 @@ A unified wrapper for Taskwarrior that provides:
 - Per-file manifest tracking
 - Checksum verification
 - Dev mode indicator for local development
+
+Updates in v2.17.0:
+- Added: an install takes over the files it lists: another app's manifest lines for them go, and
+  an app left with nothing is retired (a renamed app's old name kept claiming the new one's
+  files: tw-recurrence 2.0.0 listed recurrence-overhaul's hooks, and tw -R found its old README)
+- Added: tw -r keeps a file another app lists too: skipped without an installer, put back if the
+  installer's remove takes it anyway
+- Added: tw -l shows installed apps the registry doesn't have ("[?] ... tw -r APP retires it")
+- Tests: tests/test_tw_retire.py (6)
 
 Updates in v2.16.1:
 - Changed: tw --verify reports a changed config as "[~] name (modified)", not a failure (apps and
@@ -225,7 +234,7 @@ import tempfile
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 
-VERSION = "2.16.1"
+VERSION = "2.17.0"
 
 # GitHub configuration
 GITHUB_REPO = "linuxcaffe/awesome-taskwarrior"
@@ -1274,6 +1283,24 @@ class Manifest:
         self.entries = [e for e in self.entries if e['app'] != app]
         self._save()
     
+    def shared_files(self, app):
+        """The app's files that another app lists too."""
+        others = {e['file'] for e in self.entries if e['app'] != app}
+        return [f for f in self.get_files(app) if f in others]
+
+    def claim(self, app):
+        """The app was just installed: its files are its alone. Drop every other app's line for
+        them (an app installed earlier under another name, say). Returns {other app: [files]}."""
+        mine = set(self.get_files(app))
+        taken = {}
+        for e in self.entries:
+            if e['app'] != app and e['file'] in mine:
+                taken.setdefault(e['app'], []).append(e['file'])
+        if taken:
+            self.entries = [e for e in self.entries if e['app'] == app or e['file'] not in mine]
+            self._save()
+        return taken
+
     def get_files(self, app):
         """Get list of files for an app"""
         return [e['file'] for e in self.entries if e['app'] == app]
@@ -1433,6 +1460,7 @@ class AppManager:
 
             if self._run_installer(installer_path, 'install'):
                 print(f"[tw] [+] Installed: {app_name}")
+                self._claim(app_name)
                 return True
             print(f"[tw] [X] Installation failed: {app_name}")
             return False
@@ -1440,13 +1468,32 @@ class AppManager:
             if own_stage:
                 shutil.rmtree(own_stage, ignore_errors=True)
     
+    def _claim(self, app_name):
+        """After an install: the files it lists are its own now. An app that listed them too (an
+        earlier install under another name) loses those lines, and goes when it has none left."""
+        self.manifest = Manifest(self.paths.manifest_file)     # the installer wrote its lines
+        for other, files in self.manifest.claim(app_name).items():
+            print(f"[tw] {app_name} took over {len(files)} file(s) {other} listed")
+            left = self.manifest.get_files(other)
+            if not left:
+                print(f"[tw] [+] Retired: {other} (nothing of its own left)")
+            else:
+                print(f"[tw] [!] {other} still lists {len(left)} file(s) of its own; "
+                      f"tw -r {other} removes them")
+
     def remove(self, app_name):
         """Remove an application with its installer's remove; without an installer, delete the
-        files the manifest lists. Either way, drop its manifest lines and repair includes."""
+        files the manifest lists. Either way, drop its manifest lines and repair includes.
+        A file another app lists too is kept: put back if the installer removes it anyway."""
         if not self.manifest.is_installed(app_name):
             print(f"[tw] [!] Not installed: {app_name}")
             return False
-        
+
+        shared = [Path(f) for f in self.manifest.shared_files(app_name)]
+        keep = {f: f.read_bytes() for f in shared if f.is_file() and not f.is_symlink()}
+        links = {f: os.readlink(f) for f in shared if f.is_symlink()}
+        modes = {f: f.stat().st_mode for f in keep}
+
         debug(f"AppManager.remove: Getting installer for {app_name}", 2)
         installer_path = self.registry.get_installer(app_name)
         if installer_path:
@@ -1455,6 +1502,7 @@ class AppManager:
             finally:
                 if not self.paths.is_dev_mode:
                     shutil.rmtree(installer_path.parent, ignore_errors=True)
+                self._put_back(keep, links, modes)
             if not ok:
                 print(f"[tw] [X] Removal failed: {app_name}")
                 return False
@@ -1462,15 +1510,32 @@ class AppManager:
             print(f"[tw] Installer not found, using manifest for removal")
             for file_path in self.manifest.get_files(app_name):
                 path = Path(file_path)
-                if path.exists():
+                if path in shared:
+                    continue
+                if path.exists() or path.is_symlink():
                     path.unlink()
                     print(f"[tw]   Removed: {file_path}")
+        if shared:
+            print(f"[tw] Kept {len(shared)} file(s) another app lists too")
 
+        self.manifest = Manifest(self.paths.manifest_file)     # the installer may have edited it
         self.manifest.remove_app(app_name)
         _repair_after_remove(self.paths, app_name)
         print(f"[tw] [+] Removed: {app_name}")
         return True
     
+    @staticmethod
+    def _put_back(keep, links, modes):
+        """Restore shared files an installer's remove took (remove's keep/links)."""
+        for f, data in keep.items():
+            if not f.exists():
+                f.parent.mkdir(parents=True, exist_ok=True)
+                f.write_bytes(data)
+                os.chmod(f, modes[f])
+        for f, target in links.items():
+            if not f.is_symlink() and not f.exists():
+                os.symlink(target, f)
+
     def update(self, app_name):
         """Update an application safely using stage-then-install
         
@@ -1738,6 +1803,12 @@ class AppManager:
             else:
                 print(line)
 
+        # Installed, but no longer (or never) in the registry: an old name, an abandoned attempt
+        unlisted = [] if tag_filter and tag_filter.has_filters() else \
+            [a for a in installed if a not in available]
+        for app in sorted(unlisted):
+            print(f"[tw] [?] {app} (v{installed[app]}) not in the registry; tw -r {app} retires it")
+
         # Footer
         total = len(all_apps)
         filter_str = f" (filtered by {tag_filter})" if tag_filter and tag_filter.has_filters() else ""
@@ -1747,7 +1818,8 @@ class AppManager:
         if n_updates:
             footer += f"  ·  {CYAN}{n_updates} update(s) available{RESET}"
         print(f"\n{footer}")
-        print(f"[tw] Legend: [*] installed  [↑] {CYAN}update available{RESET}  [ ] not installed")
+        legend = f"[tw] Legend: [*] installed  [↑] {CYAN}update available{RESET}  [ ] not installed"
+        print(legend + ("  [?] not in registry" if unlisted else ""))
     
     def list_tags(self, app_names=None):
         """List all available tags from registry, optionally filtered by app names
@@ -2257,6 +2329,8 @@ How it Works:
      their checksums
   3. Runs installers/<app>.install, which places the files, adds any
      include to .taskrc, and records each file in ~/.task/config/.tw_manifest
+  4. Takes over its files: another app listing them (an old name) loses those
+     lines, and is retired when it has none left
 
 File Placement:
   - hook files  -> ~/.task/hooks/
@@ -2280,8 +2354,12 @@ Usage:
 How it Works:
   1. Runs the application's installer as `<app>.install remove`
   2. Falls back to deleting the manifest's files if there is no installer
-  3. Drops the app's manifest lines
-  4. Comments out any .taskrc include left pointing at a missing file
+  3. Keeps any file another app lists too (put back if the installer took it)
+  4. Drops the app's manifest lines
+  5. Comments out any .taskrc include left pointing at a missing file
+
+Retiring: tw -l marks installed apps the registry doesn't have with [?];
+  tw -r APP removes them, keeping files another app still uses
 
 Safety:
   - Preserves user data and the task database
