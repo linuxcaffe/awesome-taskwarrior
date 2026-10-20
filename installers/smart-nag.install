@@ -3,15 +3,16 @@ set -euo pipefail
 
 # ============================================================================
 # smart-nag - Installer Script
-# Version: 1.2.2
+# Version: 1.3.0
 #
 # HANDCRAFTED — do not overwrite with make-awesome.py --install
 # Keeps the user's smart-nag.rc and the popup timer's enabled state across
 # tw -u (a remove followed by an install), installs the systemd user units,
-# and includes nag-state.rc, the file the hook writes nag= to.
+# includes nag-state.rc, the file nag writes nag= to, and registers the
+# nag command as a tw wrapper keyword (tw nag).
 # ============================================================================
 
-VERSION="1.2.2"
+VERSION="1.3.0"
 APPNAME="smart-nag"
 BASE_URL="https://raw.githubusercontent.com/linuxcaffe/tw-smart-nag-hook/master"
 
@@ -52,6 +53,7 @@ NAG_STATE="${CONFIG_DIR}/nag-state.rc"
 TIMER="tw-smart-nag-popup.timer"
 # remove leaves this when the timer was enabled; install re-enables it and deletes it
 TIMER_MARK="${CONFIG_DIR}/.smart-nag-timer-enabled"
+WRAPPERS_FILE="${CONFIG_DIR}/.tw_wrappers"
 
 fetch() {
     curl -fsSL "$BASE_URL/$1" -o "$2" || {
@@ -91,8 +93,8 @@ install() {
     tw_msg "Downloading files..."
     fetch on-launch_smart-nag.py "$HOOKS_DIR/on-launch_smart-nag.py"
     chmod +x "$HOOKS_DIR/on-launch_smart-nag.py"
-    fetch smart-nag-popup.py "$SCRIPTS_DIR/smart-nag-popup.py"
-    chmod +x "$SCRIPTS_DIR/smart-nag-popup.py"
+    fetch nag "$SCRIPTS_DIR/nag"
+    chmod +x "$SCRIPTS_DIR/nag"
     fetch tw-smart-nag-popup.service "$SYSTEMD_DIR/tw-smart-nag-popup.service"
     fetch "$TIMER" "$SYSTEMD_DIR/$TIMER"
 
@@ -110,6 +112,11 @@ install() {
 
     curl -fsSL "$BASE_URL/README.md" -o "$DOCS_DIR/smart-nag_README.md" 2>/dev/null || true
 
+    if ! grep -q "^nag|" "$WRAPPERS_FILE" 2>/dev/null; then
+        echo "nag|nag|smart-nag: the nag on demand (nag), why it was chosen (nag -l), edit its conditions (nag -e)|command" >> "$WRAPPERS_FILE"
+        tw_msg "Registered wrapper: nag -> nag (command)"
+    fi
+
     if command -v systemctl &>/dev/null; then
         systemctl --user daemon-reload 2>/dev/null || true
         if [ -f "$TIMER_MARK" ]; then
@@ -121,7 +128,7 @@ install() {
 
     # Track in manifest (smart-nag.rc is listed, but remove keeps it)
     TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-    for file in "$HOOKS_DIR/on-launch_smart-nag.py" "$SCRIPTS_DIR/smart-nag-popup.py" \
+    for file in "$HOOKS_DIR/on-launch_smart-nag.py" "$SCRIPTS_DIR/nag" \
                 "$SYSTEMD_DIR/tw-smart-nag-popup.service" "$SYSTEMD_DIR/$TIMER" \
                 "$CONFIG_DIR/smart-nag.rc" "$NAG_STATE" "$DOCS_DIR/smart-nag_README.md"; do
         echo "$APPNAME|$VERSION|$file||$TIMESTAMP" >> "$MANIFEST_FILE"
@@ -129,6 +136,7 @@ install() {
 
     tw_success "Installed smart-nag v$VERSION"
     echo ""
+    tw_msg "Try: nag -l   (the conditions, and which one wins)"
     tw_msg "Desktop popups (optional): set nag.popup = on in ~/.task/config/smart-nag.rc, then"
     tw_msg "  systemctl --user enable --now $TIMER"
     tw_msg "Documentation: $DOCS_DIR/smart-nag_README.md"
@@ -171,6 +179,11 @@ remove() {
         systemctl --user daemon-reload 2>/dev/null || true
     fi
     rm -f "$TASK_DIR/logs/smart-nag.cache"
+
+    if grep -q "^nag|" "$WRAPPERS_FILE" 2>/dev/null; then
+        sed -i.bak "/^nag|/d" "$WRAPPERS_FILE"
+        tw_msg "Unregistered wrapper: nag"
+    fi
 
     tw_msg "Config preserved: $CONFIG_DIR/smart-nag.rc"
 
