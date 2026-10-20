@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ============================================================================
 # smart-nag - Installer Script
-# Version: 1.2.1
+# Version: 1.2.2
 #
 # HANDCRAFTED — do not overwrite with make-awesome.py --install
 # Keeps the user's smart-nag.rc and the popup timer's enabled state across
@@ -11,7 +11,7 @@ set -euo pipefail
 # and includes nag-state.rc, the file the hook writes nag= to.
 # ============================================================================
 
-VERSION="1.2.1"
+VERSION="1.2.2"
 APPNAME="smart-nag"
 BASE_URL="https://raw.githubusercontent.com/linuxcaffe/tw-smart-nag-hook/master"
 
