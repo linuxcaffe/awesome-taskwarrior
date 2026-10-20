@@ -164,8 +164,15 @@ an answer uses `tw_needs_pty`, or skips the question under `TW_NOINTERACT` with 
 - **`awesome.rc`** is the developer side: where each app's repo lives, and its flags
   (`envar_ready`, `tw_web`, `status`, …) for `make-awesome.py --fleet`.
 - **Checksums are checked.** `tw -I` refuses a file whose SHA-256 differs from `.meta`, so a change to any
-  listed file (README included) goes out through `make-awesome.py` (`--push`, or `--fleet --push`), which
-  updates `.meta` and the registry together.
+  listed file (README included) goes out through `make-awesome.py`: the full pipeline
+  (`make-awesome.py "message"`), or `--fleet --push`. A plain `--push` copies `.meta` as it is and
+  recomputes nothing; `--meta` does the checksums. `--dry-run` works on every stage and the full pipeline
+  (4.14.0): it says what would change and touches nothing.
+- **Handcrafted installers.** An installer make-awesome must never regenerate says so in its header: a
+  `# HANDCRAFTED` comment line within its first 12 lines (say why on the next lines). make-awesome then
+  only syncs its `VERSION=` with the `.meta`. It's found under the app's name from the `.meta`, not the
+  repo folder's (`tw-smart-nag-hook` holds `smart-nag.install`). Write one when the app needs what the
+  generator can't do: keep a user's config over `tw -u`, systemd units, wrapper keywords, includes.
 - **`tw_web` in `awesome.rc`:** `yes` = safe under `TW_NOINTERACT`; `partial` = won't hang, some features
   off; `no` = needs a terminal (must signal §2).
 - **tw-web is not in the registry,** on purpose: a GUI app, larger than the rest combined. It's the

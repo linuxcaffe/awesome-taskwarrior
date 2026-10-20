@@ -30,7 +30,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
 
-VERSION = "4.13.0"
+VERSION = "4.14.0"
 
 # Mode detection
 # Fleet mode  — running from the awesome-taskwarrior dir (where awesome.rc lives)
@@ -1237,15 +1237,36 @@ def cmd_envar(args) -> int:
     return 0 if not report.failed else 1
 
 
-def _get_app_name_from_meta() -> str:
-    """Read app name from the first .meta file in cwd."""
+def _get_meta_field(key: str) -> str:
+    """Read one key= value from the first .meta file in cwd ('' if none)."""
     metas = list(Path('.').glob('*.meta'))
     if not metas:
         return ''
     for line in metas[0].read_text().splitlines():
-        if line.startswith('name='):
+        if line.startswith(f'{key}='):
             return line.split('=', 1)[1].strip()
     return ''
+
+
+def _get_app_name_from_meta() -> str:
+    """Read app name from the first .meta file in cwd."""
+    return _get_meta_field('name')
+
+
+# A hand-written installer says so in its header: a "# HANDCRAFTED" comment line within its first
+# HANDCRAFTED_HEADER_LINES lines. make-awesome never regenerates one; it only syncs VERSION=.
+HANDCRAFTED_HEADER_LINES = 12
+_HANDCRAFTED_RE = re.compile(r'^#\s*HANDCRAFTED\b')
+
+
+def is_handcrafted(path) -> bool:
+    """True when the installer at path carries the HANDCRAFTED header comment."""
+    try:
+        with open(path) as f:
+            head = [next(f, '') for _ in range(HANDCRAFTED_HEADER_LINES)]
+    except OSError:
+        return False
+    return any(_HANDCRAFTED_RE.match(line) for line in head)
 
 
 class ProjectInfo:
@@ -1777,6 +1798,9 @@ def generate_meta_file(info: ProjectInfo) -> bool:
 def generate_installer(info: ProjectInfo) -> bool:
     """Generate full bash installer with install/remove functions"""
     install_file = f"{info.name}.install"
+    if is_handcrafted(install_file):    # last line of defence: whoever calls, never overwrite one
+        warn(f"{install_file} is marked HANDCRAFTED — not regenerated")
+        return True
     msg(f"Generating {install_file}...")
     
     try:
@@ -2093,6 +2117,13 @@ def cmd_meta(args, info=None) -> tuple:
     msg("=" * 70)
     print()
 
+    if getattr(args, 'dry_run', False):
+        name = _get_app_name_from_meta() or Path.cwd().name
+        state = check_meta_checksums(Path('.'))
+        msg(f"[dry-run] would ask the meta questions and write {name}.meta "
+            f"(checksums now: {state})")
+        return 0, None
+
     if info is None:
         info = detect_project_info()
         print()
@@ -2126,26 +2157,35 @@ def cmd_install(args, info=None) -> int:
     print()
 
     standalone = info is None
+    dry_run = bool(getattr(args, 'dry_run', False))
 
     if info is None:
         info = detect_project_info()
         print()
 
-    # Respect hand-crafted installers — skip generation if sentinel is present,
+    # Respect hand-crafted installers — skip generation if the header says HANDCRAFTED,
     # but still sync VERSION= from .meta so the manifest records the right version.
-    install_file = Path(f"{info.name}.install")
-    if install_file.exists() and 'HANDCRAFTED' in install_file.read_text():
+    # The .meta names the app (and its installer); the folder's name often differs
+    # (tw-smart-nag-hook holds smart-nag.install).
+    name = _get_app_name_from_meta() or info.name
+    version = _get_meta_field('version') or info.version
+    install_file = Path(f"{name}.install")
+    if is_handcrafted(install_file):
         warn(f"{install_file} is marked HANDCRAFTED — skipping installer generation")
         old_text = install_file.read_text()
-        new_text = re.sub(r'^VERSION="[^"]*"', f'VERSION="{info.version}"',
+        new_text = re.sub(r'^VERSION="[^"]*"', f'VERSION="{version}"',
                           old_text, count=1, flags=re.MULTILINE)
+        if dry_run:
+            if new_text != old_text:
+                msg(f"[dry-run] would sync VERSION=\"{version}\" in {install_file}")
+            return 0
         if new_text != old_text:
             install_file.write_text(new_text)
-            msg(f"Synced VERSION=\"{info.version}\" in {install_file}")
+            msg(f"Synced VERSION=\"{version}\" in {install_file}")
         else:
-            msg(f"VERSION already \"{info.version}\" in {install_file}")
+            msg(f"VERSION already \"{version}\" in {install_file}")
         # Recalculate checksums in .meta — VERSION sync changed the file content
-        meta_file = Path(f"{info.name}.meta")
+        meta_file = Path(f"{name}.meta")
         if meta_file.exists():
             meta_text = meta_file.read_text()
             if 'checksums=' in meta_text:
@@ -2169,6 +2209,11 @@ def cmd_install(args, info=None) -> int:
                                           meta_text, flags=re.MULTILINE)
                         meta_file.write_text(new_meta)
                         msg(f"Updated checksums in {meta_file}")
+        return 0
+
+    if dry_run:
+        what = f"ask the meta questions, write {name}.meta and " if standalone else ''
+        msg(f"[dry-run] would {what}generate {install_file}")
         return 0
 
     if standalone:
@@ -2602,6 +2647,9 @@ def cmd_push(args, commit_msg: str = None) -> int:
     msg("=" * 70)
     print()
 
+    if getattr(args, 'dry_run', False):
+        return _push_dry_run(project_name)
+
     # Step 1: Push the project repo
     msg("--- Project repo ---")
     if not push_project_repo(commit_msg):
@@ -2617,6 +2665,42 @@ def cmd_push(args, commit_msg: str = None) -> int:
     success("Push complete!")
     print()
 
+    return 0
+
+
+def _push_dry_run(project_name: str) -> int:
+    """--push --dry-run: say what would be committed, copied and pushed; touch nothing."""
+    msg("[dry-run] Nothing will be committed, copied or pushed")
+    print()
+    msg("--- Project repo ---")
+    status = subprocess.run(['git', 'status', '--short'], capture_output=True, text=True)
+    if status.returncode != 0:
+        error(f"git status failed: {status.stderr.strip()}")
+        return 1
+    if status.stdout.strip():
+        msg("[dry-run] would commit and push:")
+        print(status.stdout.rstrip())
+    else:
+        msg("[dry-run] working tree clean: no project commit")
+    checks = check_meta_checksums(Path('.'))
+    if checks != 'ok':
+        warn(f"[dry-run] .meta checksums: {checks} (run --meta, or the full pipeline, first)")
+    print()
+    msg("--- Registry ---")
+    registry_path = Path.home() / 'dev' / 'awesome-taskwarrior'
+    for local, dest in ((Path(f"{project_name}.install"), registry_path / 'installers'),
+                        (Path(f"{project_name}.meta"), registry_path / 'registry.d')):
+        target = dest / local.name
+        if not local.exists():
+            continue
+        if not target.exists():
+            msg(f"[dry-run] would add {target.relative_to(registry_path)}")
+        elif target.read_bytes() != local.read_bytes():
+            msg(f"[dry-run] would update {target.relative_to(registry_path)}")
+        else:
+            msg(f"[dry-run] {target.relative_to(registry_path)} unchanged")
+    msg("[dry-run] would regenerate registry.d/index.json and push the registry if anything changed")
+    print()
     return 0
 
 
@@ -2802,10 +2886,13 @@ def cmd_nointeract(args) -> int:
 
 # ============================================================================
 
-def cmd_pipeline(commit_msg: str) -> int:
+def cmd_pipeline(commit_msg: str, args=None) -> int:
+    """Every stage in order. Each gets args, so --dry-run (and --force) reach all of them."""
     msg("=" * 70)
     msg(f"make-awesome.py v{VERSION} - FULL PIPELINE")
     msg(f"Message: {commit_msg}")
+    if getattr(args, 'dry_run', False):
+        msg("[dry-run] No stage will change a file, commit or push")
     msg("=" * 70)
     print()
 
@@ -2827,23 +2914,23 @@ def cmd_pipeline(commit_msg: str) -> int:
         msg(f"STAGE {i}/{len(stages)}: {name}")
 
         if name == 'Gitignore':
-            rc = cmd_gitignore(None)
+            rc = cmd_gitignore(args)
         elif name == 'Debug':
-            rc = cmd_debug(None)
+            rc = cmd_debug(args)
         elif name == 'Testing':
-            rc = cmd_testing(None)
+            rc = cmd_testing(args)
         elif name == 'Timing':
-            rc = cmd_timing(None)
+            rc = cmd_timing(args)
         elif name == 'Envar':
-            rc = cmd_envar(None)
+            rc = cmd_envar(args)
         elif name == 'Stdhelp':
-            rc = cmd_stdhelp(None)
+            rc = cmd_stdhelp(args)
         elif name == 'Meta':
-            rc, meta_info = cmd_meta(None)
+            rc, meta_info = cmd_meta(args)
         elif name == 'Install':
-            rc = cmd_install(None, info=meta_info)
+            rc = cmd_install(args, info=meta_info)
         elif name == 'Push':
-            rc = cmd_push(None, commit_msg)
+            rc = cmd_push(args, commit_msg)
 
         if rc != 0 and gated:
             error(f"{name} stage failed")
@@ -4102,7 +4189,7 @@ def main():
     # -------------------------------------------------------------------------
 
     if args.commit_message:
-        return cmd_pipeline(args.commit_message)
+        return cmd_pipeline(args.commit_message, args)
 
     if args.index:
         return cmd_index()
