@@ -17,9 +17,10 @@ Pipeline order: debug → testing → timing → stdhelp → meta → install �
 Single command: make-awesome.py "commit message"  — runs full pipeline
 Flag combo:     make-awesome.py --meta --push "msg"  — runs selected stages in order
 
-Version: 4.14.1
+Version: 4.14.2
 """
 
+import ast
 import sys
 import os
 import re
@@ -30,7 +31,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
 
-VERSION = "4.14.1"
+VERSION = "4.14.2"
 
 # Mode detection
 # Fleet mode  — running from the awesome-taskwarrior dir (where awesome.rc lives)
@@ -565,7 +566,7 @@ def cmd_debug(args) -> int:
 # ============================================================================
 
 # The timing block injected into each hook.
-# Placed immediately after the shebang so _t0 is set before any imports,
+# Placed after the shebang (and the module docstring) so _t0 is set before any imports,
 # capturing full Python interpreter startup cost.
 # Uses atexit so the report fires at natural script exit regardless of
 # how the hook terminates.  All names are prefixed with _ to avoid
@@ -598,21 +599,82 @@ def _find_shebang_line(lines: list) -> int:
     return 0
 
 
+def _timing_insert_index(lines: list) -> int:
+    """Where the timing block goes: after the shebang and, when the module has one, its docstring.
+
+    Above the docstring, the docstring stops being the module's first statement and __doc__ is
+    None (`nag -h` crashed in smart-nag 1.3.1). Below it is still ahead of every import.
+    """
+    idx = _find_shebang_line(lines)
+    try:
+        body = ast.parse(''.join(lines)).body
+    except SyntaxError:
+        return idx
+    if (body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant)
+            and isinstance(body[0].value.value, str)):
+        return max(idx, body[0].end_lineno)
+    return idx
+
+
+def _module_docstring(lines: list):
+    try:
+        return ast.get_docstring(ast.parse(''.join(lines)))
+    except SyntaxError:
+        return None
+
+
+def _strip_timing_block(lines: list) -> list:
+    """lines without the timing block. The block starts at a known marker line and ends at
+    the first blank line that follows '_atexit.register'. We can't stop on the first blank
+    because the block itself contains internal blank lines."""
+    strip_markers = (
+        'import os as _os_timing',        # new-style block start
+        '# Timing support',                # old-style banner
+        "if os.environ.get('TW_TIMING')",  # old-style (no banner)
+    )
+    new_lines = []
+    skip = False
+    seen_register = False
+    for line in lines:
+        if not skip and any(line.startswith(m) for m in strip_markers):
+            skip = True
+            seen_register = False
+            continue
+        if skip:
+            if '_atexit.register' in line:
+                seen_register = True
+                continue
+            if seen_register and line.strip() == '':
+                # Trailing blank after register — done stripping
+                skip = False
+                seen_register = False
+            continue
+        new_lines.append(line)
+    return new_lines
+
+
 def inject_timing_block(filepath: str, force: bool = False, dry_run: bool = False) -> bool:
     """Inject the TW_TIMING block into a Python hook file.
 
-    Inserts immediately after the shebang line so _t0 is set before any
-    other imports, capturing full Python interpreter startup cost.
+    Inserts after the shebang (and the module docstring, if any) so _t0 is set
+    before any other imports, capturing full Python interpreter startup cost.
 
-    Idempotent: skips if TW_TIMING already present unless force=True.
+    Idempotent: skips if TW_TIMING already present unless force=True, except
+    that a block sitting above the module docstring is moved below it.
     On --force, strips the existing block before re-injecting.
     """
     with open(filepath, 'r') as f:
         content = f.read()
         lines = content.splitlines(keepends=True)
 
+    # A block above the module's docstring hides it (__doc__ is None): move it below
+    misplaced = ('TW_TIMING' in content and _module_docstring(lines) is None
+                 and _module_docstring(_strip_timing_block(lines)) is not None)
+
     if dry_run:
-        if 'TW_TIMING' in content:
+        if misplaced:
+            msg(f"[dry-run] Would move the timing block below the docstring: {filepath}")
+        elif 'TW_TIMING' in content:
             if not force:
                 warn(f"[dry-run] Would skip (already timed): {filepath}")
                 return False
@@ -622,42 +684,18 @@ def inject_timing_block(filepath: str, force: bool = False, dry_run: bool = Fals
             msg(f"[dry-run] Would inject timing block into: {filepath}")
         return True
 
-    if 'TW_TIMING' in content:
+    if misplaced:
+        msg(f"Moving the timing block below the docstring: {filepath}")
+        lines = _strip_timing_block(lines)
+    elif 'TW_TIMING' in content:
         if not force:
             warn(f"Already timed: {filepath}")
             return False  # False = skipped, not an error
         else:
             msg(f"--force: re-injecting timing block into {filepath}")
-            # Strip old block. The block starts at a known marker line and
-            # ends at the first blank line that follows '_atexit.register'.
-            # We can't stop on the first blank because the block itself
-            # contains internal blank lines.
-            strip_markers = (
-                'import os as _os_timing',        # new-style block start
-                '# Timing support',                # old-style banner
-                "if os.environ.get('TW_TIMING')",  # old-style (no banner)
-            )
-            new_lines = []
-            skip = False
-            seen_register = False
-            for line in lines:
-                if not skip and any(line.startswith(m) for m in strip_markers):
-                    skip = True
-                    seen_register = False
-                    continue
-                if skip:
-                    if '_atexit.register' in line:
-                        seen_register = True
-                        continue
-                    if seen_register and line.strip() == '':
-                        # Trailing blank after register — done stripping
-                        skip = False
-                        seen_register = False
-                    continue
-                new_lines.append(line)
-            lines = new_lines
+            lines = _strip_timing_block(lines)
 
-    idx = _find_shebang_line(lines)
+    idx = _timing_insert_index(lines)
 
     lines = lines[:idx] + _TIMING_BLOCK.splitlines(keepends=True) + lines[idx:]
 
