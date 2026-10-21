@@ -17,7 +17,7 @@ Pipeline order: debug → testing → timing → stdhelp → meta → install �
 Single command: make-awesome.py "commit message"  — runs full pipeline
 Flag combo:     make-awesome.py --meta --push "msg"  — runs selected stages in order
 
-Version: 4.13.0
+Version: 4.14.1
 """
 
 import sys
@@ -30,7 +30,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
 
-VERSION = "4.14.0"
+VERSION = "4.14.1"
 
 # Mode detection
 # Fleet mode  — running from the awesome-taskwarrior dir (where awesome.rc lives)
@@ -1293,10 +1293,14 @@ class ProjectInfo:
 
 def detect_project_info() -> ProjectInfo:
     info = ProjectInfo()
-    info.name = Path.cwd().name
+    # An existing .meta names the app and its version; the folder's name often differs
+    # (tw-smart-nag-hook holds smart-nag.meta)
+    info.name = _get_app_name_from_meta() or Path.cwd().name
     msg(f"Project: {info.name}")
     
-    if Path("VERSION").exists():
+    if _get_meta_field('version'):
+        info.version = _get_meta_field('version')
+    elif Path("VERSION").exists():
         info.version = Path("VERSION").read_text().strip()
     elif Path("version.txt").exists():
         info.version = Path("version.txt").read_text().strip()

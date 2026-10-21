@@ -155,3 +155,17 @@ def test_pipeline_dry_run_changes_no_file(tmp_path, monkeypatch):
     assert git('rev-parse', 'HEAD', cwd=d) == head
     assert snapshot(d, ROOT / 'registry.d', ROOT / 'installers') == before
     assert (ROOT / 'awesome.rc').read_bytes() == rc_before
+
+
+# ── The banner names the app the .meta describes ──────────────────────────────
+
+def test_project_info_comes_from_the_meta(tmp_path, monkeypatch, capsys):
+    project(tmp_path, monkeypatch)
+    info = ma.detect_project_info()
+    assert (info.name, info.version) == ('demo', '2.0.0')  # not the folder's name, not 1.0.0
+    out = capsys.readouterr().out
+    assert 'Project: demo' in out and 'Version: 2.0.0' in out
+
+
+def test_docstring_version_matches_VERSION():
+    assert f'Version: {ma.VERSION}' in ma.__doc__
