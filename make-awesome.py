@@ -17,7 +17,7 @@ Pipeline order: debug → testing → timing → stdhelp → meta → install �
 Single command: make-awesome.py "commit message"  — runs full pipeline
 Flag combo:     make-awesome.py --meta --push "msg"  — runs selected stages in order
 
-Version: 4.14.2
+Version: 4.14.3
 """
 
 import ast
@@ -31,7 +31,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
 
-VERSION = "4.14.2"
+VERSION = "4.14.3"
 
 # Mode detection
 # Fleet mode  — running from the awesome-taskwarrior dir (where awesome.rc lives)
@@ -1192,6 +1192,22 @@ class EnvarEnhancer:
 import re as _re
 
 
+# A path to ~/.task built without TW_TASK_DIR: Path.home() / '.task', "~/.task", $HOME/.task
+_HARDCODED_TASK_DIR = _re.compile(r"""Path\.home\(\)\s*/\s*['"]\.task\b|['"]~/\.task\b|\$\{?HOME\}?/\.task\b""")
+
+
+def hardcoded_task_dir(path) -> list:
+    """(line number, line) for each code line that hard-codes ~/.task rather than taking
+    TW_TASK_DIR (a TW_TASK_DIR default on the same line is fine; comments don't count)."""
+    try:
+        lines = Path(path).read_text(errors='replace').splitlines()
+    except OSError:
+        return []
+    return [(n, line) for n, line in enumerate(lines, 1)
+            if _HARDCODED_TASK_DIR.search(line) and 'TW_TASK_DIR' not in line
+            and not line.lstrip().startswith('#')]
+
+
 def cmd_envar(args) -> int:
     """Patch hardcoded env-related paths to use TW_TASK_DIR / TASKRC."""
     msg("=" * 70)
@@ -1254,8 +1270,16 @@ def cmd_envar(args) -> int:
         else:
             msg("No files needed patching")
 
+        # Ready only when no file still hard-codes ~/.task: patch_file doesn't recognise
+        # every form (Path.home() / '.task'), and finding nothing to patch isn't readiness
+        remaining = [(f, n, line) for f in candidates for n, line in hardcoded_task_dir(f)]
+        for f, n, line in remaining:
+            warn(f"  hard-coded ~/.task: {f}:{n}: {line.strip()}")
+
         # Update awesome.rc if no failures
-        if not report.failed:
+        if remaining:
+            warn(f"awesome.rc not updated: {len(remaining)} hard-coded ~/.task path(s) remain")
+        elif not report.failed:
             app_name = _get_app_name_from_meta()
             if app_name:
                 if EnvarEnhancer.update_awesome_rc(app_name):
