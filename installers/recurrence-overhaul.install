@@ -112,6 +112,11 @@ install() {
 
     # Add config include to included.rc (if present) or .taskrc
     INCLUDED_RC="${TASK_DIR}/config/included.rc"
+    if [ "$TASK_DIR" = "$HOME/.task" ]; then
+        INC_PATH="~/.task/config/recurrence.rc"
+    else
+        INC_PATH="${TASK_DIR}/config/recurrence.rc"
+    fi
     if grep -qE "^[[:space:]]*include[[:space:]].*recurrence.rc" "$TASKRC" "$INCLUDED_RC" 2>/dev/null; then
         tw_msg "Config already included"
         debug_msg "Config already present: recurrence.rc" 2
@@ -119,13 +124,13 @@ install() {
         sed -i.bak -E "s|^[[:space:]]*#[[:space:]]*(include[[:space:]].*recurrence.rc)[[:space:]]*(#.*)?$|\1|" "$INCLUDED_RC"
         tw_msg "Re-enabled config include in included.rc"
     elif [ -f "$INCLUDED_RC" ]; then
-        echo "include ${TASK_DIR}/config/recurrence.rc" >> "$INCLUDED_RC"
+        echo "include $INC_PATH" >> "$INCLUDED_RC"
         tw_msg "Added config include to included.rc"
-        debug_msg "Added to included.rc: include ${TASK_DIR}/config/recurrence.rc" 2
+        debug_msg "Added to included.rc: include $INC_PATH" 2
     else
-        echo "include ${TASK_DIR}/config/recurrence.rc" >> "$TASKRC"
+        echo "include $INC_PATH" >> "$TASKRC"
         tw_msg "Added config include to .taskrc"
-        debug_msg "Added to .taskrc: include ${TASK_DIR}/config/recurrence.rc" 2
+        debug_msg "Added to .taskrc: include $INC_PATH" 2
     fi
 
     tw_msg "Downloading documentation..."
