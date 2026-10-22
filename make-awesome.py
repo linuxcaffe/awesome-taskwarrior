@@ -17,7 +17,7 @@ Pipeline order: debug → testing → timing → stdhelp → meta → install �
 Single command: make-awesome.py "commit message"  — runs full pipeline
 Flag combo:     make-awesome.py --meta --push "msg"  — runs selected stages in order
 
-Version: 4.14.3
+Version: 4.15.0
 """
 
 import ast
@@ -31,7 +31,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
 
-VERSION = "4.14.3"
+VERSION = "4.15.0"
 
 # Mode detection
 # Fleet mode  — running from the awesome-taskwarrior dir (where awesome.rc lives)
@@ -1997,6 +1997,11 @@ def generate_installer(info: ProjectInfo) -> bool:
                 first_config = std_configs[0][0]
                 f.write('    # Add config include to included.rc (if present) or .taskrc\n')
                 f.write('    INCLUDED_RC="${TASK_DIR}/config/included.rc"\n')
+                f.write('    if [ "$TASK_DIR" = "$HOME/.task" ]; then\n')
+                f.write(f'        INC_PATH="~/.task/config/{first_config}"\n')
+                f.write('    else\n')
+                f.write(f'        INC_PATH="${{TASK_DIR}}/config/{first_config}"\n')
+                f.write('    fi\n')
                 # Only an active include counts; one commented out (e.g. by tw -r's dangling-include
                 # repair) is re-enabled rather than mistaken for "already included".
                 f.write(f'    if grep -qE "^[[:space:]]*include[[:space:]].*{first_config}" "$TASKRC" "$INCLUDED_RC" 2>/dev/null; then\n')
@@ -2005,14 +2010,16 @@ def generate_installer(info: ProjectInfo) -> bool:
                 f.write(f'    elif grep -qE "^[[:space:]]*#[[:space:]]*include[[:space:]].*{first_config}" "$INCLUDED_RC" 2>/dev/null; then\n')
                 f.write(f'        sed -i.bak -E "s|^[[:space:]]*#[[:space:]]*(include[[:space:]].*{first_config})[[:space:]]*(#.*)?$|\\1|" "$INCLUDED_RC"\n')
                 f.write(f'        tw_msg "Re-enabled config include in included.rc"\n')
+                # ~/.task/... when the task dir is the usual one: included.rc is shared by every
+                # station (gittw), and another station's home isn't this one's /home/<user> (4.15.0)
                 f.write('    elif [ -f "$INCLUDED_RC" ]; then\n')
-                f.write(f'        echo "include ${{TASK_DIR}}/config/{first_config}" >> "$INCLUDED_RC"\n')
+                f.write(f'        echo "include $INC_PATH" >> "$INCLUDED_RC"\n')
                 f.write(f'        tw_msg "Added config include to included.rc"\n')
-                f.write(f'        debug_msg "Added to included.rc: include ${{TASK_DIR}}/config/{first_config}" 2\n')
+                f.write(f'        debug_msg "Added to included.rc: include $INC_PATH" 2\n')
                 f.write('    else\n')
-                f.write(f'        echo "include ${{TASK_DIR}}/config/{first_config}" >> "$TASKRC"\n')
+                f.write(f'        echo "include $INC_PATH" >> "$TASKRC"\n')
                 f.write(f'        tw_msg "Added config include to .taskrc"\n')
-                f.write(f'        debug_msg "Added to .taskrc: include ${{TASK_DIR}}/config/{first_config}" 2\n')
+                f.write(f'        debug_msg "Added to .taskrc: include $INC_PATH" 2\n')
                 f.write('    fi\n\n')
 
             # Download docs
