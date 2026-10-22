@@ -299,3 +299,12 @@ debug       = no
 status      = release
 envar_ready = yes
 tw_web      = yes      # no hooks, never prompts; tw-web reads its entries
+
+[mobilize]
+path        = ~/dev/tw-mobilize
+type        = wrapper
+timing      = no
+debug       = no
+status      = testing
+envar_ready = yes
+tw_web      = no       # a setup tool for a terminal: init prompts (SSH key, waiting for access)
