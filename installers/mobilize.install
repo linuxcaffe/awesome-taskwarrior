@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ============================================================================
+# mobilize - Installer Script
+# Version: 0.1.0
+#
+# HANDCRAFTED — do not overwrite with make-awesome.py --install
+# Installs the command and its README only. Never ships, overwrites or removes
+# config/mobilize.rc (shared by every station, written by `mobilize init`) or
+# local.rc (this station's): tw -u is a remove followed by an install, and both
+# files must survive it. Rewrites its manifest lines instead of appending
+# duplicates, and registers `mobilize` as a tw wrapper keyword.
+# ============================================================================
+
+VERSION="0.1.0"
+APPNAME="mobilize"
+BASE_URL="https://raw.githubusercontent.com/linuxcaffe/tw-mobilize/main"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+tw_msg() { echo -e "${BLUE}[tw]${NC} $*"; }
+tw_success() { echo -e "${GREEN}[tw] [OK]${NC} $*"; }
+tw_error() { echo -e "${RED}[tw] [FAIL]${NC} $*" >&2; }
+
+DEBUG_LEVEL="${TW_DEBUG:-0}"
+debug_msg() {
+    if [[ $DEBUG_LEVEL -ge ${2:-1} ]]; then
+        echo -e "${BLUE}[DEBUG-${2:-1}]${NC} $1" >&2
+    fi
+}
+
+HOME="${HOME:-$(eval echo ~$USER)}"
+TASK_DIR="${TW_TASK_DIR:-${HOME}/.task}"
+SCRIPTS_DIR="${TASK_DIR}/scripts"
+CONFIG_DIR="${TASK_DIR}/config"
+DOCS_DIR="${TASK_DIR}/docs"
+MANIFEST_FILE="${CONFIG_DIR}/.tw_manifest"
+WRAPPERS_FILE="${CONFIG_DIR}/.tw_wrappers"
+SCRIPT="${SCRIPTS_DIR}/mobilize"
+DOC="${DOCS_DIR}/mobilize_README.md"
+DESCRIPTION="Set up a Taskwarrior 2.6.2 station (Android in Termux, or Linux) from your gittw repo, with tw-web on it: mobilize init/check/stations/-e; mobilize.rc (shared) and local.rc (per station)"
+
+install() {
+    tw_msg "Installing mobilize v$VERSION..."
+    mkdir -p "$SCRIPTS_DIR" "$CONFIG_DIR" "$DOCS_DIR"
+
+    curl -fsSL "$BASE_URL/mobilize.py" -o "$SCRIPT" || {
+        tw_error "Failed to download mobilize.py"
+        return 1
+    }
+    chmod +x "$SCRIPT"
+    debug_msg "Installed $SCRIPT" 2
+    curl -fsSL "$BASE_URL/README.md" -o "$DOC" 2>/dev/null || true
+
+    # One manifest line per file, however often this runs
+    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    touch "$MANIFEST_FILE"
+    sed -i.bak "/^$APPNAME|/d" "$MANIFEST_FILE"
+    echo "$APPNAME|$VERSION|$SCRIPT||$TIMESTAMP" >> "$MANIFEST_FILE"
+    echo "$APPNAME|$VERSION|$DOC||$TIMESTAMP" >> "$MANIFEST_FILE"
+
+    if ! grep -q "^mobilize|" "$WRAPPERS_FILE" 2>/dev/null; then
+        echo "mobilize|mobilize|$DESCRIPTION|command" >> "$WRAPPERS_FILE"
+        tw_msg "Registered wrapper: mobilize -> mobilize (command)"
+    fi
+
+    tw_success "Installed mobilize v$VERSION"
+    echo ""
+    if [ -f "$CONFIG_DIR/mobilize.rc" ]; then
+        tw_msg "This repo has a mobilize.rc. See how this station stands: mobilize check"
+    else
+        tw_msg "Next: mobilize init  (writes config/mobilize.rc and lists this station in it)"
+    fi
+    tw_msg "Documentation: $DOC"
+    return 0
+}
+
+remove() {
+    tw_msg "Removing mobilize..."
+    rm -f "$SCRIPT" "$DOC"
+    if [ -f "$MANIFEST_FILE" ]; then
+        sed -i.bak "/^$APPNAME|/d" "$MANIFEST_FILE"
+    fi
+    if grep -q "^mobilize|" "$WRAPPERS_FILE" 2>/dev/null; then
+        sed -i.bak "/^mobilize|/d" "$WRAPPERS_FILE"
+        tw_msg "Unregistered wrapper: mobilize"
+    fi
+    # mobilize.rc (and its include) and local.rc stay: they're settings, not the program.
+    if [ -f "$CONFIG_DIR/mobilize.rc" ]; then
+        tw_msg "Kept config/mobilize.rc and its include (shared settings; delete them by hand if you mean to)"
+    fi
+    tw_success "Removed mobilize"
+    return 0
+}
+
+case "${1:-install}" in
+    install) install ;;
+    remove|uninstall) remove ;;
+    *) echo "Usage: $0 {install|remove}"; exit 1 ;;
+esac
