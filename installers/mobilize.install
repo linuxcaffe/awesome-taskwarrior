@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ============================================================================
 # mobilize - Installer Script
-# Version: 0.5.0
+# Version: 0.5.1
 #
 # HANDCRAFTED — do not overwrite with make-awesome.py --install
 # Installs the command and its README only. Never ships, overwrites or removes
@@ -13,7 +13,7 @@ set -euo pipefail
 # duplicates, and registers `mobilize` as a tw wrapper keyword.
 # ============================================================================
 
-VERSION="0.5.0"
+VERSION="0.5.1"
 APPNAME="mobilize"
 BASE_URL="https://raw.githubusercontent.com/linuxcaffe/tw-mobilize/main"
 
