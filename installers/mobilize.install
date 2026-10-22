@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ============================================================================
 # mobilize - Installer Script
-# Version: 0.2.1
+# Version: 0.3.0
 #
 # HANDCRAFTED — do not overwrite with make-awesome.py --install
 # Installs the command and its README only. Never ships, overwrites or removes
@@ -13,7 +13,7 @@ set -euo pipefail
 # duplicates, and registers `mobilize` as a tw wrapper keyword.
 # ============================================================================
 
-VERSION="0.2.1"
+VERSION="0.3.0"
 APPNAME="mobilize"
 BASE_URL="https://raw.githubusercontent.com/linuxcaffe/tw-mobilize/main"
 
@@ -42,7 +42,7 @@ MANIFEST_FILE="${CONFIG_DIR}/.tw_manifest"
 WRAPPERS_FILE="${CONFIG_DIR}/.tw_wrappers"
 SCRIPT="${SCRIPTS_DIR}/mobilize"
 DOC="${DOCS_DIR}/mobilize_README.md"
-DESCRIPTION="Set up a Taskwarrior 2.6.2 station (Android in Termux, or Linux) from your gittw repo, with tw-web on it: mobilize init/check/stations/-e; mobilize.rc (shared) and local.rc (per station)"
+DESCRIPTION="Set up a Taskwarrior 2.6.2 station (Android in Termux, or Linux) from your gittw repo, with tw-web on it: mobilize init/check/hooks/stations/-e; mobilize.rc (shared) and local.rc (per station)"
 
 install() {
     tw_msg "Installing mobilize v$VERSION..."
