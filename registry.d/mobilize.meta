@@ -1,16 +1,16 @@
 # mobilize.meta
-# Set up a Taskwarrior 2.6.2 station (Android in Termux, or Linux) from your gittw repo, with tw-web on it: mobilize init/check/hooks/stations/-e; mobilize.rc (shared) and local.rc (per station)
+# Set up a Taskwarrior 2.6.2 station (Android in Termux, or Linux) from your gittw repo, with tw-web on it: mobilize init/check/hooks/stations/android/-e; mobilize.rc (shared) and local.rc (per station)
 
 name=mobilize
-version=0.5.1
+version=0.6.0
 type=wrapper
-description=Set up a Taskwarrior 2.6.2 station (Android in Termux, or Linux) from your gittw repo, with tw-web on it: mobilize init/check/hooks/stations/-e; mobilize.rc (shared) and local.rc (per station)
+description=Set up a Taskwarrior 2.6.2 station (Android in Termux, or Linux) from your gittw repo, with tw-web on it: mobilize init/check/hooks/stations/android/-e; mobilize.rc (shared) and local.rc (per station)
 repo=https://github.com/linuxcaffe/tw-mobilize
 base_url=https://raw.githubusercontent.com/linuxcaffe/tw-mobilize/main
 files=mobilize.py:script:~/.task/scripts/mobilize,README.md:doc
 tags=android, termux, setup, stations, sync, gittw, tw-web
 
-checksums=59626979680d2bd5b31dafb4cc730336ecc81b2f7b280f4dde62a5b6dc9db3e7,0d7fe0b8d90bf4087f90378ba93dbb131217262679933ae8b13b6abe03392ba8
+checksums=1f07b9813c54e1fb1e3b2abed22e460011b53e66e7bc7aff766fc28d9b313547,ddd5023ef377a9b3bc1a10ec686c1c07a1b0f38ca644c34e8c60087f08dcfaf0
 
 author=linuxcaffe + Claude
 license=MIT
