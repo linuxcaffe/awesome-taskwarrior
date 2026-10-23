@@ -12,7 +12,7 @@ set -euo pipefail
 # nag command as a tw wrapper keyword (tw nag).
 # ============================================================================
 
-VERSION="1.3.2"
+VERSION="1.3.3"
 APPNAME="smart-nag"
 BASE_URL="https://raw.githubusercontent.com/linuxcaffe/tw-smart-nag-hook/master"
 
@@ -49,6 +49,8 @@ DOCS_DIR="${TASK_DIR}/docs"
 SYSTEMD_DIR="${HOME}/.config/systemd/user"
 MANIFEST_FILE="${CONFIG_DIR}/.tw_manifest"
 INCLUDED_RC="${CONFIG_DIR}/included.rc"
+# include lines name the folder as ~/.task, so the rc works on every station that syncs it
+INC_DIR="~/.task/config"
 NAG_STATE="${CONFIG_DIR}/nag-state.rc"
 TIMER="tw-smart-nag-popup.timer"
 # remove leaves this when the timer was enabled; install re-enables it and deletes it
@@ -73,10 +75,10 @@ include_rc() {
         sed -i.bak -E "s|^[[:space:]]*#[[:space:]]*(include[[:space:]].*${name})[[:space:]]*(#.*)?$|\1|" "$INCLUDED_RC"
         tw_msg "Re-enabled include in included.rc: $name"
     elif [ -f "$INCLUDED_RC" ]; then
-        echo "include ${CONFIG_DIR}/${name}" >> "$INCLUDED_RC"
+        echo "include ${INC_DIR}/${name}" >> "$INCLUDED_RC"
         tw_msg "Added include to included.rc: $name"
     else
-        echo "include ${CONFIG_DIR}/${name}" >> "$TASKRC"
+        echo "include ${INC_DIR}/${name}" >> "$TASKRC"
         tw_msg "Added include to .taskrc: $name"
     fi
 }
