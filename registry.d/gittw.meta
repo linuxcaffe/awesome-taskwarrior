@@ -2,7 +2,7 @@
 # Git-based sync and history for ~/.task: gittw sync/push/pull/undo/status, plus an on-exit hook that commits after every change (gittw.autocommit in config/gittw.rc; hook-ctrl to remove it)
 
 name=gittw
-version=0.3.4
+version=0.3.5
 type=hook
 description=Git-based sync and history for ~/.task across stations (merge by task UUID, station-tagged commits, last seen, gc at sync): gittw sync/push/pull/undo/status/setup, plus an on-exit hook that commits after every change (gittw.autocommit in config/gittw.rc; hook-ctrl to remove it)
 repo=https://github.com/linuxcaffe/gittw
