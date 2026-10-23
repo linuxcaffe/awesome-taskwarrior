@@ -17,7 +17,7 @@ Pipeline order: debug → testing → timing → stdhelp → meta → install �
 Single command: make-awesome.py "commit message"  — runs full pipeline
 Flag combo:     make-awesome.py --meta --push "msg"  — runs selected stages in order
 
-Version: 4.16.1
+Version: 4.16.2
 """
 
 import ast
@@ -31,7 +31,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
 
-VERSION = "4.16.1"
+VERSION = "4.16.2"
 
 # Mode detection
 # Fleet mode  — running from the awesome-taskwarrior dir (where awesome.rc lives)
@@ -2527,8 +2527,18 @@ def push_project_repo(commit_msg: str) -> bool:
 
         if not result.stdout.strip():
             msg("Working tree clean, nothing to commit")
-            msg("Skipping project commit (will still update registry)")
-            return True
+            ahead = subprocess.run(['git', 'rev-list', '--count', '@{u}..HEAD'],
+                                   capture_output=True, text=True)
+            if ahead.returncode != 0:
+                warn("No upstream branch: nothing pushed (git push -u origin <branch> once)")
+                return True
+            if ahead.stdout.strip() in ('', '0'):
+                msg("Already pushed (will still update registry)")
+                return True
+            # 4.16.2: commits made before --push were never pushed, and the registry named a
+            # version GitHub didn't have (gittw 0.3.5, mobilize 0.6.2, 2026-10-23)
+            msg(f"{ahead.stdout.strip()} commit(s) not pushed yet")
+            return _git_push_project()
 
         msg("Files to be committed:")
         print(result.stdout)
@@ -2559,21 +2569,22 @@ def push_project_repo(commit_msg: str) -> bool:
                 print(result.stderr)
                 return False
 
-        msg("Push...")
-        result = subprocess.run(['git', 'push'],
-                              capture_output=True, text=True)
-
-        if result.returncode != 0:
-            error("Git push failed")
-            print(result.stderr)
-            return False
-
-        success("Project pushed")
-        return True
+        return _git_push_project()
 
     except Exception as e:
         error(f"Git failed: {e}")
         return False
+
+
+def _git_push_project() -> bool:
+    msg("Push...")
+    result = subprocess.run(['git', 'push'], capture_output=True, text=True)
+    if result.returncode != 0:
+        error("Git push failed")
+        print(result.stderr)
+        return False
+    success("Project pushed")
+    return True
 
 
 def registry_index_text(registry_path: Path) -> str:
@@ -2714,6 +2725,10 @@ def cmd_push(args, commit_msg: str = None) -> int:
 
     if getattr(args, 'dry_run', False):
         return _push_dry_run(project_name)
+
+    # The registry's checksums must be the files' that get pushed (4.16.2: a plain --push
+    # copied a .meta still holding the last release's checksums)
+    recalculate_meta_checksums(Path('.'))
 
     # Step 1: Push the project repo
     msg("--- Project repo ---")

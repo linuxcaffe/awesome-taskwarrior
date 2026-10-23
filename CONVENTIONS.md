@@ -172,8 +172,9 @@ an answer uses `tw_needs_pty`, or skips the question under `TW_NOINTERACT` with 
   (`envar_ready`, `tw_web`, `status`, …) for `make-awesome.py --fleet`.
 - **Checksums are checked.** `tw -I` refuses a file whose SHA-256 differs from `.meta`, so a change to any
   listed file (README included) goes out through `make-awesome.py`: the full pipeline
-  (`make-awesome.py "message"`), or `--fleet --push`. A plain `--push` copies `.meta` as it is and
-  recomputes nothing; `--meta` does the checksums. `--dry-run` works on every stage and the full pipeline
+  (`make-awesome.py "message"`), `--fleet --push`, or a plain `--push`: since 4.16.2 it recomputes the
+  `.meta`'s checksums first, and pushes commits already made (before, a clean tree pushed nothing and
+  the registry named a version GitHub didn't have). `--dry-run` works on every stage and the full pipeline
   (4.14.0): it says what would change and touches nothing.
 - **Handcrafted installers.** An installer make-awesome must never regenerate says so in its header: a
   `# HANDCRAFTED` comment line within its first 12 lines (say why on the next lines). make-awesome then
