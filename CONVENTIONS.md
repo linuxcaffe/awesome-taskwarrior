@@ -161,6 +161,13 @@ an answer uses `tw_needs_pty`, or skips the question under `TW_NOINTERACT` with 
 
 - **The registry is the fleet list.** `registry.d/<app>.meta` + `installers/<app>.install`, installed with
   `tw -I <app>`, which records files in `~/.task/config/.tw_manifest` (what `tw -l` shows).
+- **Stations share `~/.task`** (gittw), so an app installed on one is installed on all. The manifest
+  records `~/.task/…` paths (tw 2.18.0) so every station writes the same lines; tw hands installers
+  absolute paths while they run. What *runs* differs per station: a station's own `hooks.location`
+  (tw-mobilize, `hooks.d/<station>`), `hooks`, and `tw.platforms` (desktop or mobile) live in its
+  untracked `local.rc`. **`platforms=`** in `.meta` (`desktop`, `mobile`, comma-separated; absent = any)
+  says which kinds suit an app: set it for an app that needs a desktop (systemd units, GUI popups,
+  `notify-send`). `tw -l` marks an app not at work on this station `[~]`.
 - **`awesome.rc`** is the developer side: where each app's repo lives, and its flags
   (`envar_ready`, `tw_web`, `status`, …) for `make-awesome.py --fleet`.
 - **Checksums are checked.** `tw -I` refuses a file whose SHA-256 differs from `.meta`, so a change to any

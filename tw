@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 tw - awesome-taskwarrior package manager and wrapper
-Version: 2.17.0
+Version: 2.18.0
 
 A unified wrapper for Taskwarrior that provides:
 - Transparent pass-through to task command
@@ -10,6 +10,21 @@ A unified wrapper for Taskwarrior that provides:
 - Per-file manifest tracking
 - Checksum verification
 - Dev mode indicator for local development
+
+Updates in v2.18.0:
+- Changed: the manifest records paths the portable way (~/.task/...), so it reads the same on every
+  station sharing ~/.task (gittw) and can be tracked again (it conflicted at every install, so repos
+  stopped tracking it). An older manifest, another station's absolute paths included, is rewritten
+  once. Installers still see this station's absolute paths while they run (25 read them back with
+  [ -f "$file" ]), and the file is portable again afterwards
+- Added: tw -l marks an installed app that isn't at work on this station "[~]", with why: its hooks
+  aren't in this station's own hooks.location (tw-mobilize's hooks.d/<station>), hooks = off, or
+  files outside ~/.task missing here; and says which hooks folder this station runs
+- Added: platforms= in a .meta (desktop, mobile; absent = any): tw -l notes "desktop only" on a station
+  of another kind (tw.platforms in local.rc), and tw -I/-u warns
+- Added: after an install or update on a station with its own hook list, tw says how to run the
+  app's hooks there (mobilize hooks --set '..., app')
+- Tests: tests/test_tw_stations.py (8)
 
 Updates in v2.17.0:
 - Added: an install takes over the files it lists: another app's manifest lines for them go, and
@@ -234,7 +249,7 @@ import tempfile
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 
-VERSION = "2.17.0"
+VERSION = "2.18.0"
 
 # GitHub configuration
 GITHUB_REPO = "linuxcaffe/awesome-taskwarrior"
@@ -1233,12 +1248,34 @@ class MetaFile:
         
         return [t.strip() for t in tags_str.split(',') if t.strip()]
 
+def _portable(path):
+    """How the manifest records a file: ~/... under the home folder, so the shared ~/.task (gittw)
+    holds the same line on every station. Another station's absolute ~/.task path (an older tw or a
+    standalone installer wrote it) becomes ~/.task/...; a URL or a path elsewhere stays as written."""
+    if not path.startswith('/'):
+        return path
+    home = str(Path.home()).rstrip('/') + '/'
+    if path.startswith(home):
+        return '~/' + path[len(home):]
+    if '/.task/' in path:
+        return '~/.task/' + path.split('/.task/', 1)[1]
+    return path
+
+
+def _local(path):
+    """A manifest path as this station's absolute path (what installers and tw's own code use)."""
+    return os.path.expanduser(path) if path.startswith('~/') else path
+
+
 class Manifest:
-    """Manages the installation manifest"""
+    """Manages the installation manifest. On disk the paths are portable (_portable), because
+    ~/.task is shared between stations; in memory, and while an installer runs, they are this
+    station's absolute paths: installers read them back with `[ -f "$file" ]`, which no ~ survives."""
     
     def __init__(self, manifest_path):
         self.manifest_path = Path(manifest_path)
         self.entries = []
+        self.portable_on_disk = True     # every line already written the portable way
         self._load()
     
     def _load(self):
@@ -1253,10 +1290,12 @@ class Manifest:
                     continue
                 parts = line.split('|')
                 if len(parts) >= 5:
+                    if _portable(parts[2]) != parts[2]:
+                        self.portable_on_disk = False
                     self.entries.append({
                         'app': parts[0],
                         'version': parts[1],
-                        'file': parts[2],
+                        'file': _local(_portable(parts[2])),
                         'checksum': parts[3],
                         'date': parts[4]
                     })
@@ -1323,19 +1362,25 @@ class Manifest:
                 return e['version']
         return None
     
-    def _save(self):
-        """Save manifest to file"""
+    def normalize(self):
+        """Rewrite the file the portable way when any line isn't (once, after an older tw)."""
+        if not self.portable_on_disk and self.manifest_path.exists():
+            self._save()
+
+    def _save(self, local=False):
+        """Save manifest to file: portable paths, or this station's (local=True, for an installer)."""
         self.manifest_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self.manifest_path, 'w') as f:
             for entry in self.entries:
                 line = '|'.join([
                     entry['app'],
                     entry['version'],
-                    entry['file'],
+                    entry['file'] if local else _portable(entry['file']),
                     entry['checksum'],
                     entry['date']
                 ])
                 f.write(line + '\n')
+        self.portable_on_disk = not local
 
 _INCLUDE_RE = re.compile(r'^(\s*)include\s+(\S.*?)\s*$')
 _SYSTEM_RC_DIR = Path('/usr/share/taskwarrior')
@@ -1393,7 +1438,12 @@ class AppManager:
     def __init__(self, paths):
         self.paths = paths
         self.manifest = Manifest(paths.manifest_file)
+        try:
+            self.manifest.normalize()
+        except OSError:
+            pass
         self.registry = RegistryManager(paths)
+        self.rc = TaskRC()
     
     def _installer_env(self, dry_run=False):
         """What an installer is told: where everything goes."""
@@ -1413,13 +1463,20 @@ class AppManager:
         return env
 
     def _run_installer(self, installer_path, action):
-        """bash INSTALLER install|remove; True when it exits 0."""
+        """bash INSTALLER install|remove; True when it exits 0. The installer sees the manifest with
+        this station's paths and may append its own; afterwards the file is portable again."""
+        mf = self.paths.manifest_file
+        if mf.exists():
+            Manifest(mf)._save(local=True)
         try:
             result = subprocess.run(['bash', str(installer_path), action], env=self._installer_env())
             return result.returncode == 0
         except OSError as e:
             print(f"[tw] [X] Error running installer: {e}")
             return False
+        finally:
+            if mf.exists():
+                Manifest(mf)._save()
 
     def install(self, app_name, dry_run=False, stage_dir=None):
         """Install an application with its installer, run from a folder holding its files (so the
@@ -1461,6 +1518,8 @@ class AppManager:
             if self._run_installer(installer_path, 'install'):
                 print(f"[tw] [+] Installed: {app_name}")
                 self._claim(app_name)
+                if not stage_dir or own_stage:      # tw -u prints these once, after the update
+                    self._station_notes(app_name)
                 return True
             print(f"[tw] [X] Installation failed: {app_name}")
             return False
@@ -1468,6 +1527,83 @@ class AppManager:
             if own_stage:
                 shutil.rmtree(own_stage, ignore_errors=True)
     
+    # ── This station ──────────────────────────────────────────────────────────
+    # ~/.task is shared between stations (gittw), so an app's files are on every one; what differs is
+    # what runs. A station with its own hooks.location (tw-mobilize: ~/.task/hooks.d/<station>, in its
+    # local.rc) runs only the hooks linked there, and files outside ~/.task never travel.
+
+    def _rc_value(self, key, default=''):
+        return self.rc.get(key, default).split('#', 1)[0].strip()
+
+    def station_hooks_dir(self):
+        """This station's own hooks folder, or None when it runs ~/.task/hooks (the default)."""
+        value = self._rc_value('hooks.location')
+        if not value:
+            return None
+        folder = Path(os.path.expanduser(value))
+        try:
+            if folder.resolve() == self.paths.hooks_dir.resolve():
+                return None
+        except OSError:
+            pass
+        return folder
+
+    def hooks_off(self):
+        return self._rc_value('hooks', 'on').lower() in ('off', 'no', '0', 'false')
+
+    def station_platform(self):
+        """desktop or mobile (tw.platforms in local.rc), '' when the station doesn't say."""
+        return self._rc_value('tw.platforms').lower()
+
+    def _hook_files(self, app_name):
+        return [Path(f) for f in self.manifest.get_files(app_name)
+                if Path(f).parent == self.paths.hooks_dir and Path(f).name.startswith('on-')]
+
+    def not_here(self, app_name):
+        """Why an installed app isn't (all) at work on this station, or None when it is."""
+        files = [Path(f) for f in self.manifest.get_files(app_name) if f.startswith('/')]
+        missing = [f for f in files if not (f.exists() or f.is_symlink())]
+        if missing:
+            return f"{len(missing)} file(s) not on this station"
+        hooks = self._hook_files(app_name)
+        if not hooks:
+            return None
+        if self.hooks_off():
+            return "hooks = off here"
+        own = self.station_hooks_dir()
+        if own is None:
+            return None
+        running = [h for h in hooks if (own / h.name).exists()]
+        if not running:
+            return f"its hooks don't run here ({_portable(str(own))})"
+        if len(running) < len(hooks):
+            return f"{len(running)} of {len(hooks)} hooks run here"
+        return None
+
+    def not_for_here(self, meta):
+        """'desktop only' when the app's platforms= leaves out this station's kind, else None."""
+        platforms = [p.strip().lower() for p in (meta.get('platforms') or '').split(',') if p.strip()]
+        here = self.station_platform()
+        if platforms and here and here not in platforms:
+            return f"{'/'.join(platforms)} only"
+        return None
+
+    def _station_notes(self, app_name, meta=None):
+        """After an install or update: what this station does with it."""
+        meta = meta or self.registry.get_meta(app_name)
+        unsuited = meta and self.not_for_here(meta)
+        if unsuited:
+            print(f"[tw] [!] {app_name} is marked {unsuited}; this station is {self.station_platform()}")
+        own = self.station_hooks_dir()
+        hooks = self._hook_files(app_name)
+        if own is not None and hooks and not all((own / h.name).exists() for h in hooks):
+            chosen = [a.strip() for a in self._rc_value('mobilize.hooks').split(',') if a.strip()]
+            chosen = ', '.join(chosen + [app_name]) if app_name not in chosen else ', '.join(chosen)
+            print(f"[tw] This station runs its own hook list ({_portable(str(own))}), so {app_name}'s "
+                  f"hooks don't run here yet. To run them: mobilize hooks --set '{chosen}'")
+        if hooks and own is None:
+            print(f"[tw] Its hooks run on every station that runs ~/.task/hooks, once ~/.task syncs")
+
     def _claim(self, app_name):
         """After an install: the files it lists are its own now. An app that listed them too (an
         earlier install under another name) loses those lines, and goes when it has none left."""
@@ -1608,6 +1744,7 @@ class AppManager:
             shutil.rmtree(stage_dir, ignore_errors=True)
             shutil.rmtree(backup_dir, ignore_errors=True)
             print(f"[tw] [+] Updated {app_name}: v{old_version} -> v{new_version}")
+            self._station_notes(app_name, meta)
             return True
         else:
             # Install failed - restore from backup
@@ -1750,7 +1887,9 @@ class AppManager:
                     'version': version,
                     'installed_version': installed.get(app, None),
                     'is_installed': is_installed,
-                    'tags': tags
+                    'tags': tags,
+                    'not_here': self.not_here(app) if is_installed else None,
+                    'not_for_here': self.not_for_here(meta),
                 }
         
         # Apply tag filter if provided
@@ -1775,6 +1914,7 @@ class AppManager:
 
         n_installed = 0
         n_updates   = 0
+        n_not_here  = 0
 
         # Display apps with status indicators
         for app, info in sorted(all_apps.items()):
@@ -1787,6 +1927,11 @@ class AppManager:
                 version_str = f"v{inst_ver}→{reg_ver}"
                 n_installed += 1
                 n_updates   += 1
+            elif info['is_installed'] and info['not_here']:
+                status      = "[~] "
+                version_str = f"v{inst_ver}"
+                n_installed += 1
+                n_not_here  += 1
             elif info['is_installed']:
                 status      = "[*] "
                 version_str = f"v{inst_ver}"
@@ -1797,6 +1942,10 @@ class AppManager:
 
             tags_str = f" [{', '.join(info['tags'])}]" if info['tags'] else ""
             line = f"[tw] {status}{app} ({version_str}){tags_str}"
+            notes = [n for n in (info['not_here'] if info['is_installed'] else None,
+                                 info['not_for_here']) if n]
+            if notes:
+                line += f"  ({'; '.join(notes)})"
 
             if update_avail:
                 print(f"{CYAN}{line}{RESET}")
@@ -1819,7 +1968,16 @@ class AppManager:
             footer += f"  ·  {CYAN}{n_updates} update(s) available{RESET}"
         print(f"\n{footer}")
         legend = f"[tw] Legend: [*] installed  [↑] {CYAN}update available{RESET}  [ ] not installed"
+        if n_not_here:
+            legend += "  [~] installed, not at work on this station"
         print(legend + ("  [?] not in registry" if unlisted else ""))
+        station = self._rc_value('gittw.device')
+        own = self.station_hooks_dir()
+        if station or own is not None:
+            where = f"its own hook list, {_portable(str(own))}" if own is not None else "~/.task/hooks"
+            kind = f" ({self.station_platform()})" if self.station_platform() else ""
+            print(f"[tw] Station {station or '(unnamed)'}{kind} runs {where}; ~/.task, and what's "
+                  f"installed in it, is shared with the other stations")
     
     def list_tags(self, app_names=None):
         """List all available tags from registry, optionally filtered by app names
@@ -2407,6 +2565,14 @@ Output Format:
   [tw] [*] app-name (v1.2.0) [hook, python]       installed
   [tw] [↑] other-app (v1.0.0→1.1.0) [script]      update available
   [tw] [ ] third-app (v0.3.0) [config]            not installed
+  [tw] [~] hook-app (v1.0.0) [hook]  (its hooks don't run here (~/.task/hooks.d/s5))
+                                                  installed, not at work on this station
+  [tw] [ ] gui-app (v0.1.0)  (desktop only)       platforms= leaves out this station's kind
+
+Stations: ~/.task is shared between stations (gittw), so an app installed on one is
+installed on all; the manifest records ~/.task/... paths for that reason. What runs
+can differ: a station with its own hooks.location (tw-mobilize) runs only the hooks
+linked there, and files outside ~/.task stay on the station that installed them.
 
 Example:
   tw --list

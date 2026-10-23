@@ -17,7 +17,7 @@ Pipeline order: debug → testing → timing → stdhelp → meta → install �
 Single command: make-awesome.py "commit message"  — runs full pipeline
 Flag combo:     make-awesome.py --meta --push "msg"  — runs selected stages in order
 
-Version: 4.15.0
+Version: 4.16.0
 """
 
 import ast
@@ -31,7 +31,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
 
-VERSION = "4.15.0"
+VERSION = "4.16.0"
 
 # Mode detection
 # Fleet mode  — running from the awesome-taskwarrior dir (where awesome.rc lives)
@@ -1343,6 +1343,7 @@ class ProjectInfo:
         self.license = "MIT"
         self.requires_tw = "2.6.0"
         self.requires_py = ""
+        self.platforms = ""     # desktop, mobile: which kinds of station suit the app (tw 2.18.0)
         self.tags = ""
         self.files = []
         self.checksums = []
@@ -1592,6 +1593,8 @@ def prompt_for_metadata(info: ProjectInfo) -> bool:
                         info.license = line.split('=', 1)[1].strip()
                     elif line.startswith('type='):
                         info.type = line.split('=', 1)[1].strip()
+                    elif line.startswith('platforms='):
+                        info.platforms = line.split('=', 1)[1].strip()
                     elif line.startswith('links='):
                         info.links = parse_links(line.split('=', 1)[1])
                     elif line.startswith('wrapper.'):
@@ -1847,6 +1850,8 @@ def generate_meta_file(info: ProjectInfo) -> bool:
             f.write(f"requires_taskwarrior={info.requires_tw}\n")
             if info.requires_py:
                 f.write(f"requires_python={info.requires_py}\n")
+            if info.platforms:
+                f.write(f"platforms={info.platforms}\n")
             if info.type == 'wrapper' and info.wrappers:
                 f.write('\n')
                 for i, w in enumerate(info.wrappers, 1):
