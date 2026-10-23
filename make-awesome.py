@@ -17,7 +17,7 @@ Pipeline order: debug → testing → timing → stdhelp → meta → install �
 Single command: make-awesome.py "commit message"  — runs full pipeline
 Flag combo:     make-awesome.py --meta --push "msg"  — runs selected stages in order
 
-Version: 4.16.0
+Version: 4.16.1
 """
 
 import ast
@@ -31,7 +31,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
 
-VERSION = "4.16.0"
+VERSION = "4.16.1"
 
 # Mode detection
 # Fleet mode  — running from the awesome-taskwarrior dir (where awesome.rc lives)
@@ -224,6 +224,11 @@ class PythonFileParser:
 
 class DebugEnhancer:
     """Enhances Python files with debug infrastructure"""
+
+    # The imports the debug block writes. Only these exact lines are dropped from the file's own:
+    # `from datetime import datetime, timedelta` stays whole (4.16.1; dropping every
+    # `from datetime ...` line broke recurrence-overhaul 3.1.0).
+    BLOCK_IMPORTS = {'import os', 'import sys', 'from pathlib import Path', 'from datetime import datetime'}
     
     @staticmethod
     def enhance_existing_debug(pattern: DebugPattern, parsed: Dict) -> List[str]:
@@ -250,17 +255,8 @@ class DebugEnhancer:
         enhanced.append('from datetime import datetime\n')
         
         # Add original imports (skip duplicates)
-        skip_imports = {'os', 'sys', 'pathlib', 'datetime'}
         for line in parsed['imports']:
-            is_duplicate = False
-            for skip in skip_imports:
-                stripped = line.strip()
-                if (stripped == f'import {skip}'
-                        or stripped.startswith(f'from {skip} ')
-                        or stripped.startswith(f'from {skip}.')):
-                    is_duplicate = True
-                    break
-            if not is_duplicate and line.strip():
+            if line.strip() and line.strip() not in DebugEnhancer.BLOCK_IMPORTS:
                 enhanced.append(line)
         
         enhanced.append('\n')
@@ -363,17 +359,8 @@ class DebugEnhancer:
         enhanced.append('from pathlib import Path\n')
         enhanced.append('from datetime import datetime\n')
         
-        skip_imports = {'os', 'sys', 'pathlib', 'datetime'}
         for line in parsed['imports']:
-            is_duplicate = False
-            for skip in skip_imports:
-                stripped = line.strip()
-                if (stripped == f'import {skip}'
-                        or stripped.startswith(f'from {skip} ')
-                        or stripped.startswith(f'from {skip}.')):
-                    is_duplicate = True
-                    break
-            if not is_duplicate and line.strip():
+            if line.strip() and line.strip() not in DebugEnhancer.BLOCK_IMPORTS:
                 enhanced.append(line)
         
         enhanced.append('\n')
