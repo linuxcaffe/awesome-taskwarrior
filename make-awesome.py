@@ -17,7 +17,7 @@ Pipeline order: debug → testing → timing → stdhelp → meta → install �
 Single command: make-awesome.py "commit message"  — runs full pipeline
 Flag combo:     make-awesome.py --meta --push "msg"  — runs selected stages in order
 
-Version: 4.16.2
+Version: 4.16.3
 """
 
 import ast
@@ -31,7 +31,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
 
-VERSION = "4.16.2"
+VERSION = "4.16.3"
 
 # Mode detection
 # Fleet mode  — running from the awesome-taskwarrior dir (where awesome.rc lives)
@@ -2762,9 +2762,16 @@ def _push_dry_run(project_name: str) -> int:
         print(status.stdout.rstrip())
     else:
         msg("[dry-run] working tree clean: no project commit")
+    # A real --push recalculates them first (4.16.2), so a mismatch is only news, not a fault
     checks = check_meta_checksums(Path('.'))
-    if checks != 'ok':
-        warn(f"[dry-run] .meta checksums: {checks} (run --meta, or the full pipeline, first)")
+    if checks == 'mismatch':
+        msg("[dry-run] would recalculate the .meta checksums (they don't match the files) and commit the .meta")
+    elif checks == 'error':
+        meta = next(Path('.').glob('*.meta'), None)
+        files = next((l[6:] for l in meta.read_text().splitlines() if l.startswith('files=')), '') if meta else ''
+        missing = [f for f in (e.split(':')[0] for e in files.split(',') if e) if not Path(f).is_file()]
+        warn("[dry-run] .meta checksums can't be checked: "
+             + (f"missing {', '.join(missing)}" if missing else "files= and checksums= differ in length"))
     print()
     msg("--- Registry ---")
     registry_path = Path.home() / 'dev' / 'awesome-taskwarrior'

@@ -63,3 +63,23 @@ def test_push_brings_the_meta_checksums_up_to_date_first(tmp_path, monkeypatch):
     monkeypatch.setattr(ma, 'push_registry', lambda name: True)    # never the real registry
     assert ma.cmd_push(SimpleNamespace(dry_run=False), 'msg') == 0
     assert hashlib.sha256(b'two\n').hexdigest() in seen['meta'], 'checksums before the project commit'
+
+
+def test_dry_run_says_push_will_bring_the_checksums_up_to_date(tmp_path, monkeypatch, capsys):
+    """4.16.3: since 4.16.2 --push recalculates them itself, so "run --meta first" was wrong advice."""
+    d, _ = tracked_repo(tmp_path, monkeypatch)
+    (d / 'on-add_demo.py').write_text('two\n')
+    meta = (d / 'demo.meta').read_text()
+    assert ma.cmd_push(SimpleNamespace(dry_run=True), 'msg') == 0
+    out = capsys.readouterr().out
+    assert 'would recalculate the .meta checksums' in out
+    assert 'run --meta' not in out and 'WARN' not in out
+    assert (d / 'demo.meta').read_text() == meta                  # a dry run still writes nothing
+
+
+def test_dry_run_warns_when_the_checksums_cannot_be_checked(tmp_path, monkeypatch, capsys):
+    d, _ = tracked_repo(tmp_path, monkeypatch)
+    (d / 'on-add_demo.py').unlink()
+    assert ma.cmd_push(SimpleNamespace(dry_run=True), 'msg') == 0
+    out = capsys.readouterr().out
+    assert 'WARN' in out and 'on-add_demo.py' in out
