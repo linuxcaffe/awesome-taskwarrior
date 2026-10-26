@@ -17,7 +17,7 @@ set -euo pipefail
 # it downloads them from BASE_URL.
 # ============================================================================
 
-VERSION="1.4.0"
+VERSION="1.4.1"
 APPNAME="vit"
 BASE_URL="https://raw.githubusercontent.com/linuxcaffe/vit/1.3"
 
