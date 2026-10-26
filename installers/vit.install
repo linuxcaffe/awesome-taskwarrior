@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+# HANDCRAFTED
+# Why: vit's man pages go under docs/man (man1, man5), its Perl modules are checked, and an
+# older vit earlier on PATH is pointed out. ~/.vitrc is the user's and is never touched.
+set -euo pipefail
+
+# ============================================================================
+# vit - Installer
+#
+# Installs:
+#   ~/.task/scripts/vit                  (the built script; the help is inside it)
+#   ~/.task/docs/man/man1/vit.1          (man -M ~/.task/docs/man vit)
+#   ~/.task/docs/man/man5/vitrc.5
+#   ~/.task/docs/vit_README.md
+#
+# tw -I stages the files beside this installer (checksums verified); run on its own,
+# it downloads them from BASE_URL.
+# ============================================================================
+
+VERSION="1.4.0"
+APPNAME="vit"
+BASE_URL="https://raw.githubusercontent.com/linuxcaffe/vit/1.3"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+tw_msg()     { echo -e "${BLUE}[tw]${NC} $*"; }
+tw_success() { echo -e "${GREEN}[tw] [OK]${NC} $*"; }
+tw_error()   { echo -e "${RED}[tw] [FAIL]${NC} $*" >&2; }
+
+TASK_DIR="${TW_TASK_DIR:-${HOME}/.task}"
+SCRIPTS_DIR="${TASK_DIR}/scripts"
+DOCS_DIR="${TASK_DIR}/docs"
+MAN_DIR="${DOCS_DIR}/man"
+MANIFEST_FILE="${TASK_DIR}/config/.tw_manifest"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# place SRC DEST — copy SRC from beside this installer, else download it
+place() {
+    local src="$1" dest="$2"
+    mkdir -p "$(dirname "$dest")"
+    if [[ -f "${SCRIPT_DIR}/${src}" ]]; then
+        cp "${SCRIPT_DIR}/${src}" "$dest"
+    else
+        curl -fsSL "${BASE_URL}/${src}" -o "$dest" || { tw_error "Failed to download ${src}"; return 1; }
+    fi
+    tw_msg "Installed: ${dest}"
+}
+
+install() {
+    tw_msg "Installing ${APPNAME} v${VERSION}..."
+
+    place vit       "${SCRIPTS_DIR}/vit"
+    chmod +x "${SCRIPTS_DIR}/vit"
+    place vit.1     "${MAN_DIR}/man1/vit.1"
+    place vitrc.5   "${MAN_DIR}/man5/vitrc.5"
+    place README.md "${DOCS_DIR}/vit_README.md"
+
+    mkdir -p "$(dirname "$MANIFEST_FILE")"
+    if [[ -f "$MANIFEST_FILE" ]]; then
+        grep -v "^${APPNAME}|" "$MANIFEST_FILE" > "${MANIFEST_FILE}.tmp" || true
+        mv "${MANIFEST_FILE}.tmp" "$MANIFEST_FILE"
+    fi
+    local ts f
+    ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    for f in "${SCRIPTS_DIR}/vit" "${MAN_DIR}/man1/vit.1" "${MAN_DIR}/man5/vitrc.5" \
+             "${DOCS_DIR}/vit_README.md"; do
+        echo "${APPNAME}|${VERSION}|${f}||${ts}" >> "$MANIFEST_FILE"
+    done
+
+    tw_success "Installed ${APPNAME} v${VERSION}"
+
+    # What vit needs that tw can't install
+    local missing=() m
+    for m in Curses Try::Tiny Text::CharWidth; do
+        perl -M"$m" -e 1 2>/dev/null || missing+=("$m")
+    done
+    if (( ${#missing[@]} )); then
+        tw_msg "NOTE: vit needs these Perl modules: ${missing[*]}"
+        tw_msg "      Debian/Ubuntu: sudo apt install libcurses-perl libtry-tiny-perl libtext-charwidth-perl"
+    fi
+
+    # An older vit that PATH finds first would hide this one
+    local first
+    first="$(command -v vit 2>/dev/null || true)"
+    if [[ -n "$first" && "$first" != "${SCRIPTS_DIR}/vit" ]]; then
+        tw_msg "NOTE: 'vit' runs ${first} (earlier on PATH); remove it to use this one"
+    fi
+
+    echo ""
+    tw_msg "Run: vit    Keys: :h in vit    Manual: man -M ${MAN_DIR} vit"
+    tw_msg "Your ~/.vitrc is read as before; in a map that changes a task, prefer %TASKUUID to %TASKID."
+}
+
+remove() {
+    tw_msg "Removing ${APPNAME}..."
+    if [[ -f "$MANIFEST_FILE" ]]; then
+        grep "^${APPNAME}|" "$MANIFEST_FILE" | cut -d'|' -f3 | while read -r f; do
+            f="${f/#\~/$HOME}"
+            [[ -f "$f" ]] && rm -f "$f" && tw_msg "Removed: $f"
+        done
+        grep -v "^${APPNAME}|" "$MANIFEST_FILE" > "${MANIFEST_FILE}.tmp" || true
+        mv "${MANIFEST_FILE}.tmp" "$MANIFEST_FILE"
+    fi
+    rmdir "${MAN_DIR}/man1" "${MAN_DIR}/man5" "${MAN_DIR}" 2>/dev/null || true
+    tw_msg "~/.vitrc left as it is"
+    tw_success "Removed ${APPNAME}"
+}
+
+case "${1:-install}" in
+    install)          install ;;
+    remove|uninstall) remove ;;
+    *) echo "Usage: $0 {install|remove}"; exit 1 ;;
+esac
