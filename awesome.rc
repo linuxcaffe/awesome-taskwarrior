@@ -181,6 +181,16 @@ envar_ready = no
 skip        = yes
 tw_web      = no       # desktop UI
 
+[vit]
+path        = ~/dev/vit
+type        = ui
+timing      = no
+debug       = no       # Perl; the pipeline's stages are for Python and shell
+status      = release
+envar_ready = yes
+skip_testing = yes     # its suite is tests/run.sh (tmux), not test-*.py: run it before a release
+tw_web      = no       # terminal UI
+
 [tw-tui]
 path        = ~/dev/tw-tui
 type        = ui
