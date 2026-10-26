@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 tw - awesome-taskwarrior package manager and wrapper
-Version: 2.18.0
+Version: 2.19.0
 
 A unified wrapper for Taskwarrior that provides:
 - Transparent pass-through to task command
@@ -10,6 +10,15 @@ A unified wrapper for Taskwarrior that provides:
 - Per-file manifest tracking
 - Checksum verification
 - Dev mode indicator for local development
+
+Updates in v2.19.0:
+- Added: tw.ui=vit (a station's local.rc): a command task would run as a report, default.command
+  included (so a bare `tw`), opens in vit on an interactive terminal, with the same arguments.
+  Not into a pipe or a script, not from inside vit (TW_CLIENT=vit), not without vit on PATH, not
+  for anything but a report; plain `task` is never affected. vit 1.4.1 runs its report through tw,
+  so pre-exec wrappers (theme-switch) still apply
+- Added: tw -V [cmd] opens a report in vit once, without the setting
+- Tests: tests/test_tw_vit.py (16)
 
 Updates in v2.18.0:
 - Changed: the manifest records paths the portable way (~/.task/...), so it reads the same on every
@@ -249,7 +258,7 @@ import tempfile
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 
-VERSION = "2.18.0"
+VERSION = "2.19.0"
 
 # GitHub configuration
 GITHUB_REPO = "linuxcaffe/awesome-taskwarrior"
@@ -605,6 +614,7 @@ TW_FLAGS = [
     Flag('-u', '--update',              'arg',  'Update an application', 'APP', 'installed'),
     Flag('',   '--verify',              'arg',  'Verify application checksums', 'APP', 'installed'),
     Flag('-v', '--version',             'flag', 'Show tw and taskwarrior versions'),
+    Flag('-V', '--vit',                 'flag', 'Open a report in vit', '[cmd]', passthrough=True),
 ]
 TW_SHORT_FLAGS = [f.short for f in TW_FLAGS if f.short and not f.hidden]
 TW_LONG_FLAGS = [f.long for f in TW_FLAGS if not f.hidden]
@@ -3303,8 +3313,29 @@ def run_with_timing(args):
     return result.returncode
 
 
+def _interactive():
+    """A person at a terminal: stdin and stdout both a tty (not a pipe, a script or tw-web)."""
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def _vit_wanted(args):
+    """tw.ui=vit (a station's local.rc): a report task would run for args (default.command
+    included) opens in vit, at a terminal. Never from inside vit (TW_CLIENT=vit: a shell or tw
+    started there), never without vit on PATH. vit runs the report through tw itself, so
+    pre-exec wrappers (theme-switch) still apply."""
+    if os.environ.get('TW_CLIENT') == 'vit' or not _interactive():
+        return False
+    if TaskRC().get('tw.ui', '').split('#', 1)[0].strip().lower() != 'vit':
+        return False
+    if not shutil.which('vit'):
+        return False
+    return command_of(args, _task_vocab())[0] == 'report'
+
+
 def pass_through_to_task(args, debug_wrapper=False):
     """Pass command through to task, routing via pre-exec and filter wrappers."""
+    if _vit_wanted(args):
+        os.execvp('vit', ['vit'] + list(args))
     wrapper_mgr = WrapperManager()
     session_id  = uuid.uuid4().hex[:12]
 
@@ -4194,6 +4225,12 @@ def main():
             print("[tw] Install with: tw -I gtk")
             return 1
         return subprocess.call([str(script)] + extra)
+
+    if args.vit:
+        if not shutil.which('vit'):
+            print("[tw] vit not found. Install with: tw -I vit")
+            return 1
+        os.execvp('vit', ['vit'] + remaining)
 
     if args.tui:
         tui = Path.home() / '.task' / 'scripts' / 'tw-tui'

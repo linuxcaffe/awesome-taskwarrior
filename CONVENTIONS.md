@@ -21,7 +21,7 @@ set them.
 | Variable | Value | Meaning |
 |---|---|---|
 | `TW_NOINTERACT` | `1` | **No terminal.** The one gate: a hook must not prompt, open `/dev/tty`, or launch an interactive program. |
-| `TW_CLIENT` | `web`, `gtk`, … | Which client is calling. Informational: for wording or client-specific extras, never to decide whether to prompt. |
+| `TW_CLIENT` | `web`, `gtk`, `vit`, … | Which client is calling. Informational: for wording or client-specific extras, never to decide whether to prompt. (One extra: tw's `tw.ui=vit` mode stands aside under `TW_CLIENT=vit`, so a `tw` started from inside vit never opens a second vit. That's which program shows a report, not whether to prompt.) |
 | `TW_WEB` | `1` | Legacy alias of `TW_NOINTERACT`, set by tw-web only. Hooks written before `TW_NOINTERACT` check it. New hooks check `TW_NOINTERACT`. |
 | `TW_SPOOL_DIR` | a directory | Where a hook may leave a deferred command (see §3). Private to the client (mode 0700); never assume a path. |
 | `TW_PREFLIGHT_CMD` | `12 done` | The command as the user would type it after `task`. Used in signals so the client can offer to run it in a terminal. |
@@ -208,7 +208,7 @@ an answer uses `tw_needs_pty`, or skips the question under `TW_NOINTERACT` with 
 | subtask | `TW_NOINTERACT` | `tw_needs_pty` | on start with dormant subtasks |
 | deps-mgmt | `TW_WEB` | — | repo version skips the cascade questions; the installed copy predates it (§4) |
 | gittw | — | — | never prompts (`tw_web = yes`) |
-| vit | sets §1 on captured writes (`TW_CLIENT=vit`) | — | a terminal client that captures writes: `tw_needs_pty` and the legacy marker offer the same command in its terminal (§1 cleared there); drains the spool after every write, offering each command; `rc.hooks=off` on reads; doesn't read `tw_preflight` (2026-10-26) |
+| vit | sets §1 on captured writes (`TW_CLIENT=vit`) | — | a terminal client that captures writes: `tw_needs_pty` and the legacy marker offer the same command in its terminal (§1 cleared there); drains the spool after every write, offering each command; `rc.hooks=off` on reads; doesn't read `tw_preflight` (2026-10-26). 1.4.1: uses `tw` when installed (report, writes, terminal commands), and `tw.ui=vit` opens tw's reports in it (tw 2.19.0) |
 
 ## 11. Open
 
