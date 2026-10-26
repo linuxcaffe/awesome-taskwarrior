@@ -28,7 +28,7 @@ set them.
 | `TW_PREFLIGHT_VERB` | `modify` | Bulk-operation check: the command's verb. |
 | `TW_PREFLIGHT_FILTER` | `project:home` | Bulk-operation check: the filter, space-separated. |
 | `TW_PREFLIGHT_CONFIRMED` | `1` | The user has already confirmed this bulk operation; don't block it again. |
-| `TW_PREFLIGHT_THRESHOLD` | `3` | Optional: task count at which nointeract-preflight blocks (else its config). |
+| `TW_PREFLIGHT_THRESHOLD` | `3` | Optional: task count at which a bulk-operation guard blocks. (Its one implementation, nointeract-preflight, was retired 2026-10-26.) |
 
 **A client that gives a command a real terminal clears `TW_NOINTERACT`, `TW_WEB`, `TW_SPOOL_DIR` and
 every `TW_PREFLIGHT_*`**, so hooks prompt as they would in a shell. (tw-web's terminal console does this;
@@ -78,7 +78,8 @@ if os.environ.get('TW_NOINTERACT'):
 {"type": "tw_preflight", "count": 7, "verb": "modify", "filter": "project:home", "cmd": "project:home modify +x", "threshold": 3}
 ```
 
-Emitted by the nointeract-preflight on-launch hook when a mutating command would touch `count` tasks or
+Reserved: **no hook emits it since 2026-10-26**, when its one emitter, the nointeract-preflight on-launch
+hook, was retired (no client ever used it). It meant a mutating command would touch `count` tasks or
 more (`threshold`). The client asks the user, then re-runs the same command with
 `TW_PREFLIGHT_CONFIRMED=1`. No client does this today: tw-web runs bulk commands in its terminal
 console, where `TW_NOINTERACT` is cleared and Taskwarrior asks for confirmation itself (2026-10-15).
@@ -202,7 +203,7 @@ an answer uses `tw_needs_pty`, or skips the question under `TW_NOINTERACT` with 
 | | Gate | Emits | Notes |
 |---|---|---|---|
 | tw-web | sets all of §1 | — | reads `tw_needs_pty` and the legacy marker on every task write and opens its in-page console; drains the spool on every write; doesn't read `tw_preflight` (command mode runs in the console, where Taskwarrior confirms bulk changes) |
-| nointeract-preflight | `TW_NOINTERACT` | `tw_preflight` | on-launch |
+| ~~nointeract-preflight~~ | `TW_NOINTERACT` | `tw_preflight` | retired 2026-10-26: no client read its signal |
 | hledger-add | `TW_NOINTERACT` | `tw_needs_pty` | on done |
 | subtask | `TW_NOINTERACT` | `tw_needs_pty` | on start with dormant subtasks |
 | deps-mgmt | `TW_WEB` | — | repo version skips the cascade questions; the installed copy predates it (§4) |
