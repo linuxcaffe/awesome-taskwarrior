@@ -208,6 +208,7 @@ an answer uses `tw_needs_pty`, or skips the question under `TW_NOINTERACT` with 
 | subtask | `TW_NOINTERACT` | `tw_needs_pty` | on start with dormant subtasks |
 | deps-mgmt | `TW_WEB` | — | repo version skips the cascade questions; the installed copy predates it (§4) |
 | gittw | — | — | never prompts (`tw_web = yes`) |
+| vit | sets §1 on captured writes (`TW_CLIENT=vit`) | — | a terminal client that captures writes: `tw_needs_pty` and the legacy marker offer the same command in its terminal (§1 cleared there); drains the spool after every write, offering each command; `rc.hooks=off` on reads; doesn't read `tw_preflight` (2026-10-26) |
 
 ## 11. Open
 
