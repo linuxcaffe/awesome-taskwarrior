@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # HANDCRAFTED
 # Why: vit's man pages go under docs/man (man1, man5), its Perl modules are checked, and an
-# older vit earlier on PATH is pointed out. ~/.vitrc is the user's and is never touched.
+# older vit earlier on PATH is pointed out. ~/.task/config/vitrc (or ~/.vitrc) is the user's and is never touched.
 set -euo pipefail
 
 # ============================================================================
@@ -17,7 +17,7 @@ set -euo pipefail
 # it downloads them from BASE_URL.
 # ============================================================================
 
-VERSION="1.4.1"
+VERSION="1.4.2"
 APPNAME="vit"
 BASE_URL="https://raw.githubusercontent.com/linuxcaffe/vit/1.3"
 
@@ -91,7 +91,7 @@ install() {
 
     echo ""
     tw_msg "Run: vit    Keys: :h in vit    Manual: man -M ${MAN_DIR} vit"
-    tw_msg "Your ~/.vitrc is read as before; in a map that changes a task, prefer %TASKUUID to %TASKID."
+    tw_msg "Settings: ~/.task/config/vitrc, else ~/.vitrc (man vitrc). In a map that changes a task, prefer %TASKUUID to %TASKID."
 }
 
 remove() {
@@ -105,7 +105,7 @@ remove() {
         mv "${MANIFEST_FILE}.tmp" "$MANIFEST_FILE"
     fi
     rmdir "${MAN_DIR}/man1" "${MAN_DIR}/man5" "${MAN_DIR}" 2>/dev/null || true
-    tw_msg "~/.vitrc left as it is"
+    tw_msg "Your vitrc left as it is"
     tw_success "Removed ${APPNAME}"
 }
 
