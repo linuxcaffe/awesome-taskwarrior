@@ -13,7 +13,7 @@ set -euo pipefail
 # duplicates, and registers `mobilize` as a tw wrapper keyword.
 # ============================================================================
 
-VERSION="0.8.2"
+VERSION="0.8.3"
 APPNAME="mobilize"
 BASE_URL="https://raw.githubusercontent.com/linuxcaffe/tw-mobilize/main"
 
