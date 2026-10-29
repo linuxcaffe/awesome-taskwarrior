@@ -1,0 +1,16 @@
+# tw-web.meta
+# tw-web, the web UI for Taskwarrior 2.6.2 (Flask PWA): cloned from Codeberg (else GitHub) into ~/.local/share/tw-web with its Python packages; adopts a checkout named in local.rc
+
+name=tw-web
+version=2.0.0
+type=script
+description=tw-web, the web and phone UI for Taskwarrior 2.6.2 (List, Kanban, Agenda, Calendar; a PWA): a git clone from Codeberg (else GitHub) in ~/.local/share/tw-web with its Python packages (a venv where pip is refused), updated in place by tw -u (fast-forward, clean main); a checkout named in local.rc (tw-web.dir) is used as it is
+repo=https://codeberg.org/linuxcaffe/tw-web
+base_url=https://raw.githubusercontent.com/linuxcaffe/tw-web/main
+files=README.md:doc
+tags=web,ui,pwa,gui,android,termux,calendar,kanban,agenda
+
+checksums=f26fc04a6a53524de01c04bdef533f638b97e37c840f88ec203d2841f8f17e6c
+
+author=linuxcaffe + Claude
+license=MIT

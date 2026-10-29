@@ -1,0 +1,217 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ============================================================================
+# tw-web - Installer Script (hand-written)
+# A git clone of tw-web (Codeberg, else GitHub) in ~/.local/share/tw-web, with its Python packages.
+# A station whose local.rc names a checkout (tw-web.dir, or mobilize.web.dir) uses that one and never
+# touches it: that's a development copy, and maybe the live server.
+#
+# install on a clone that's already there updates it (fast-forward, on a clean main), so tw -u tw-web,
+# which runs remove then install, updates in place. remove never deletes the folder: it says how.
+# The manifest lists only the README under ~/.task: the clone is this station's, ~/.task is shared.
+# ============================================================================
+
+VERSION="2.0.0"
+APPNAME="tw-web"
+BASE_URL="https://raw.githubusercontent.com/linuxcaffe/tw-web/main"
+REPOS=("https://codeberg.org/linuxcaffe/tw-web.git" "https://github.com/linuxcaffe/tw-web.git")
+MODULES="flask, flask_cors, flask_sock, tabulate"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+tw_msg()     { echo -e "${BLUE}[tw]${NC} $*"; }
+tw_success() { echo -e "${GREEN}[tw] [OK]${NC} $*"; }
+tw_error()   { echo -e "${RED}[tw] [FAIL]${NC} $*" >&2; }
+
+TASK_DIR="${TW_TASK_DIR:-${HOME}/.task}"
+DOCS_DIR="${TASK_DIR}/docs"
+MANIFEST_FILE="${TASK_DIR}/config/.tw_manifest"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEFAULT_DIR="${HOME}/.local/share/tw-web"
+DOC="${DOCS_DIR}/tw-web_README.md"
+DESKTOP="${HOME}/.local/share/applications/tw-web.desktop"
+GIT=(git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=30)   # a dead connection fails, never hangs
+
+is_termux() { [[ -n "${TERMUX_VERSION:-}" || "${PREFIX:-}" == /data/data/com.termux* ]]; }
+
+# setting KEY: its value in this station's local.rc (last one wins, comment stripped), or nothing
+setting() {
+    local f="${TASK_DIR}/local.rc"
+    [[ -f "$f" ]] || return 0
+    sed -n "s/^[[:space:]]*${1//./\\.}[[:space:]]*=[[:space:]]*//p" "$f" | tail -1 \
+        | sed 's/[[:space:]]*#.*//; s/[[:space:]]*$//'
+}
+
+web_dir() {
+    local d
+    d=$(setting tw-web.dir)
+    [[ -n "$d" ]] || d=$(setting mobilize.web.dir)
+    [[ -n "$d" ]] || d="$DEFAULT_DIR"
+    printf '%s' "${d/#\~/$HOME}"
+}
+
+adopted() { [[ "$(readlink -f "$1")" != "$(readlink -f "$DEFAULT_DIR")" ]]; }
+
+describe() { git -C "$1" describe --tags 2>/dev/null | sed 's/-g[0-9a-f]*$//' || true; }
+
+clone() {
+    local dir="$1" repo
+    mkdir -p "$(dirname "$dir")"
+    for repo in "${REPOS[@]}"; do
+        tw_msg "git clone ${repo}"
+        if "${GIT[@]}" clone -q "$repo" "$dir"; then
+            return 0
+        fi
+        tw_msg "${repo} didn't answer"
+    done
+    tw_error "Couldn't clone tw-web from Codeberg or GitHub (offline?)"
+    return 1
+}
+
+# update DIR: fast-forward a clone of ours on a clean main; 0 also when it's left as it is.
+# Sets REQS_CHANGED when requirements.txt changed.
+update() {
+    local dir="$1" branch before repo
+    branch=$(git -C "$dir" rev-parse --abbrev-ref HEAD)
+    if [[ "$branch" != main ]]; then
+        tw_msg "${dir} is on ${branch}, not main: not updated"; return 0
+    fi
+    if [[ -n "$(git -C "$dir" status --porcelain --untracked-files=no)" ]]; then
+        tw_msg "${dir} has local edits: not updated"; return 0
+    fi
+    before=$(git -C "$dir" rev-parse HEAD)
+    if ! "${GIT[@]}" -C "$dir" pull -q --ff-only; then
+        repo="${REPOS[1]}"
+        tw_msg "its remote didn't answer; trying ${repo}"
+        "${GIT[@]}" -C "$dir" pull -q --ff-only "$repo" main \
+            || { tw_msg "not updated (offline, or not a fast-forward)"; return 0; }
+    fi
+    if [[ "$(git -C "$dir" rev-parse HEAD)" == "$before" ]]; then
+        tw_msg "tw-web $(describe "$dir"): up to date"
+    else
+        tw_msg "tw-web updated to $(describe "$dir")"
+        git -C "$dir" diff --quiet "$before" HEAD -- requirements.txt || REQS_CHANGED=1
+    fi
+}
+
+# No pip, or a Python its package manager owns (PEP 668's EXTERNALLY-MANAGED: Debian 12+, Ubuntu 23.04+).
+# Otherwise pip installs as the user (~/.local) by itself.
+needs_venv() {
+    python3 -m pip --version >/dev/null 2>&1 || return 0
+    [[ -f "$(python3 -c 'import sysconfig; print(sysconfig.get_path("stdlib"))')/EXTERNALLY-MANAGED" ]]
+}
+
+# packages DIR: tw-web's Python packages, into a .venv where the system refuses pip
+packages() {
+    local dir="$1" py="$1/.venv/bin/python"
+    [[ -x "$py" ]] || py=python3
+    if [[ -z "${REQS_CHANGED:-}" ]] && "$py" -c "import ${MODULES}" 2>/dev/null; then
+        tw_msg "Python packages: present (${py})"; return 0
+    fi
+    if [[ "$py" == python3 ]] && ! is_termux && needs_venv; then
+        tw_msg "pip doesn't install into this system's Python (no pip, or managed by the system): a venv in ${dir}/.venv"
+        python3 -m venv "${dir}/.venv" \
+            || { tw_error "python3 -m venv failed (Debian/Ubuntu: sudo apt install python3-venv)"; return 1; }
+        py="${dir}/.venv/bin/python"
+    fi
+    tw_msg "pip install -r requirements.txt"
+    if ! "$py" -m pip install -q --no-warn-script-location -r "${dir}/requirements.txt"; then
+        is_termux && tw_error "pip install failed (Termux: pkg install clang, then try again)" \
+                  || tw_error "pip install failed"
+        return 1
+    fi
+    "$py" -c "import ${MODULES}" || { tw_error "installed, but they don't import"; return 1; }
+}
+
+desktop_entry() {
+    local dir="$1"
+    if is_termux || [[ -e "$DESKTOP" ]]; then return 0; fi    # one there already: yours, left as it is
+    mkdir -p "$(dirname "$DESKTOP")"
+    cat > "$DESKTOP" <<EOF
+[Desktop Entry]
+Name=tw-web
+Comment=Taskwarrior web interface
+Exec=${dir}/tw-web-launch.sh
+Icon=${dir}/logo-512.png
+Terminal=false
+Type=Application
+Categories=Office;ProjectManagement;
+Keywords=taskwarrior;tasks;todo;productivity;
+StartupNotify=true
+EOF
+    tw_msg "App menu entry: ${DESKTOP}"
+}
+
+install() {
+    tw_msg "Installing ${APPNAME} v${VERSION}..."
+    command -v git >/dev/null || { tw_error "git not found (Termux: pkg install git)"; return 1; }
+    command -v python3 >/dev/null || { tw_error "python3 not found (Termux: pkg install python)"; return 1; }
+
+    local dir
+    dir=$(web_dir)
+    if [[ -f "${dir}/app.py" ]]; then
+        if adopted "$dir"; then
+            tw_msg "Using your checkout ${dir} (local.rc): left as it is"
+        else
+            update "$dir"
+        fi
+    elif [[ -e "$dir" && -n "$(ls -A "$dir" 2>/dev/null)" ]]; then
+        tw_error "${dir} exists and isn't tw-web: move it, or name another folder (tw-web.dir in local.rc)"
+        return 1
+    else
+        clone "$dir" || return 1
+    fi
+    packages "$dir" || return 1
+    desktop_entry "$dir"
+
+    mkdir -p "$DOCS_DIR"
+    if [[ -f "${SCRIPT_DIR}/README.md" ]]; then
+        cp "${SCRIPT_DIR}/README.md" "$DOC"
+    else
+        cp "${dir}/README.md" "$DOC"
+    fi
+    mkdir -p "$(dirname "$MANIFEST_FILE")"
+    if [[ -f "$MANIFEST_FILE" ]]; then
+        grep -v "^${APPNAME}|" "$MANIFEST_FILE" > "${MANIFEST_FILE}.tmp" || true
+        mv "${MANIFEST_FILE}.tmp" "$MANIFEST_FILE"
+    fi
+    echo "${APPNAME}|${VERSION}|${DOC}||$(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> "$MANIFEST_FILE"
+
+    tw_success "Installed ${APPNAME} ($(describe "$dir")) in ${dir}"
+    command -v task >/dev/null || tw_msg "tw-web needs Taskwarrior 2.6.2: tw -I taskwarrior"
+    if is_termux; then
+        tw_msg "Start it: cd ${dir} && python app.py   (a home-screen button and autostart: mobilize init)"
+    else
+        tw_msg "Start it: ${dir}/tw-web-launch.sh   (or tw-web in your app menu), then http://localhost:5000"
+    fi
+}
+
+remove() {
+    tw_msg "Removing ${APPNAME}..."
+    local dir
+    dir=$(web_dir)
+    rm -f "$DOC"
+    if [[ -f "$MANIFEST_FILE" ]]; then
+        grep -v "^${APPNAME}|" "$MANIFEST_FILE" > "${MANIFEST_FILE}.tmp" || true
+        mv "${MANIFEST_FILE}.tmp" "$MANIFEST_FILE"
+    fi
+    tw_success "Removed ${APPNAME}"
+    # Never the folder: tw -u runs remove before install, and settings.json in it is yours
+    if adopted "$dir"; then
+        tw_msg "Your checkout stays: ${dir}"
+    elif [[ -d "$dir" ]]; then
+        tw_msg "Its folder stays: ${dir} (settings.json in it is yours). To delete it: rm -rf ${dir}"
+        grep -qF "Exec=${dir}/" "$DESKTOP" 2>/dev/null && tw_msg "and its app menu entry: rm ${DESKTOP}"
+    fi
+    return 0
+}
+
+case "${1:-install}" in
+    install)          install ;;
+    remove|uninstall) remove ;;
+    *) echo "Usage: $0 {install|remove}"; exit 1 ;;
+esac
