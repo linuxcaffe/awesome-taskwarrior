@@ -151,6 +151,18 @@ def test_run_task_without_task(tmp_path, monkeypatch, capsys):
     assert tw.get_taskwarrior_version() == 'unknown'
 
 
+def test_version_without_task_says_what_to_install(tmp_path):
+    """tw 2.19.1: tw -v with no task on PATH names the fix, no error line."""
+    bin_dir = tmp_path / 'bin'
+    bin_dir.mkdir()
+    (bin_dir / 'python3').symlink_to(sys.executable)
+    env = {'HOME': str(tmp_path), 'PATH': str(bin_dir)}
+    r = subprocess.run([str(bin_dir / 'python3'), str(TW), '-v'], capture_output=True, text=True, env=env)
+    assert r.returncode == 0
+    assert 'taskwarrior: not installed (tw -I taskwarrior)' in r.stdout
+    assert 'not found' not in r.stderr
+
+
 def test_run_task_runs(fake_bin):
     script(fake_bin / 'task', 'echo "$*"\n')      # ($0 is the script's path, whatever argv[0] was)
     r = tw.run_task(['next', '+home'], capture_output=True, text=True)
