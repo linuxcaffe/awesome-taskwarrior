@@ -17,7 +17,7 @@ Pipeline order: debug → testing → timing → stdhelp → meta → install �
 Single command: make-awesome.py "commit message"  — runs full pipeline
 Flag combo:     make-awesome.py --meta --push "msg"  — runs selected stages in order
 
-Version: 4.16.3
+Version: 4.17.0
 """
 
 import ast
@@ -31,7 +31,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
 
-VERSION = "4.16.3"
+VERSION = "4.17.0"
 
 # Mode detection
 # Fleet mode  — running from the awesome-taskwarrior dir (where awesome.rc lives)
@@ -1490,8 +1490,26 @@ def detect_files() -> List[Tuple[str, str]]:
         if Path(doc).exists():
             files.append((doc, 'doc'))
             msg(f"  Doc: {doc}")
+
+    # Detect man pages: NAME.1-9 starting with roff (.TH, or a .\" comment)
+    for f in sorted(Path('.').glob('*.[1-9]')):
+        if f.is_file() and not any(fname == f.name for fname, _ in files):
+            try:
+                head = f.read_text(errors='replace')[:200]
+            except OSError:
+                continue
+            if head.startswith(('.TH', '.\\"', "'\\\"")) or '\n.TH' in head:
+                files.append((f.name, 'doc'))
+                msg(f"  Man page: {f.name}")
     
     return files
+
+
+def man_section(filename: str) -> Optional[str]:
+    """A man page's section, or None: a doc named NAME.1-9 is a man page (vit.1 -> '1').
+    It installs to $MAN_DIR/manN under its own name (man vit looks for vit.1)."""
+    m = re.search(r'\.([1-9])$', filename)
+    return m.group(1) if m else None
 
 
 LINK_DIRS = {'hook': '$HOOKS_DIR', 'script': '$SCRIPTS_DIR', 'config': '$CONFIG_DIR'}
@@ -1905,7 +1923,8 @@ def generate_installer(info: ProjectInfo) -> bool:
             f.write('HOOKS_DIR="${TASK_DIR}/hooks"\n')
             f.write('SCRIPTS_DIR="${TASK_DIR}/scripts"\n')
             f.write('CONFIG_DIR="${TASK_DIR}/config"\n')
-            f.write('DOCS_DIR="${TASK_DIR}/docs"\n\n')
+            f.write('DOCS_DIR="${TASK_DIR}/docs"\n')
+            f.write('MAN_DIR="${DOCS_DIR}/man"\n\n')
             
             # Install function
             f.write('# ============================================================================\n')
@@ -1914,6 +1933,21 @@ def generate_installer(info: ProjectInfo) -> bool:
             f.write('install() {\n')
             f.write(f'    tw_msg "Installing {info.name} v$VERSION..."\n')
             f.write('    debug_msg "Starting installation" 1\n\n')
+            # A man page keeps its name, so another app's page by that name would be overwritten:
+            # stop before anything is placed (CONVENTIONS: Man pages)
+            _pages = [n for n, ft, *rest in info.files
+                      if ft == 'doc' and man_section(n) and not (rest and rest[0])]
+            if _pages:
+                f.write('    # Man pages keep their names: one another app installed stops the install\n')
+                f.write('    local page owner\n')
+                f.write('    for page in ' + ' '.join(f'"$MAN_DIR/man{man_section(n)}/{n}"' for n in _pages) + '; do\n')
+                f.write('        owner=$(awk -F"|" -v f="$page" -v t="~${page#"$HOME"}" -v a="$APPNAME" \'($3 == f || $3 == t) && $1 != a {print $1; exit}\' \\\n')
+                f.write('                "${HOME}/.task/config/.tw_manifest" 2>/dev/null || true)\n')
+                f.write('        if [ -n "$owner" ]; then\n')
+                f.write('            tw_error "$page belongs to $owner; not overwriting it"\n')
+                f.write('            return 1\n')
+                f.write('        fi\n')
+                f.write('    done\n\n')
             f.write('    # Create directories\n')
             f.write('    tw_msg "Creating directories..."\n')
             f.write('    mkdir -p "$HOOKS_DIR" "$SCRIPTS_DIR" "$CONFIG_DIR" "$DOCS_DIR"\n')
@@ -2016,8 +2050,11 @@ def generate_installer(info: ProjectInfo) -> bool:
 
             # Download docs
             for filename, _, dest in docs:
-                docname = f"{info.name}_{filename}"
-                dp = _dest_path(docname, '$DOCS_DIR', dest)
+                section = man_section(filename)
+                docname = filename if section else f"{info.name}_{filename}"
+                dp = _dest_path(docname, f'$MAN_DIR/man{section}' if section else '$DOCS_DIR', dest)
+                if section and not dest:
+                    f.write(f'    mkdir -p "$MAN_DIR/man{section}"\n')
                 if dest:
                     f.write(f'    mkdir -p "$(dirname "{dp}")"\n')
                 f.write('    tw_msg "Downloading documentation..."\n')
@@ -2048,6 +2085,8 @@ def generate_installer(info: ProjectInfo) -> bool:
                     manifest_path = f'$SCRIPTS_DIR/{filename}'
                 elif ftype == 'config':
                     manifest_path = f'$CONFIG_DIR/{filename}'
+                elif ftype == 'doc' and man_section(filename):
+                    manifest_path = f'$MAN_DIR/man{man_section(filename)}/{filename}'
                 elif ftype == 'doc':
                     manifest_path = f'$DOCS_DIR/{info.name}_{filename}'
                 else:
@@ -2081,9 +2120,14 @@ def generate_installer(info: ProjectInfo) -> bool:
             f.write('    debug_msg "Installation complete" 1\n')
             f.write(f'    tw_success "Installed {info.name} v$VERSION"\n')
             f.write('    echo ""\n')
-            if docs:
-                doc_name = f"{info.name}_{docs[0][0]}"
-                f.write(f'    tw_msg "Documentation: $DOCS_DIR/{doc_name}"\n')
+            readmes = [n for n, _, _ in docs if not man_section(n)]
+            if readmes:
+                f.write(f'    tw_msg "Documentation: $DOCS_DIR/{info.name}_{readmes[0]}"\n')
+            _manual = [n.rsplit('.', 1)[0] for n, _, _ in docs if man_section(n)]
+            for n in _manual:
+                f.write(f'    tw_msg "Manual: man {n}"\n')
+            if _manual:
+                f.write(f'    man -w {_manual[0]} >/dev/null 2>&1 || tw_msg "NOTE: man looks in $MAN_DIR once MANPATH has it: export MANPATH=\\"\\$MANPATH:\\$HOME/.task/docs/man\\""\n')
             f.write('    echo ""\n\n')
             f.write('    return 0\n')
             f.write('}\n\n')

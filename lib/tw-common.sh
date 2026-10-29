@@ -31,6 +31,7 @@ set -euo pipefail
 : "${SCRIPTS_DIR:=$INSTALL_DIR/scripts}"
 : "${CONFIG_DIR:=$INSTALL_DIR/config}"
 : "${DOCS_DIR:=$INSTALL_DIR/docs}"
+: "${MAN_DIR:=$DOCS_DIR/man}"
 : "${LOGS_DIR:=$INSTALL_DIR/logs}"
 : "${TASKRC:=$HOME/.taskrc}"
 : "${TW_DEBUG:=0}"
@@ -307,7 +308,7 @@ tw_manifest_app_installed() {
 tw_install_to() {
     # Install a file to the appropriate directory based on type
     # Usage: tw_install_to TYPE FILE [TARGET_NAME]
-    # TYPE: hook, script, config, doc
+    # TYPE: hook, script, config, doc (a doc named NAME.1-9 is a man page: MAN_DIR/manN, name kept)
     # Returns: 0 on success, 1 on failure
     
     local file_type="$1"
@@ -326,7 +327,11 @@ tw_install_to() {
             target_dir="$CONFIG_DIR"
             ;;
         doc)
-            target_dir="$DOCS_DIR"
+            if [[ "$target_name" =~ \.([1-9])$ ]]; then
+                target_dir="$MAN_DIR/man${BASH_REMATCH[1]}"
+            else
+                target_dir="$DOCS_DIR"
+            fi
             ;;
         *)
             tw_error "Unknown file type: $file_type"

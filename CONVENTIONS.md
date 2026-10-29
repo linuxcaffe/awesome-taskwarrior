@@ -190,7 +190,18 @@ an answer uses `tw_needs_pty`, or skips the question under `TW_NOINTERACT` with 
   word and `--`, never after a tw flag (tw 2.11.0), so `tw add sync …` adds a task and a keyword may
   equal its app's name (`events`).
 - **Install folders:** hooks `~/.task/hooks/`, commands `~/.task/scripts/` (on `PATH`), settings
-  `~/.task/config/`, docs `~/.task/docs/<app>_README.md`.
+  `~/.task/config/`, docs `~/.task/docs/<app>_README.md`, man pages `~/.task/docs/man/man<N>/`.
+- **Man pages** (tw 2.20.0, make-awesome 4.17.0): a `:doc` file named `<name>.<1-9>` (`vit.1`, `vitrc.5`)
+  is a man page. It installs to `~/.task/docs/man/man<N>/` (`MAN_DIR` in an installer) and **keeps its
+  own name**: `man vit` looks for `vit.1`, so it never gets the `<app>_` prefix a README does. The
+  section folder sorts pages by kind (1 commands, 5 file formats), not by app; the manifest records
+  which app owns each page. A page another app already owns **stops the install** rather than being
+  overwritten (a page shares its name with a command or file, which two apps can't both ship either).
+  `man` finds them through `MANPATH="$MANPATH:$HOME/.task/docs/man"` (the leading colon of an unset
+  MANPATH keeps the system's folders; man-db and mandoc alike), which tw's `install.sh` offers beside
+  the PATH line. `tw -R` lists them and opens one with `man -l` either way. Pages that a build installs
+  beside its own binary stay with it: Taskwarrior's `task.1`, `taskrc.5`… are under the prefix `task`
+  lives in, not the fleet's to move.
 
 ## 9. Tests
 

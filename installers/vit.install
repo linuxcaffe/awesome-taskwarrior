@@ -9,7 +9,7 @@ set -euo pipefail
 #
 # Installs:
 #   ~/.task/scripts/vit                  (the built script; the help is inside it)
-#   ~/.task/docs/man/man1/vit.1          (man -M ~/.task/docs/man vit)
+#   ~/.task/docs/man/man1/vit.1          (man vit, with MANPATH from tw's install.sh)
 #   ~/.task/docs/man/man5/vitrc.5
 #   ~/.task/docs/vit_README.md
 #
@@ -52,6 +52,17 @@ place() {
 install() {
     tw_msg "Installing ${APPNAME} v${VERSION}..."
 
+    # Man pages keep their names: one another app installed stops the install
+    local page owner
+    for page in "${MAN_DIR}/man1/vit.1" "${MAN_DIR}/man5/vitrc.5"; do
+        owner=$(awk -F'|' -v f="$page" -v t="~${page#"$HOME"}" -v a="$APPNAME" \
+                '($3 == f || $3 == t) && $1 != a {print $1; exit}' "$MANIFEST_FILE" 2>/dev/null || true)
+        if [[ -n "$owner" ]]; then
+            tw_error "${page} belongs to ${owner}; not overwriting it"
+            return 1
+        fi
+    done
+
     place vit       "${SCRIPTS_DIR}/vit"
     chmod +x "${SCRIPTS_DIR}/vit"
     place vit.1     "${MAN_DIR}/man1/vit.1"
@@ -90,7 +101,11 @@ install() {
     fi
 
     echo ""
-    tw_msg "Run: vit    Keys: :h in vit    Manual: man -M ${MAN_DIR} vit"
+    tw_msg "Run: vit    Keys: :h in vit    Manual: man vit"
+    if ! man -w vit >/dev/null 2>&1; then
+        tw_msg "NOTE: man doesn't look in ${DOCS_DIR}/man yet; add to your shell's rc file:"
+        tw_msg "      export MANPATH=\"\$MANPATH:\$HOME/.task/docs/man\"   (until then: tw -R vit.1)"
+    fi
     tw_msg "Settings: ~/.task/config/vitrc, else ~/.vitrc (man vitrc). In a map that changes a task, prefer %TASKUUID to %TASKID."
 }
 

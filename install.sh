@@ -98,6 +98,21 @@ main() {
         warn "$SCRIPTS_DIR is not on your PATH; add this to your shell's rc file: $line"
     fi
 
+    # MANPATH: fleet man pages go in ~/.task/docs/man (CONVENTIONS: Man pages). Unset, MANPATH
+    # becomes ":<dir>", and the leading colon keeps the system's own man folders
+    local man_dir="$TASK_DIR/docs/man"
+    line='export MANPATH="$MANPATH:$HOME/.task/docs/man"'
+    if [[ ":$MANPATH:" == *":$man_dir:"* ]]; then
+        ok "$man_dir is on your MANPATH"
+    elif [ -f "$rc" ] && grep -qF '.task/docs/man' "$rc"; then
+        ok "$rc already adds $man_dir to MANPATH"
+    elif ask "Add $man_dir to your MANPATH in $rc (man pages of the apps tw installs)?" y; then
+        printf '\n# awesome-taskwarrior: man pages\n%s\n' "$line" >> "$rc"
+        ok "added to $rc"
+    else
+        warn "man won't find the fleet's man pages (tw -R still opens them); add this to $rc: $line"
+    fi
+
     # Taskwarrior
     say ""
     local v first=""
