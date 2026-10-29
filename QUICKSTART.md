@@ -23,37 +23,37 @@ source ~/.bashrc
 tw --list
 
 # Install an extension
-tw --install tw-recurrence
+tw --install recurrence-overhaul
 
 # See what you've installed
 tw --list
 
 # Get details about an extension
-tw --info tw-recurrence
+tw --info recurrence-overhaul
 
 # Update an extension
-tw --update tw-recurrence
+tw --update recurrence-overhaul
 
 # Remove an extension
-tw --remove tw-recurrence
+tw --remove recurrence-overhaul
 
-# Update tw.py itself
-tw --update tw
+# Update tw itself: run the installer again
+curl -fsSL https://raw.githubusercontent.com/linuxcaffe/awesome-taskwarrior/main/install.sh | bash
 
 # Check versions
 tw --version
 
 # Debug mode (troubleshooting)
 tw --debug --list                    # Basic debug
-tw --debug=2 --install tw-recurrence # Detailed debug
+tw --debug=2 --install recurrence-overhaul # Detailed debug
 tw --debug=3 task next               # Full debug + taskwarrior hooks
 ```
 
-## Your First Extension: tw-recurrence
+## Your First Extension: recurrence-overhaul
 
 ```bash
 # Install it
-tw --install tw-recurrence
+tw --install recurrence-overhaul
 
 # Test it with a periodic task
 task add "Take vitamins" r:1d due:tomorrow ty:p
@@ -89,12 +89,12 @@ Everything is in `~/.task/`:
 
 Update any extension:
 ```bash
-tw --update tw-recurrence
+tw --update recurrence-overhaul
 ```
 
-Update tw.py itself:
+Update tw itself (it isn't a registry app, so `tw --update tw` doesn't apply): run the installer again:
 ```bash
-tw --update tw
+curl -fsSL https://raw.githubusercontent.com/linuxcaffe/awesome-taskwarrior/main/install.sh | bash
 ```
 
 ## Getting Help
@@ -110,7 +110,7 @@ less ~/.task/docs/*    # Read docs
 
 Remove an extension:
 ```bash
-tw --remove tw-recurrence
+tw --remove recurrence-overhaul
 ```
 
 Remove tw.py entirely:
@@ -165,7 +165,7 @@ tw --dry-run --install app-name
 **Start fresh**
 ```bash
 rm -rf ~/.task/scripts/tw ~/.task/config/.tw_manifest
-curl -fsSL https://raw.githubusercontent.com/.../install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/linuxcaffe/awesome-taskwarrior/main/install.sh | bash
 ```
 
 ## Debug Mode
@@ -177,7 +177,7 @@ When things aren't working as expected, use debug mode:
 tw --debug --list
 
 # Level 2: See detailed operations and file downloads
-tw --debug=2 --install tw-recurrence
+tw --debug=2 --install recurrence-overhaul
 
 # Level 3: See everything including taskwarrior hook debugging
 tw --debug=3 task add "Test task"
