@@ -84,6 +84,10 @@ curl -fsSL https://raw.githubusercontent.com/linuxcaffe/awesome-taskwarrior/main
 This installs `tw` to `~/.task/scripts/tw`, adds the scripts directory
 to your PATH, and sets up documentation in `~/.task/docs/`.
 
+No Taskwarrior 2.6.2 yet (or a 3.x your distribution brought)? `tw -I taskwarrior` installs it: the
+`task2` deb on Termux, a build into `~/.local` on Linux, from
+[taskwarrior-2.6](https://github.com/linuxcaffe/taskwarrior-2.6). The web UI: `tw -I tw-web`.
+
 Verify with:
 
 ```bash

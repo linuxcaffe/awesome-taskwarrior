@@ -7,10 +7,12 @@ One command:
 curl -fsSL https://raw.githubusercontent.com/linuxcaffe/awesome-taskwarrior/main/install.sh | bash
 ```
 
+Then, if you don't have Taskwarrior 2.6.2: `tw -I taskwarrior` (Termux or Linux). The web UI: `tw -I tw-web`.
+
 Or manually:
 ```bash
 mkdir -p ~/.task/scripts ~/.task/docs ~/.task/config
-curl -fsSL https://raw.githubusercontent.com/linuxcaffe/awesome-taskwarrior/main/tw.py -o ~/.task/scripts/tw
+curl -fsSL https://raw.githubusercontent.com/linuxcaffe/awesome-taskwarrior/main/tw -o ~/.task/scripts/tw
 chmod +x ~/.task/scripts/tw
 echo 'export PATH="$HOME/.task/scripts:$PATH"' >> ~/.bashrc
 source ~/.bashrc
