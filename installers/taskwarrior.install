@@ -8,7 +8,7 @@ set -euo pipefail
 # The manifest lists only what's under ~/.task: the binary is this station's, and ~/.task is shared.
 # ============================================================================
 
-VERSION="2.6.2-1"
+VERSION="2.6.2-2"
 APPNAME="taskwarrior"
 BASE_URL="https://raw.githubusercontent.com/linuxcaffe/taskwarrior-2.6/main"
 
