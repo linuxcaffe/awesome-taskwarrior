@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ============================================================================
+# taskwarrior - Installer Script (hand-written)
+# Runs the taskwarrior-2.6 repo's install.sh, which puts Taskwarrior 2.6.2 on this station, and keeps
+# it as ~/.task/scripts/taskwarrior-2.6 so any station sharing ~/.task (gittw) can do the same.
+# The manifest lists only what's under ~/.task: the binary is this station's, and ~/.task is shared.
+# ============================================================================
+
+VERSION="2.6.2-1"
+APPNAME="taskwarrior"
+BASE_URL="https://raw.githubusercontent.com/linuxcaffe/taskwarrior-2.6/main"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+tw_msg()     { echo -e "${BLUE}[tw]${NC} $*"; }
+tw_success() { echo -e "${GREEN}[tw] [OK]${NC} $*"; }
+tw_error()   { echo -e "${RED}[tw] [FAIL]${NC} $*" >&2; }
+
+TASK_DIR="${TW_TASK_DIR:-${HOME}/.task}"
+SCRIPTS_DIR="${TASK_DIR}/scripts"
+DOCS_DIR="${TASK_DIR}/docs"
+MANIFEST_FILE="${TASK_DIR}/config/.tw_manifest"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COMMAND="${SCRIPTS_DIR}/taskwarrior-2.6"
+
+# place SRC DEST — copy SRC from beside this installer (tw staged and checked it), else download it
+place() {
+    local src="$1" dest="$2"
+    mkdir -p "$(dirname "$dest")"
+    if [[ -f "${SCRIPT_DIR}/${src}" ]]; then
+        cp "${SCRIPT_DIR}/${src}" "$dest"
+    else
+        curl -fsSL "${BASE_URL}/${src}" -o "$dest" || { tw_error "Failed to download ${src}"; return 1; }
+    fi
+}
+
+install() {
+    tw_msg "Installing ${APPNAME} v${VERSION}..."
+
+    # Into a temp name first: Taskwarrior goes in before tw records anything
+    place install.sh "${COMMAND}.new"
+    chmod +x "${COMMAND}.new"
+    if ! bash "${COMMAND}.new"; then
+        rm -f "${COMMAND}.new"
+        tw_error "Taskwarrior 2.6.2 isn't installed (above: why, and what to do)"
+        return 1
+    fi
+    mv -f "${COMMAND}.new" "$COMMAND"
+    place README.md "${DOCS_DIR}/taskwarrior-2.6_README.md" || true
+
+    mkdir -p "$(dirname "$MANIFEST_FILE")"
+    if [[ -f "$MANIFEST_FILE" ]]; then
+        grep -v "^${APPNAME}|" "$MANIFEST_FILE" > "${MANIFEST_FILE}.tmp" || true
+        mv "${MANIFEST_FILE}.tmp" "$MANIFEST_FILE"
+    fi
+    local ts f
+    ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    for f in "$COMMAND" "${DOCS_DIR}/taskwarrior-2.6_README.md"; do
+        [[ -f "$f" ]] && echo "${APPNAME}|${VERSION}|${f}||${ts}" >> "$MANIFEST_FILE"
+    done
+
+    tw_success "Installed ${APPNAME} v${VERSION}"
+    tw_msg "Another station sharing ~/.task: taskwarrior-2.6 there does the same"
+}
+
+remove() {
+    tw_msg "Removing ${APPNAME}..."
+    rm -f "$COMMAND" "${DOCS_DIR}/taskwarrior-2.6_README.md"
+    if [[ -f "$MANIFEST_FILE" ]]; then
+        grep -v "^${APPNAME}|" "$MANIFEST_FILE" > "${MANIFEST_FILE}.tmp" || true
+        mv "${MANIFEST_FILE}.tmp" "$MANIFEST_FILE"
+    fi
+    tw_success "Removed ${APPNAME}"
+    # Taskwarrior itself stays: your tasks need it, and tw -r is no place to lose it by accident
+    local task_bin
+    task_bin=$(command -v task || true)
+    if [[ -n "$task_bin" ]]; then
+        tw_msg "Taskwarrior itself stays ($task_bin). To remove that too:"
+        local list
+        list="$(dirname "$(dirname "$(readlink -f "$task_bin")")")/share/doc/task/install_manifest.txt"
+        if dpkg -s task2 >/dev/null 2>&1; then
+            tw_msg "  pkg uninstall task2"
+        elif [[ -f "$list" ]]; then
+            tw_msg "  xargs rm -f < $list"
+        else
+            tw_msg "  with whatever installed it (it isn't the build tw -I taskwarrior makes)"
+        fi
+    fi
+}
+
+case "${1:-install}" in
+    install)        install ;;
+    remove|uninstall) remove ;;
+    *) echo "Usage: $0 {install|remove}"; exit 1 ;;
+esac

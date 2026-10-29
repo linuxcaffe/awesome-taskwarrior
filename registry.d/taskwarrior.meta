@@ -1,0 +1,16 @@
+# taskwarrior.meta
+# Taskwarrior 2.6.2 on this station: the task2 deb on Termux, a build of the 2.6.2 release into ~/.local on Linux; offers to replace a 3.x (tasks saved first)
+
+name=taskwarrior
+version=2.6.2-1
+type=script
+description=Taskwarrior 2.6.2 on this station, from the taskwarrior-2.6 repo: the task2 deb on Termux (pkg upgrade never swaps it for 3.x), a build of the 2.6.2 release into ~/.local on Linux (no sudo); a 3.x is replaced only on a yes, its tasks saved first. taskwarrior-2.6 does it again on any station sharing ~/.task
+repo=https://github.com/linuxcaffe/taskwarrior-2.6
+base_url=https://raw.githubusercontent.com/linuxcaffe/taskwarrior-2.6/main
+files=install.sh:script:~/.task/scripts/taskwarrior-2.6,README.md:doc
+tags=taskwarrior,task,2.6.2,termux,android,install,core
+
+checksums=9279105162fafd0a98fc9999835aaff957925a048104579a5ea6f806c999494d,6ebc6698fe4c6d215de85fd758670b5366e9a32660f5ceebfb7202379ceb5df0
+
+author=linuxcaffe + Claude (Taskwarrior: Tomas Babej, Paul Beckingham, Federico Hernandez and contributors)
+license=MIT
