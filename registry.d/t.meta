@@ -2,7 +2,7 @@
 # t is for timelog. A handy script to track your time using hledger timelog files
 
 name=t
-version=2.0.2
+version=1.3.1
 type=script
 description=t is for timelog. A handy script to track your time using hledger timelog files
 repo=https://github.com/linuxcaffe/t
@@ -10,7 +10,7 @@ base_url=https://raw.githubusercontent.com/linuxcaffe/t/master
 files=t:script,README.md:doc
 tags=time, tracking, timedot, hledger, script
 
-checksums=69c9f64ac1189c61da5765b8600ae820bbcaaa720848ee11f9fa4ee4e0b173bf,3394e2bdcc87cc2e41680a6f98c82a2c7bac69fc6bc7a88414ce36ddf8e6de4f
+checksums=5a30c18ccd248fa9eb024b3042e30c97a695ac38d17eeb3c63dac91132a44ac2,b5581cf9583820c8a5b8a67d88b8cdd03b3cfc3d177161cf0983df7a9feaf450
 
 author=based on orig code by Chase James and Justin Harding, but rewritten by Claude Sonnet
 license=MIT
