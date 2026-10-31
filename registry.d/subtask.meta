@@ -2,7 +2,7 @@
 # Activates subtask annotations (- [ ] …) as real dependent tasks when a parent task is started; updates annotation state when children complete or are deleted
 
 name=subtask
-version=1.2.4
+version=1.2.5
 type=hook
 description=Activates subtask annotations (- [ ] …) as real dependent tasks when a parent task is started; updates annotation state when children complete or are deleted
 repo=https://github.com/linuxcaffe/tw-subtask-hook
@@ -10,7 +10,7 @@ base_url=https://raw.githubusercontent.com/linuxcaffe/tw-subtask-hook/master
 files=on-exit_subtask.py:hook,on-modify_subtask.py:hook,subtask.rc:config,README.md:doc
 tags=subtask, annotation, dependency, hook
 
-checksums=bb3d88d494af604c00669573d597d6f653fd3422b8821e2c3f92ee3af006f25b,38361955d5ded7eac865a6c19396ed74dee79c2247485c0cc4fd14c6adcd9a90,7e55cdea213c7f0de8042014154a79389eb7343ac62897324cb3e09effc45618,de15e1a13bd5127c0498091d67d6692de76055a3ed01a2bc59460d249365c167
+checksums=b83ddfe689667aa6a4275b8387123ef5d765a026c290fa7556fd4bf53c8eb8ec,77800451ef28ce0a4883dcdac210791c9cdfb6dba8ffde0325c70bc29dea16f8,7e55cdea213c7f0de8042014154a79389eb7343ac62897324cb3e09effc45618,de15e1a13bd5127c0498091d67d6692de76055a3ed01a2bc59460d249365c167
 
 author=Designed by linuxcaffe, implemented by claude code
 license=MIT
