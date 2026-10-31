@@ -227,3 +227,4 @@ an answer uses `tw_needs_pty`, or skips the question under `TW_NOINTERACT` with 
 - §4 questions from hooks, and hooks in test fixtures: with hook interaction.
 - §9 test layout.
 - deps-mgmt 0.3.0 and annn 0.7.1: through make-awesome, then `tw -u` (the installed copies predate both).
+- deps-mgmt: its cascade writes from inside on-modify are lost (review: `tw:docs/deps-mgmt-review.md`).
