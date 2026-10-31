@@ -115,9 +115,21 @@ Always pass `rc.hooks=off` to prevent recursive hook execution:
 subprocess.run(['task', 'rc.hooks=off', 'rc.confirmation=off', uuid, 'export'], ...)
 ```
 
-The file lock is held during on-add and on-modify — `task modify` subprocess calls will
-deadlock. Use a spool file and process it in on-exit (after lock is released).
-See: `recurrence_propagate.json` spool pattern in recurrence hook.
+Reads are fine from any hook. **Writes from on-add/on-modify are lost:** a nested `task modify`
+or `delete` runs, then the outer command saves its own copy of the data over it (2.6.2, verified
+2026-10-31: deps-mgmt's cascade "Deleted [2]" left the task pending). Leave the change in a file and
+apply it from on-exit (see: `recurrence_propagate.json` in the recurrence hook), or change the task
+in the JSON you print. CONVENTIONS §5.
+
+### Interactive programs need `/dev/tty`
+
+Even in a terminal, a hook's stdin and stdout are pipes to task, so an editor started with them runs
+blind. Hand it the terminal (hledger-add, annn):
+```python
+tty = open('/dev/tty', 'r+b', buffering=0)   # binary, unbuffered: text mode fails on a tty
+subprocess.run([editor, path], stdin=tty, stdout=tty, stderr=tty)
+```
+No `/dev/tty` (OSError: a client's captured call, cron) → take the non-interactive path.
 
 ---
 
@@ -164,6 +176,19 @@ if os.environ.get('TW_NOINTERACT'):
 [ -n "$TW_NOINTERACT" ] && ...  # non-interactive path
 ```
 
+**Refuse and ask for a terminal** (the change is not made; the client runs the command again in a
+terminal, where the hook asks as usual). Give a `reason`: one line, the hook's name first. vit shows
+it in its question:
+```python
+if os.environ.get('TW_NOINTERACT'):
+    print(json.dumps(old_task))   # on-modify: the unchanged task
+    print(json.dumps({'type': 'tw_needs_pty',
+                      'cmd': os.environ.get('TW_PREFLIGHT_CMD', ''),
+                      'reason': "deps-mgmt: deleting 'Plan' asks about its dependents"}),
+          file=sys.stderr)
+    sys.exit(1)
+```
+
 ---
 
 ### Spool protocol — deferring interactive programs
@@ -180,8 +205,10 @@ from pathlib import Path
 spool_dir = os.environ.get('TW_SPOOL_DIR', '')
 if spool_dir:
     cmd_parts = ['hledger', 'add', date, description, account]
-    spool_file = Path(spool_dir) / f'{uuid.uuid4()}.cmd'
-    spool_file.write_text(' '.join(shlex.quote(p) for p in cmd_parts))
+    name = str(uuid.uuid4())
+    # optional: what it's for, asked in the client's question (write it before the .cmd)
+    (Path(spool_dir) / f'{name}.reason').write_text(f"hledger-add: record '{description}'\n")
+    (Path(spool_dir) / f'{name}.cmd').write_text(' '.join(shlex.quote(p) for p in cmd_parts))
     print(json.dumps(modified))   # required: emit task JSON before exit
     return 0
 # else: run interactively as normal
@@ -206,12 +233,12 @@ if spooled:
 # Include first in JSON response as 'deferred_cmd'; frontend calls offerTerminal()
 ```
 
-**When to use spool vs tw_web_confirm:**
-- **Spool**: hook launches a full interactive program (hledger-add, editor, fzf)
-- **tw_web_confirm**: hook needs a simple yes/no answer (deps cascade, subtask prompt)
-- They are complementary. When `TW_SPOOL_DIR` is set, use spool for the interactive
-  program; tw_web_confirm can still be used for pre-flight yes/no gates if needed,
-  but the spool path should not block waiting for an SSE answer.
+**When to use spool vs `tw_needs_pty`:**
+- **Spool**: the change can go through, and the interactive part can come after it (hledger-add's
+  entry, annn's closing note, an editor, fzf). Required in on-exit, where the change is already made.
+- **`tw_needs_pty`**: the questions decide whether or how the change is made (deps cascade, subtask
+  activation). The change is refused and run again in a terminal.
+- **Not `tw_web_confirm`:** the yes/no channel to tw-web doesn't work end to end (CONVENTIONS §4).
 
 **Annotating the deferred action** — recommended pattern:
 ```python

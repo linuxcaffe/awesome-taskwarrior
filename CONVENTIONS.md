@@ -58,7 +58,10 @@ everything else on stderr.
 ```
 
 - `cmd` is `TW_PREFLIGHT_CMD` if the client set it, else empty (the client then uses the command it ran).
-- `reason` (optional): what needs the terminal, for clients that show it. tw-web doesn't yet.
+- `reason` (optional, recommended): one line saying what needs the terminal, starting with the hook's
+  name: `"deps-mgmt: deleting 'Plan' asks about its dependents"`. It's text for the user and changes
+  nothing else: the client shows it in its question (vit 1.4.3: "<reason>. Run it in the terminal?",
+  cut to fit), and words its own question from `cmd` without one. tw-web doesn't show it yet.
 - The name is `tw_needs_pty`. An older draft of nointeract-preflight's README called it `tw_needs_terminal`;
   no client recognises that name.
 - Exit 1. The change is not made; the client offers to run `task <cmd>` in a terminal, where the hook runs
@@ -68,7 +71,8 @@ everything else on stderr.
 ```python
 if os.environ.get('TW_NOINTERACT'):
     print(json.dumps({'type': 'tw_needs_pty',
-                      'cmd': os.environ.get('TW_PREFLIGHT_CMD', '')}), file=sys.stderr)
+                      'cmd': os.environ.get('TW_PREFLIGHT_CMD', ''),
+                      'reason': 'myhook: what needs the terminal'}), file=sys.stderr)
     sys.exit(1)
 ```
 
@@ -97,9 +101,16 @@ blocking it:
 
 1. If `TW_SPOOL_DIR` is set, write the shell command, one line, to `$TW_SPOOL_DIR/<unique>.cmd`
    (for example a UUID).
+   Optionally, beside it, `$TW_SPOOL_DIR/<unique>.reason`: one line saying what the command is for,
+   worded like `tw_needs_pty`'s `reason` (`annn: write a closing note for 'Plan'`). Write the
+   `.reason` first, then the `.cmd`.
 2. Print the task JSON and exit 0 as usual: the change goes through.
 3. After the command, the client reads and deletes every `*.cmd` file and offers each command
    ("Run in terminal"). It runs the line as a **shell** command (`$SHELL -c`), not as `task` arguments.
+   A client that knows `.reason` files deletes each with its `.cmd`, asks with the reason, and shows the
+   command when it runs it (vit 1.4.3); without a reason it shows the command in the question. A
+   client that doesn't know them leaves them behind: harmless, one line each, but tw-web should learn
+   them (§11).
 
 Quote arguments with `shlex.quote`. Optionally annotate the task ("queued: run hledger add") so the
 deferred action leaves a trail.
@@ -121,6 +132,14 @@ an answer uses `tw_needs_pty`, or skips the question under `TW_NOINTERACT` with 
 
 - **Never block without a terminal.** Under `TW_NOINTERACT`: signal (§2), spool (§3), or take a safe
   default. A hook that waits on input hangs the client until its timeout (tw-web: 15 s).
+- **An interactive program needs `/dev/tty`.** Even in a terminal, Taskwarrior gives a hook pipes for
+  stdin and stdout: an editor started with them runs blind. Open `/dev/tty` (Python: `'r+b'`,
+  unbuffered; text mode fails) and hand it to the program, as hledger-add and annn do. No `/dev/tty`
+  (a client's captured call, cron): take the non-interactive path.
+- **No writes from on-add or on-modify.** A nested `task modify`/`delete` from inside them runs, and
+  is lost: the outer command saves its own copy of the data over it (2.6.2, verified 2026-10-31,
+  deps-mgmt). Leave the change in a file and apply it from on-exit (recurrence's
+  `recurrence_propagate.json`), or put it in the task JSON you print.
 - **Fail open.** An unexpected error in an optional feature must not stop the user's command: catch it,
   print the task JSON, exit 0.
 - **on-exit hooks run for reads too.** Keep the no-op path cheap (read stdin first; return when it's
@@ -220,11 +239,14 @@ an answer uses `tw_needs_pty`, or skips the question under `TW_NOINTERACT` with 
 | deps-mgmt | `TW_NOINTERACT` (and `TW_WEB`) | `tw_needs_pty` | 0.3.0: a delete with dependents (its cascade questions); other changes go through |
 | annn | `TW_NOINTERACT` | spool | 0.7.1: on-exit, a `+ann` task done or deleted: spools its editor step (`on-exit_annn.py --annotate UUID EVENT`); in a terminal the editor gets `/dev/tty` |
 | gittw | — | — | never prompts (`tw_web = yes`) |
-| vit | sets §1 on captured writes (`TW_CLIENT=vit`) | — | a terminal client that captures writes: `tw_needs_pty` and the legacy marker offer the same command in its terminal (§1 cleared there); drains the spool after every write, offering each command; `rc.hooks=off` on reads; captured calls run in their own session (`setsid`), so a hook that ignores `TW_NOINTERACT` finds no `/dev/tty` there, as under tw-web (1.4.3); doesn't read `tw_preflight` (2026-10-26). 1.4.1: uses `tw` when installed (report, writes, terminal commands), and `tw.ui=vit` opens tw's reports in it (tw 2.19.0) |
+| vit | sets §1 on captured writes (`TW_CLIENT=vit`) | — | a terminal client that captures writes: `tw_needs_pty` and the legacy marker offer the same command in its terminal (§1 cleared there); drains the spool after every write, offering each command; `rc.hooks=off` on reads; captured calls run in their own session (`setsid`), so a hook that ignores `TW_NOINTERACT` finds no `/dev/tty` there, as under tw-web (1.4.3); doesn't read `tw_preflight` (2026-10-26). 1.4.3: shows `tw_needs_pty`'s `reason` and a spooled command's `.reason`. 1.4.1: uses `tw` when installed (report, writes, terminal commands), and `tw.ui=vit` opens tw's reports in it (tw 2.19.0) |
 
 ## 11. Open
 
 - §4 questions from hooks, and hooks in test fixtures: with hook interaction.
 - §9 test layout.
+- tw-web: show `tw_needs_pty`'s `reason` in its console, and read and delete `.reason` files with their
+  `.cmd` (§3); today they stay in its spool folder.
+- hledger-add, subtask: add a `reason` to their `tw_needs_pty`.
 - deps-mgmt 0.3.0 and annn 0.7.1: through make-awesome, then `tw -u` (the installed copies predate both).
 - deps-mgmt: its cascade writes from inside on-modify are lost (review: `tw:docs/deps-mgmt-review.md`).
