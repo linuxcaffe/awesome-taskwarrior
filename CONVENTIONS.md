@@ -217,7 +217,8 @@ an answer uses `tw_needs_pty`, or skips the question under `TW_NOINTERACT` with 
 | ~~nointeract-preflight~~ | `TW_NOINTERACT` | `tw_preflight` | retired 2026-10-26: no client read its signal |
 | hledger-add | `TW_NOINTERACT` | `tw_needs_pty` | on done |
 | subtask | `TW_NOINTERACT` | `tw_needs_pty` | on start with dormant subtasks |
-| deps-mgmt | `TW_WEB` | — | repo version skips the cascade questions; the installed copy predates it (§4) |
+| deps-mgmt | `TW_NOINTERACT` (and `TW_WEB`) | `tw_needs_pty` | 0.3.0: a delete with dependents (its cascade questions); other changes go through |
+| annn | `TW_NOINTERACT` | spool | 0.7.1: on-exit, a `+ann` task done or deleted: spools its editor step (`on-exit_annn.py --annotate UUID EVENT`); in a terminal the editor gets `/dev/tty` |
 | gittw | — | — | never prompts (`tw_web = yes`) |
 | vit | sets §1 on captured writes (`TW_CLIENT=vit`) | — | a terminal client that captures writes: `tw_needs_pty` and the legacy marker offer the same command in its terminal (§1 cleared there); drains the spool after every write, offering each command; `rc.hooks=off` on reads; captured calls run in their own session (`setsid`), so a hook that ignores `TW_NOINTERACT` finds no `/dev/tty` there, as under tw-web (1.4.3); doesn't read `tw_preflight` (2026-10-26). 1.4.1: uses `tw` when installed (report, writes, terminal commands), and `tw.ui=vit` opens tw's reports in it (tw 2.19.0) |
 
@@ -225,4 +226,4 @@ an answer uses `tw_needs_pty`, or skips the question under `TW_NOINTERACT` with 
 
 - §4 questions from hooks, and hooks in test fixtures: with hook interaction.
 - §9 test layout.
-- deps-mgmt: gate on `TW_NOINTERACT` (it still checks `TW_WEB`), and reinstall the current version.
+- deps-mgmt 0.3.0 and annn 0.7.1: through make-awesome, then `tw -u` (the installed copies predate both).
