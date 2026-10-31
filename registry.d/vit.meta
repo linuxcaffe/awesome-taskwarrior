@@ -2,7 +2,7 @@
 # Full-screen terminal interface for Taskwarrior 2.6.x with Vim key bindings: any report in curses, a key per change, acts by UUID, no shell between vit and task, the fleet's client contract (VIT 1.x, Perl/Curses)
 
 name=vit
-version=1.4.3
+version=1.4.5
 type=script
 description=Full-screen terminal interface for Taskwarrior 2.6.x with Vim key bindings: any report in curses, a key per change, acts by UUID, no shell between vit and task, the fleet's client contract (VIT 1.x, Perl/Curses)
 repo=https://github.com/linuxcaffe/vit
@@ -10,7 +10,7 @@ base_url=https://raw.githubusercontent.com/linuxcaffe/vit/1.3
 files=vit:script,vit.1:doc,vitrc.5:doc,README.md:doc
 tags=tui,terminal,ui,interface,vim,curses
 
-checksums=116913d355fd8928ed7deeb8f6979252a32a2eb81d1a04a7418123906a9ffd7c,9c7fd21339538c0ad313fbd44f29e66b78d00621abd80169bfbcbb13c4e4ea7b,b797595462f09707513be24ad99eb31f4599aa80e98a54fa96f6d84dbc80276d,76702bb394274744bb631f712b76b675f370b0652141887af2e6aecf81a51f80
+checksums=24bb131860705cf9a7f66d86a4c1a0568d50588574ba66fd3cd81f313c042528,3d2a9ed52c14d3b22fc8a9c09b650462b029787ce6ee10e78c2c19d015747fa2,fc8c0754beb9c9484babb5354fa2687a4f81fe3315aefa51d309e1a58e3afa68,4e6781086a64c5afdee061d3ada368ac20a8c9998def4354a2c6ef77941a38bf
 
 author=Steve Rader (original), Scott Kostyshak (maintainer to 2018), linuxcaffe + Claude (fleet)
 license=GPL-3.0-or-later
