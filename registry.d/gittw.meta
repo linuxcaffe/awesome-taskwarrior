@@ -1,8 +1,8 @@
 # gittw.meta
-# Git-based sync and history for ~/.task: gittw sync/push/pull/undo/status, plus an on-exit hook that commits after every change (gittw.autocommit in config/gittw.rc; hook-ctrl to remove it)
+# Git-based sync and history for ~/.task across stations (merge by task UUID, station-tagged commits, last seen, gc at sync): gittw sync/push/pull/undo/status/setup, plus an on-exit hook that commits after every change (gittw.autocommit in config/gittw.rc; hook-ctrl to remove it)
 
 name=gittw
-version=0.3.7
+version=0.3.8
 type=hook
 description=Git-based sync and history for ~/.task across stations (merge by task UUID, station-tagged commits, last seen, gc at sync): gittw sync/push/pull/undo/status/setup, plus an on-exit hook that commits after every change (gittw.autocommit in config/gittw.rc; hook-ctrl to remove it)
 repo=https://github.com/linuxcaffe/gittw
@@ -10,7 +10,7 @@ base_url=https://raw.githubusercontent.com/linuxcaffe/gittw/main
 files=gittw.py:script:~/.task/scripts/gittw,on-exit_gittw.py:hook,gittw.rc:config,README.md:doc
 tags=git,sync,backup,history,undo,hook,data-safety
 
-checksums=b5ec80577d40657ee0e91ef55f0d076db5357e56eec8b08bc06c5b625a770e3e,4199c87349bf654723b9d5e6d62fd3940fd04c82c227b4efa6cecf5a10393c4f,8ee096c076f6c7c2f9080bd355d6b4dea0ce17080ee96d9b05c0320f0ce18387,2e59487761d71ed573adf2bacdbcec1b670fd84e354070e104960a3f6f734439
+checksums=75f867735b2e2e43d500a3859d3f7ad482a06b6fb86ddef1b04012b132e190be,bd4ee0c8bcc12be6e6f235883a8babe7cedd4ccd9a8f8e445505c7f443d20382,8ee096c076f6c7c2f9080bd355d6b4dea0ce17080ee96d9b05c0320f0ce18387,3740e86d258558c8571eca895967f06182afa04abca88e6d19658ea5b26a1eeb
 
 author=linuxcaffe + Claude
 license=MIT
