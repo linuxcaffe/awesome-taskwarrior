@@ -4,18 +4,22 @@ set -euo pipefail
 
 # ============================================================================
 # tw2nb - Standalone Installer
-# Version: 0.1.0
+# Version: 1.3.0
 #
 # Installs:
 #   ~/.task/hooks/on-modify_tw2nb.py
+#   ~/.task/hooks/on-exit_tw2nb.py   (mirrors status into nb tw tasknotes)
 #   ~/.task/scripts/tw2nb_lib.py
 #   ~/.task/scripts/tw2nb-retro
 #   ~/.task/scripts/tw-runtime.sh    (from tw-lib, if available)
 #   ~/.task/config/tw2nb.rc          (only if not already present)
-#   ~/.nb/.plugins/tw.nb-plugin      (nb plugin, if nb is present)
+#   ~/.nb/.plugins/grep.nb-plugin    (nb plugin, if nb is present)
+#
+# tw.nb-plugin (nb tw, nb info) belongs to nb-plugins now: never copied or
+# removed here, so an installed (or symlinked dev) copy is left alone.
 # ============================================================================
 
-VERSION="1.2.0"
+VERSION="1.3.0"
 APPNAME="tw2nb"
 
 RED='\033[0;31m'
@@ -52,6 +56,10 @@ install() {
     chmod +x "${HOOKS_DIR}/on-add_tw2nb.py"
     tw_msg "Installed: ${HOOKS_DIR}/on-add_tw2nb.py"
 
+    cp "${SCRIPT_DIR}/on-exit_tw2nb.py" "${HOOKS_DIR}/on-exit_tw2nb.py"
+    chmod +x "${HOOKS_DIR}/on-exit_tw2nb.py"
+    tw_msg "Installed: ${HOOKS_DIR}/on-exit_tw2nb.py"
+
     # Shared library
     cp "${SCRIPT_DIR}/tw2nb_lib.py" "${SCRIPTS_DIR}/tw2nb_lib.py"
     tw_msg "Installed: ${SCRIPTS_DIR}/tw2nb_lib.py"
@@ -76,12 +84,14 @@ install() {
     NB_PLUGINS_DIR="${HOME}/.nb/.plugins"
     if command -v nb &>/dev/null; then
         mkdir -p "$NB_PLUGINS_DIR"
-        cp "${SCRIPT_DIR}/plugins/tw.nb-plugin" "${NB_PLUGINS_DIR}/tw.nb-plugin"
-        tw_msg "Installed: ${NB_PLUGINS_DIR}/tw.nb-plugin"
         cp "${SCRIPT_DIR}/plugins/grep.nb-plugin" "${NB_PLUGINS_DIR}/grep.nb-plugin"
         tw_msg "Installed: ${NB_PLUGINS_DIR}/grep.nb-plugin"
+        if [[ ! -e "${NB_PLUGINS_DIR}/tw.nb-plugin" ]]; then
+            tw_msg "NOTE: for task notes in nb (nb tw), install the tw.nb-plugin:"
+            tw_msg "  nb plugin install https://raw.githubusercontent.com/linuxcaffe/nb-plugins/main/tw.nb-plugin"
+        fi
     else
-        tw_msg "NOTE: nb not found — skipping plugin install (install nb, then: nb plugin install ${SCRIPT_DIR}/plugins/tw.nb-plugin)"
+        tw_msg "NOTE: nb not found — skipping nb plugins"
     fi
 
     # Config (never overwrite existing)
@@ -110,10 +120,10 @@ install() {
     fi
     echo "${APPNAME}|${VERSION}|${HOOKS_DIR}/on-modify_tw2nb.py||${TIMESTAMP}"    >> "$MANIFEST_FILE"
     echo "${APPNAME}|${VERSION}|${HOOKS_DIR}/on-add_tw2nb.py||${TIMESTAMP}"      >> "$MANIFEST_FILE"
+    echo "${APPNAME}|${VERSION}|${HOOKS_DIR}/on-exit_tw2nb.py||${TIMESTAMP}"     >> "$MANIFEST_FILE"
     echo "${APPNAME}|${VERSION}|${SCRIPTS_DIR}/tw2nb_lib.py||${TIMESTAMP}"      >> "$MANIFEST_FILE"
     echo "${APPNAME}|${VERSION}|${SCRIPTS_DIR}/tw2nb-retro||${TIMESTAMP}"       >> "$MANIFEST_FILE"
     echo "${APPNAME}|${VERSION}|${CONFIG_DIR}/tw2nb.rc||${TIMESTAMP}"           >> "$MANIFEST_FILE"
-    echo "${APPNAME}|${VERSION}|${NB_PLUGINS_DIR}/tw.nb-plugin||${TIMESTAMP}"   >> "$MANIFEST_FILE"
     echo "${APPNAME}|${VERSION}|${NB_PLUGINS_DIR}/grep.nb-plugin||${TIMESTAMP}" >> "$MANIFEST_FILE"
 
     tw_success "Installed ${APPNAME} v${VERSION}"
@@ -156,8 +166,7 @@ remove() {
     fi
 
     tw_success "Removed ${APPNAME}"
-    tw_msg "Note: nb notebooks, notes, and plugin are untouched."
-    tw_msg "      To remove the nb plugin: nb plugin uninstall tw"
+    tw_msg "Note: nb notebooks, notes and the tw.nb-plugin (nb-plugins) are untouched."
 }
 
 # ============================================================================
