@@ -4,7 +4,7 @@ set -euo pipefail
 
 # ============================================================================
 # tw2nb - Standalone Installer
-# Version: 1.3.1
+# Version: 1.4.0
 #
 # Installs:
 #   ~/.task/hooks/on-modify_tw2nb.py
@@ -19,7 +19,7 @@ set -euo pipefail
 # removed here, so an installed (or symlinked dev) copy is left alone.
 # ============================================================================
 
-VERSION="1.3.1"
+VERSION="1.4.0"
 APPNAME="tw2nb"
 
 RED='\033[0;31m'
@@ -107,14 +107,8 @@ install() {
         tw_msg "EDIT ${CONFIG_DIR}/tw2nb.rc to set your nb notebook names."
     fi
 
-    # .taskrc include
-    TASKRC="${HOME}/.taskrc"
-    if ! grep -q "tw2nb.rc" "$TASKRC" 2>/dev/null; then
-        echo "include ~/.task/config/tw2nb.rc" >> "$TASKRC"
-        tw_msg "Added include to .taskrc"
-    else
-        tw_msg "Config include already in .taskrc"
-    fi
+    # No .taskrc include (1.4.0): the hooks read ~/.task/config/tw2nb.rc themselves, and an
+    # include put tw2nb's keys into every `task` run for nothing (djp removed it after 1.3.1).
 
     # Manifest
     TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
