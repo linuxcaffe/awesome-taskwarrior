@@ -3644,12 +3644,13 @@ def check_meta_checksums(path: Path) -> str:
     return 'ok'
 
 
-def recalculate_meta_checksums(path: Path) -> bool:
+def recalculate_meta_checksums(path: Path, write: bool = True) -> bool:
     """Recalculate checksums= in the project's .meta file (if one exists).
 
     Reads the files= list from the existing .meta, recomputes SHA256 for each
     file relative to path, and rewrites the checksums= line in place.
-    Returns True if checksums were updated, False if skipped or failed.
+    Returns True if checksums were stale (updated, or would be with write=False),
+    False if unchanged, skipped or failed.
     """
     meta_files = list(path.glob('*.meta'))
     if not meta_files:
@@ -3678,6 +3679,9 @@ def recalculate_meta_checksums(path: Path) -> bool:
     new_cs_line = 'checksums=' + ','.join(new_checksums)
     new_meta = re.sub(r'^checksums=.*$', new_cs_line, meta_text, flags=re.MULTILINE)
     if new_meta != meta_text:
+        if not write:
+            msg(f"    [dry-run] checksums stale: {meta_file.name}")
+            return True
         meta_file.write_text(new_meta)
         msg(f"    checksums updated: {meta_file.name}")
         return True
@@ -3746,9 +3750,21 @@ def _ipush_prompt(name: str, path: Path) -> bool:
         _os.chdir(origin)
 
 
+def _registry_stale(path: Path) -> list:
+    """The app's .meta/.install whose registry copy (registry.d/, installers/) is missing or differs."""
+    stale = []
+    for pattern, sub in (('*.meta', 'registry.d'), ('*.install', 'installers')):
+        src = next(path.glob(pattern), None)
+        dst = SCRIPT_DIR / sub / src.name if src else None
+        if src and (SCRIPT_DIR / sub).is_dir() and (not dst.is_file() or dst.read_bytes() != src.read_bytes()):
+            stale.append(f"{sub}/{src.name}")
+    return stale
+
+
 def cmd_fleet_push(apps: list, message: str, dry_run: bool = False,
                    interactive: bool = False) -> int:
-    """Commit and push all dirty fleet repos, skipping .orig files."""
+    """Commit and push all dirty fleet repos, skipping .orig files; sync each pushed app's .meta
+    and .install into the registry, and a clean one's too when its registry copy is stale."""
     results = []
 
     for app in apps:
@@ -3781,11 +3797,29 @@ def cmd_fleet_push(apps: list, message: str, dry_run: bool = False,
             results.append((name, 'SKIP', 'no upstream branch'))
             continue
 
+        # A file changed since the last --push (a regenerated installer the .meta lists) leaves a
+        # clean repo's checksums stale: that's work too. Only looked at here; written after the
+        # --ipush prompt, so skipping an app leaves its .meta untouched.
+        sums_stale = recalculate_meta_checksums(path, write=False)
+
         # Check dirty status, ignoring .orig files
         status_lines = _git(path, 'status', '--porcelain').stdout.splitlines()
         pushable = [l for l in status_lines if not l.rstrip().endswith('.orig')]
 
+        if not pushable and sums_stale:
+            pushable = [f"(checksums stale: {next(path.glob('*.meta')).name})"]
+
         if not pushable:
+            stale = _registry_stale(path)
+            if stale:                            # committed and pushed, never got to the registry
+                note = 'registry copy stale: ' + ', '.join(stale)
+                if dry_run:
+                    msg(f"  [dry-run] [{name}]  would sync {', '.join(stale)}")
+                    results.append((name, 'DRY-RUN', note))
+                else:
+                    msg(f"  SYNC  [{name}]  clean; {note}")
+                    results.append((name, 'SYNC', note))
+                continue
             msg(f"  SKIP  [{name}]  clean")
             results.append((name, 'SKIP', 'clean'))
             continue
@@ -3802,7 +3836,8 @@ def cmd_fleet_push(apps: list, message: str, dry_run: bool = False,
                 continue
 
         # Recalculate .meta checksums if a .meta file exists
-        recalculate_meta_checksums(path)
+        if not dry_run:
+            recalculate_meta_checksums(path)
 
         if dry_run:
             msg(f"    -> [dry-run] would commit: {message!r}")
@@ -3836,7 +3871,7 @@ def cmd_fleet_push(apps: list, message: str, dry_run: bool = False,
     msg(f"{prefix}Fleet push summary:")
     for name, status, note in results:
         note_str = f"  ({note})" if note else ''
-        if status == 'OK':
+        if status in ('OK', 'SYNC'):
             success(f"  {name}: {status}{note_str}")
         elif status in ('SKIP', 'DRY-RUN'):
             warn(f"  {name}: {status}{note_str}")
@@ -3846,7 +3881,7 @@ def cmd_fleet_push(apps: list, message: str, dry_run: bool = False,
     failed = [r for r in results if r[1] == 'FAIL']
 
     # Sync registry.d in awesome-taskwarrior for all successfully pushed apps
-    pushed = [app for app, status, _ in results if status == 'OK']
+    pushed = [app for app, status, _ in results if status in ('OK', 'SYNC')]
     if pushed and not dry_run:
         _sync_fleet_registry(apps, pushed, message)
 
