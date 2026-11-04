@@ -17,7 +17,7 @@ Pipeline order: debug → testing → timing → stdhelp → meta → install �
 Single command: make-awesome.py "commit message"  — runs full pipeline
 Flag combo:     make-awesome.py --meta --push "msg"  — runs selected stages in order
 
-Version: 4.17.0
+Version: 4.18.0
 """
 
 import ast
@@ -31,7 +31,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
 
-VERSION = "4.17.0"
+VERSION = "4.18.0"
 
 # Mode detection
 # Fleet mode  — running from the awesome-taskwarrior dir (where awesome.rc lives)
@@ -2009,13 +2009,23 @@ def generate_installer(info: ProjectInfo) -> bool:
                 dp = _dest_path(filename, '$CONFIG_DIR', dest)
                 if dest:
                     f.write(f'    mkdir -p "$(dirname "{dp}")"\n')
+                # An existing config is the user's: keep it, put the new default beside it as
+                # <name>.new (a reinstall reset everyone's settings, 2026-11-04).
                 f.write(f'    debug_msg "Downloading config: {filename}" 2\n')
-                f.write(f'    curl -fsSL "$BASE_URL/{filename}" -o "{dp}" || {{\n')
+                f.write(f'    curl -fsSL "$BASE_URL/{filename}" -o "{dp}.new" || {{\n')
+                f.write(f'        rm -f "{dp}.new"\n')
                 f.write(f'        tw_error "Failed to download {filename}"\n')
                 f.write(f'        debug_msg "Download failed: {filename}" 1\n')
                 f.write('        return 1\n')
                 f.write('    }\n')
-                f.write(f'    debug_msg "Installed config: {dp}" 2\n\n')
+                f.write(f'    if [[ ! -f "{dp}" ]]; then\n')
+                f.write(f'        mv "{dp}.new" "{dp}"\n')
+                f.write(f'        debug_msg "Installed config: {dp}" 2\n')
+                f.write(f'    elif cmp -s "{dp}" "{dp}.new"; then\n')
+                f.write(f'        rm -f "{dp}.new"\n')
+                f.write(f'    else\n')
+                f.write(f'        tw_msg "Kept your {filename}; the new default is {filename}.new"\n')
+                f.write(f'    fi\n\n')
 
             # Add config include — prefer included.rc if it exists, else .taskrc
             std_configs = [(n, ft, d) for n, ft, d in configs if not d]

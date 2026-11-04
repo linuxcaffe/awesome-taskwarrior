@@ -1,4 +1,4 @@
-"""tw -u kept nobody's config: update is remove + install, remove deletes every file the
+"""tw 2.21.0: tw -u kept nobody's config: update is remove + install, remove deletes every file the
 manifest lists, and installers list their .rc. The new installer then found no rc and copied
 its stock one in. tw2nb lost project_notebooks/annotations_in/tasknote_in this way on
 2026-11-03. An update now keeps the app's config files; if the new installer writes its own

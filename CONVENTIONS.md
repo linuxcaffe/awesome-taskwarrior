@@ -171,10 +171,14 @@ an answer uses `tw_needs_pty`, or skips the question under `TW_NOINTERACT` with 
   (2.10.2+) comments out any include left dangling after a remove, as a safety net; `taskutil config check`
   (daily timer, tw-web launch) reports one with its file and line. Generated installers re-enable a
   commented-out include on reinstall.
-- **Generated installers overwrite config files on every reinstall** (`tw -u` included) and have no
-  post-install step. Settings a user edits shouldn't ship as a `:config` file: have the app write them
-  itself (tw-events' `events init` writes `events.rc`, keeps what's there, and adds its own includes only
-  after the files they name exist).
+- **A config file is the user's once installed.** A generated installer (make-awesome 4.18.0+) writes a
+  `:config` file only when it's absent; otherwise it keeps the user's and puts the new default beside it
+  as `<name>.rc.new` (unchanged: no `.new`). `tw -u` (2.21.0+) keeps the app's `~/.task/config/` files
+  across its remove + install, whatever the installer does. Until both, every update reset the user's
+  settings (tw2nb, 2026-11-03). So a new or changed default reaches existing users only through `.rc.new`:
+  the app's code must default every key it reads. Generated installers have no post-install step; an app
+  that must write its own config does it itself (tw-events' `events init` writes `events.rc`, keeps
+  what's there, and adds its own includes only after the files they name exist).
 - **On/off:** a hook runs only when executable. `hook-ctrl` toggles the bit, scripts' bits, and
   `include` lines. Prefer a setting when the user may want the feature "paused but installed".
 
@@ -201,7 +205,7 @@ an answer uses `tw_needs_pty`, or skips the question under `TW_NOINTERACT` with 
   `# HANDCRAFTED` comment line within its first 12 lines (say why on the next lines). make-awesome then
   only syncs its `VERSION=` with the `.meta`. It's found under the app's name from the `.meta`, not the
   repo folder's (`tw-smart-nag-hook` holds `smart-nag.install`). Write one when the app needs what the
-  generator can't do: keep a user's config over `tw -u`, systemd units, wrapper keywords, includes.
+  generator can't do: systemd units, wrapper keywords, includes.
 - **`tw_web` in `awesome.rc`:** `yes` = safe under `TW_NOINTERACT`; `partial` = won't hang, some features
   off; `no` = needs a terminal (must signal §2).
 - **tw-web is not in the registry,** on purpose: a GUI app, larger than the rest combined. It's the
