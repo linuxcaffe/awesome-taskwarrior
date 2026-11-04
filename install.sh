@@ -13,7 +13,7 @@ set -euo pipefail
 
 RAW_BASE="https://raw.githubusercontent.com/linuxcaffe/awesome-taskwarrior/main"
 TW26_URL="https://github.com/linuxcaffe/taskwarrior-2.6"
-TASK_DIR="$HOME/.task"
+TASK_DIR="${TW_TASK_DIR:-${HOME}/.task}"
 SCRIPTS_DIR="$TASK_DIR/scripts"
 TMP=""   # a download in progress, removed on exit
 
