@@ -4378,7 +4378,8 @@ def main():
         return cmd_index()
 
     if (args.fleet or args.list is not None or args.add or args.remove
-            or args.discover or args.query is not None or args.grep):
+            or args.discover or args.query is not None or args.grep
+            or args.ipush is not None):
         return cmd_fleet(args)
 
     if args.nointeract:

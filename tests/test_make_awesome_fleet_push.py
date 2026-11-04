@@ -128,3 +128,14 @@ def test_ipush_skip_leaves_a_stale_meta_untouched(fleet, monkeypatch):
     assert ma.cmd_fleet_push(apps, 'skip me', interactive=True) == 0
     assert (app / 'demo.meta').read_text() == meta_before
     assert heads(app, reg) == before
+
+
+def test_ipush_alone_runs_the_fleet_push(monkeypatch):
+    """2026-11-04: `make-awesome.py --ipush "msg"` printed the usage: main() sent only --fleet etc.
+    to cmd_fleet, though --ipush counted as a fleet flag for the guard."""
+    monkeypatch.setattr(ma, 'IS_FLEET_MODE', True)
+    seen = []
+    monkeypatch.setattr(ma, 'cmd_fleet', lambda args: seen.append(args.ipush) or 0)
+    monkeypatch.setattr(ma.sys, 'argv', ['make-awesome.py', '--ipush', 'msg'])
+    assert ma.main() == 0
+    assert seen == ['msg']
