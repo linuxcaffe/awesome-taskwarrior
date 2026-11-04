@@ -111,27 +111,24 @@ install() {
         tw_msg "Kept your need.rc; the new default is need.rc.new"
     fi
 
-    # Add config include to included.rc (if present) or .taskrc
     INCLUDED_RC="${TASK_DIR}/config/included.rc"
+    # need.rc is included: taskwarrior reads it
     if [ "$TASK_DIR" = "$HOME/.task" ]; then
         INC_PATH="~/.task/config/need.rc"
     else
         INC_PATH="${TASK_DIR}/config/need.rc"
     fi
-    if grep -qE "^[[:space:]]*include[[:space:]].*need.rc" "$TASKRC" "$INCLUDED_RC" 2>/dev/null; then
-        tw_msg "Config already included"
-        debug_msg "Config already present: need.rc" 2
-    elif grep -qE "^[[:space:]]*#[[:space:]]*include[[:space:]].*need.rc" "$INCLUDED_RC" 2>/dev/null; then
-        sed -i.bak -E "s|^[[:space:]]*#[[:space:]]*(include[[:space:]].*need.rc)[[:space:]]*(#.*)?$|\1|" "$INCLUDED_RC"
-        tw_msg "Re-enabled config include in included.rc"
+    if grep -qE "^[[:space:]]*include[[:space:]].*/need\.rc([[:space:]]|$)" "$TASKRC" "$INCLUDED_RC" 2>/dev/null; then
+        tw_msg "Config already included: need.rc"
+    elif grep -qE "^[[:space:]]*#[[:space:]]*include[[:space:]].*/need\.rc([[:space:]]|$)" "$INCLUDED_RC" 2>/dev/null; then
+        sed -i.bak -E "s|^[[:space:]]*#[[:space:]]*(include[[:space:]].*/need\.rc)([[:space:]].*)?$|\1|" "$INCLUDED_RC"
+        tw_msg "Re-enabled config include in included.rc: need.rc"
     elif [ -f "$INCLUDED_RC" ]; then
         echo "include $INC_PATH" >> "$INCLUDED_RC"
-        tw_msg "Added config include to included.rc"
-        debug_msg "Added to included.rc: include $INC_PATH" 2
+        tw_msg "Added config include to included.rc: need.rc"
     else
         echo "include $INC_PATH" >> "$TASKRC"
-        tw_msg "Added config include to .taskrc"
-        debug_msg "Added to .taskrc: include $INC_PATH" 2
+        tw_msg "Added config include to .taskrc: need.rc"
     fi
 
     tw_msg "Downloading documentation..."
@@ -193,17 +190,14 @@ remove() {
     sed -i.bak "/^$APPNAME|/d" "$MANIFEST_FILE"
     debug_msg "Removed from manifest" 2
 
-    # Remove config include from included.rc or .taskrc
+    # Remove config includes from included.rc and .taskrc
     INCLUDED_RC="${TASK_DIR}/config/included.rc"
-    if grep -q "need.rc" "$INCLUDED_RC" 2>/dev/null; then
-        sed -i.bak "/need.rc/d" "$INCLUDED_RC"
-        tw_msg "Removed config from included.rc"
-        debug_msg "Removed from included.rc: need.rc" 2
-    elif grep -q "need.rc" "$TASKRC" 2>/dev/null; then
-        sed -i.bak "/need.rc/d" "$TASKRC"
-        tw_msg "Removed config from .taskrc"
-        debug_msg "Removed from .taskrc: need.rc" 2
-    fi
+    for rcfile in "$INCLUDED_RC" "$TASKRC"; do
+        if grep -qE "^[[:space:]]*#?[[:space:]]*include[[:space:]].*/need\.rc([[:space:]]|$)" "$rcfile" 2>/dev/null; then
+            sed -i.bak -E "\%^[[:space:]]*#?[[:space:]]*include[[:space:]].*/need\.rc([[:space:]]|$)%d" "$rcfile"
+            tw_msg "Removed include of need.rc from $(basename "$rcfile")"
+        fi
+    done
 
     tw_success "Removed need-priority"
     return 0

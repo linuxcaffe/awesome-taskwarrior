@@ -8,6 +8,7 @@ description=Replace pri:H,M,L with pri:1-6, Mazlow's Human Needs, and filter acc
 repo=https://github.com/linuxcaffe/tw-need_priority-hook
 base_url=https://raw.githubusercontent.com/linuxcaffe/tw-need_priority-hook/main
 files=on-add_need-priority.py:hook,on-modify_need-priority.py:hook,on-exit_need-priority.py:hook,nn:script,need.rc:config,README.md:doc
+included=need.rc
 tags=priority,needs,focus,hook
 
 checksums=058186ba757db31229acfda3e831c142ba2e0a1c9f0d075208f6b84c57487817,1c6541f9292c6a307a7ea28521b10fc055511fd34df86f1e02dc3dbebe1ba880,424423897a4818019729d0667c41eb8a5878eb883df0b4f64c0c1d35271dc32f,4a9553b5232e64966ab87d63c0ae71e29c96f8b2ac9b69ac485c2c940f3e5c99,610099d01128eda98c4814d7a4f6349324e2b8d01dfc43f198b5e8af406f98a7,c61d2d6bf6c82581510b7acfbee0f3180199cf12953a8f4c62acea6c5627f1f1
