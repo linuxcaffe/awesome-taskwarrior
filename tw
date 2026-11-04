@@ -1749,6 +1749,11 @@ class AppManager:
         # Also backup manifest entries for this app
         backup_manifest = [e.copy() for e in self.manifest.entries if e['app'] == app_name]
         
+        # The app's config (~/.task/config/*, listed in the manifest) is the user's, not the
+        # version's: remove deletes it and the new installer would copy its stock one in
+        # (tw2nb lost its settings this way, 2026-11-03). Keep it across the update.
+        user_config = self._user_config(app_name)
+
         # Step 3: Remove old version via installer. If that fails, stop: installing on top of a
         # half-removed version leaves two versions' files and manifest lines.
         print(f"[tw] Removing v{old_version}...")
@@ -1760,9 +1765,15 @@ class AppManager:
             print(f"[tw] Put back v{old_version}'s files; its manifest entries were never removed")
             return False
         
+        for f, data in user_config.items():   # put back first: installers skip an existing rc
+            if not f.exists():
+                f.parent.mkdir(parents=True, exist_ok=True)
+                f.write_bytes(data)
+
         # Step 4: Install new version via real .install script
         print(f"[tw] Installing v{new_version}...")
         if self.install(app_name, stage_dir=stage_dir):
+            self._keep_user_config(user_config)
             # Success - clean up staging and backup
             shutil.rmtree(stage_dir, ignore_errors=True)
             shutil.rmtree(backup_dir, ignore_errors=True)
@@ -1784,6 +1795,28 @@ class AppManager:
             
             return False
     
+    def _user_config(self, app_name):
+        """{path: bytes} of the app's manifest-listed files in the config dir (not dotfiles)."""
+        cfg_dir = self.paths.config_dir.resolve()
+        kept = {}
+        for f in map(Path, self.manifest.get_files(app_name)):
+            if f.parent.resolve() == cfg_dir and not f.name.startswith('.') and f.is_file():
+                kept[f] = f.read_bytes()
+        return kept
+
+    @staticmethod
+    def _keep_user_config(user_config):
+        """After install: an installer that wrote its own config anyway loses to the user's;
+        its stock copy goes beside it as <name>.new."""
+        for f, data in user_config.items():
+            now = f.read_bytes() if f.is_file() else None
+            if now == data:
+                continue
+            if now is not None:
+                f.with_name(f.name + '.new').write_bytes(now)
+                print(f"[tw]   Kept your {f.name}; the new default is {f.name}.new")
+            f.write_bytes(data)
+
     def _stage_downloads(self, app_name, meta):
         """Download all files to a temp staging directory as a preflight check.
         
