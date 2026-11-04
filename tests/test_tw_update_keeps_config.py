@@ -80,3 +80,21 @@ def test_plain_remove_still_removes_config(app):
     """tw -r is an uninstall: its config goes too (unchanged behaviour)."""
     assert app.remove('x') is True
     assert not app.rc.exists()
+
+
+@pytest.mark.parametrize('name', ['tw', 'awesome-taskwarrior'])
+def test_update_tw_itself_points_at_install_sh(tmp_path, monkeypatch, capsys, name):
+    """2026-11-04: `tw -u tw` and `tw -u awesome-taskwarrior` said only "Not installed": tw isn't a
+    registry app, it updates by re-running install.sh, and nothing said so."""
+    monkeypatch.setenv('HOME', str(tmp_path))
+    am = tw.AppManager(tw.PathManager())
+    assert am.update(name) is False
+    out = capsys.readouterr().out
+    assert 'Not installed' not in out
+    assert 'install.sh' in out and 'tw --version' in out
+
+
+def test_update_unknown_app_still_says_not_installed(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv('HOME', str(tmp_path))
+    assert tw.AppManager(tw.PathManager()).update('nosuch') is False
+    assert 'Not installed: nosuch' in capsys.readouterr().out

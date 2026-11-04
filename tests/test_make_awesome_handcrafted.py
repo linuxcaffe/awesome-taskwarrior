@@ -169,3 +169,21 @@ def test_project_info_comes_from_the_meta(tmp_path, monkeypatch, capsys):
 
 def test_docstring_version_matches_VERSION():
     assert f'Version: {ma.VERSION}' in ma.__doc__
+
+
+# ── The pipeline run on awesome-taskwarrior itself builds no .meta/.install ───
+
+def test_fleet_pipeline_skips_meta_and_install(monkeypatch):
+    """2026-11-04: the pipeline in awesome-taskwarrior wrote awesome-taskwarrior.meta every run beside a
+    stale March .install (4.10.2, BASE_URL …/master): tw isn't a registry app (install.sh updates it),
+    so both were dead weight that looked like a way to update tw."""
+    monkeypatch.setattr(ma, 'IS_FLEET_MODE', True)
+    called = []
+    for stage in ('gitignore', 'debug', 'testing', 'timing', 'envar', 'stdhelp'):
+        monkeypatch.setattr(ma, f'cmd_{stage}', lambda args, s=stage: called.append(s) or 0)
+    monkeypatch.setattr(ma, 'cmd_meta', lambda args: (called.append('meta'), (0, None))[1])
+    monkeypatch.setattr(ma, 'cmd_install', lambda args, info=None: called.append('install') or 0)
+    monkeypatch.setattr(ma, 'cmd_push', lambda args, m: called.append('push') or 0)
+    assert ma.cmd_pipeline('msg', SimpleNamespace(dry_run=False, force=False)) == 0
+    assert 'meta' not in called and 'install' not in called
+    assert 'push' in called and 'testing' in called

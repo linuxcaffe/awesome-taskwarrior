@@ -17,7 +17,7 @@ Pipeline order: debug → testing → timing → stdhelp → meta → install �
 Single command: make-awesome.py "commit message"  — runs full pipeline
 Flag combo:     make-awesome.py --meta --push "msg"  — runs selected stages in order
 
-Version: 4.18.0
+Version: 4.18.1
 """
 
 import ast
@@ -31,7 +31,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
 
-VERSION = "4.18.0"
+VERSION = "4.18.1"
 
 # Mode detection
 # Fleet mode  — running from the awesome-taskwarrior dir (where awesome.rc lives)
@@ -3053,6 +3053,13 @@ def cmd_pipeline(commit_msg: str, args=None) -> int:
     meta_info = None
     for i, (name, gated) in enumerate(stages, 1):
         msg(f"STAGE {i}/{len(stages)}: {name}")
+
+        # tw itself isn't a registry app (install.sh updates it), so the pipeline run on
+        # awesome-taskwarrior builds no awesome-taskwarrior.meta/.install: nothing reads them.
+        if IS_FLEET_MODE and name in ('Meta', 'Install'):
+            msg(f"{name}: skipped (tw updates via install.sh, not the registry)")
+            print()
+            continue
 
         if name == 'Gitignore':
             rc = cmd_gitignore(args)

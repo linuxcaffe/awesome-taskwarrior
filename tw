@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 tw - awesome-taskwarrior package manager and wrapper
-Version: 2.21.0
+Version: 2.21.1
 
 A unified wrapper for Taskwarrior that provides:
 - Transparent pass-through to task command
@@ -10,6 +10,17 @@ A unified wrapper for Taskwarrior that provides:
 - Per-file manifest tracking
 - Checksum verification
 - Dev mode indicator for local development
+
+Updates in v2.21.1:
+- Changed: tw -u tw (or awesome-taskwarrior) says tw updates by re-running install.sh, with the
+  curl line, instead of "Not installed"
+
+Updates in v2.21.0:
+- Fixed: tw -u reset the app's config: remove deleted the manifest-listed .rc and install copied
+  the stock one in. An update now keeps the user's config files; when the new installer writes its
+  own anyway, the user's stays and the stock one is saved beside it as <name>.rc.new
+  (.checks/sys-tw-rc-new lists ones whose settings changed)
+- Tests: tests/test_tw_update_keeps_config.py
 
 Updates in v2.20.0:
 - Added: man pages. A doc named <name>.<1-9> (vit.1, vitrc.5) installs to ~/.task/docs/man/man<N>/
@@ -269,7 +280,7 @@ import tempfile
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 
-VERSION = "2.21.0"
+VERSION = "2.21.1"
 
 # GitHub configuration
 GITHUB_REPO = "linuxcaffe/awesome-taskwarrior"
@@ -1709,11 +1720,17 @@ class AppManager:
         file placement, permissions, .taskrc, and manifest tracking.
         Python staging is purely a safety net / preflight download check.
         """
+        if app_name in ('tw', 'awesome-taskwarrior') and not self.manifest.is_installed(app_name):
+            print(f"[tw] tw isn't a registry app, so -u can't update it (this is v{VERSION}).")
+            print(f"[tw] Re-run its installer, then check with tw --version:")
+            print(f"[tw]   curl -fsSL {GITHUB_RAW_BASE}/install.sh | bash")
+            return False
+
         if not self.manifest.is_installed(app_name):
             print(f"[tw] [!] Not installed: {app_name}")
             print(f"[tw] Use --install to install it")
             return False
-        
+
         old_version = self.manifest.get_version(app_name)
         meta = self.registry.get_meta(app_name)
         if not meta:
