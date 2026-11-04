@@ -41,6 +41,7 @@ HOOKS_DIR="${TASK_DIR}/hooks"
 SCRIPTS_DIR="${TASK_DIR}/scripts"
 CONFIG_DIR="${TASK_DIR}/config"
 DOCS_DIR="${TASK_DIR}/docs"
+MAN_DIR="${DOCS_DIR}/man"
 
 # ============================================================================
 # Installation Function
@@ -95,12 +96,20 @@ install() {
     debug_msg "Installed script: $SCRIPTS_DIR/nn" 2
 
     debug_msg "Downloading config: need.rc" 2
-    curl -fsSL "$BASE_URL/need.rc" -o "$CONFIG_DIR/need.rc" || {
+    curl -fsSL "$BASE_URL/need.rc" -o "$CONFIG_DIR/need.rc.new" || {
+        rm -f "$CONFIG_DIR/need.rc.new"
         tw_error "Failed to download need.rc"
         debug_msg "Download failed: need.rc" 1
         return 1
     }
-    debug_msg "Installed config: $CONFIG_DIR/need.rc" 2
+    if [[ ! -f "$CONFIG_DIR/need.rc" ]]; then
+        mv "$CONFIG_DIR/need.rc.new" "$CONFIG_DIR/need.rc"
+        debug_msg "Installed config: $CONFIG_DIR/need.rc" 2
+    elif cmp -s "$CONFIG_DIR/need.rc" "$CONFIG_DIR/need.rc.new"; then
+        rm -f "$CONFIG_DIR/need.rc.new"
+    else
+        tw_msg "Kept your need.rc; the new default is need.rc.new"
+    fi
 
     # Add config include to included.rc (if present) or .taskrc
     INCLUDED_RC="${TASK_DIR}/config/included.rc"

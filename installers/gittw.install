@@ -79,12 +79,20 @@ install() {
     debug_msg "Installed script: $HOME/.task/scripts/gittw" 2
 
     debug_msg "Downloading config: gittw.rc" 2
-    curl -fsSL "$BASE_URL/gittw.rc" -o "$CONFIG_DIR/gittw.rc" || {
+    curl -fsSL "$BASE_URL/gittw.rc" -o "$CONFIG_DIR/gittw.rc.new" || {
+        rm -f "$CONFIG_DIR/gittw.rc.new"
         tw_error "Failed to download gittw.rc"
         debug_msg "Download failed: gittw.rc" 1
         return 1
     }
-    debug_msg "Installed config: $CONFIG_DIR/gittw.rc" 2
+    if [[ ! -f "$CONFIG_DIR/gittw.rc" ]]; then
+        mv "$CONFIG_DIR/gittw.rc.new" "$CONFIG_DIR/gittw.rc"
+        debug_msg "Installed config: $CONFIG_DIR/gittw.rc" 2
+    elif cmp -s "$CONFIG_DIR/gittw.rc" "$CONFIG_DIR/gittw.rc.new"; then
+        rm -f "$CONFIG_DIR/gittw.rc.new"
+    else
+        tw_msg "Kept your gittw.rc; the new default is gittw.rc.new"
+    fi
 
     # Add config include to included.rc (if present) or .taskrc
     INCLUDED_RC="${TASK_DIR}/config/included.rc"

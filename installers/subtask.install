@@ -78,12 +78,20 @@ install() {
     debug_msg "Installed hook: $HOOKS_DIR/on-modify_subtask.py" 2
 
     debug_msg "Downloading config: subtask.rc" 2
-    curl -fsSL "$BASE_URL/subtask.rc" -o "$CONFIG_DIR/subtask.rc" || {
+    curl -fsSL "$BASE_URL/subtask.rc" -o "$CONFIG_DIR/subtask.rc.new" || {
+        rm -f "$CONFIG_DIR/subtask.rc.new"
         tw_error "Failed to download subtask.rc"
         debug_msg "Download failed: subtask.rc" 1
         return 1
     }
-    debug_msg "Installed config: $CONFIG_DIR/subtask.rc" 2
+    if [[ ! -f "$CONFIG_DIR/subtask.rc" ]]; then
+        mv "$CONFIG_DIR/subtask.rc.new" "$CONFIG_DIR/subtask.rc"
+        debug_msg "Installed config: $CONFIG_DIR/subtask.rc" 2
+    elif cmp -s "$CONFIG_DIR/subtask.rc" "$CONFIG_DIR/subtask.rc.new"; then
+        rm -f "$CONFIG_DIR/subtask.rc.new"
+    else
+        tw_msg "Kept your subtask.rc; the new default is subtask.rc.new"
+    fi
 
     # Add config include to included.rc (if present) or .taskrc
     INCLUDED_RC="${TASK_DIR}/config/included.rc"

@@ -41,6 +41,7 @@ HOOKS_DIR="${TASK_DIR}/hooks"
 SCRIPTS_DIR="${TASK_DIR}/scripts"
 CONFIG_DIR="${TASK_DIR}/config"
 DOCS_DIR="${TASK_DIR}/docs"
+MAN_DIR="${DOCS_DIR}/man"
 
 # ============================================================================
 # Installation Function
@@ -103,12 +104,20 @@ install() {
     debug_msg "Installed script: $SCRIPTS_DIR/rr" 2
 
     debug_msg "Downloading config: recurrence.rc" 2
-    curl -fsSL "$BASE_URL/recurrence.rc" -o "$CONFIG_DIR/recurrence.rc" || {
+    curl -fsSL "$BASE_URL/recurrence.rc" -o "$CONFIG_DIR/recurrence.rc.new" || {
+        rm -f "$CONFIG_DIR/recurrence.rc.new"
         tw_error "Failed to download recurrence.rc"
         debug_msg "Download failed: recurrence.rc" 1
         return 1
     }
-    debug_msg "Installed config: $CONFIG_DIR/recurrence.rc" 2
+    if [[ ! -f "$CONFIG_DIR/recurrence.rc" ]]; then
+        mv "$CONFIG_DIR/recurrence.rc.new" "$CONFIG_DIR/recurrence.rc"
+        debug_msg "Installed config: $CONFIG_DIR/recurrence.rc" 2
+    elif cmp -s "$CONFIG_DIR/recurrence.rc" "$CONFIG_DIR/recurrence.rc.new"; then
+        rm -f "$CONFIG_DIR/recurrence.rc.new"
+    else
+        tw_msg "Kept your recurrence.rc; the new default is recurrence.rc.new"
+    fi
 
     # Add config include to included.rc (if present) or .taskrc
     INCLUDED_RC="${TASK_DIR}/config/included.rc"
