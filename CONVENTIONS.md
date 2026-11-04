@@ -163,13 +163,22 @@ an answer uses `tw_needs_pty`, or skips the question under `TW_NOINTERACT` with 
 
 ## 7. Configuration and switches
 
-- **Settings:** `~/.task/config/<app>.rc`, keys `<app>.<setting>` (`gittw.autocommit = yes`), included
-  from `~/.task/config/included.rc`. A hook reads its own file directly; calling `task _get` from a hook
-  is slow.
+- **Settings:** `~/.task/config/<app>.rc`, keys `<app>.<setting>` (`gittw.autocommit = yes`). The app
+  reads its own file directly; calling `task _get` from a hook is slow, and a `task rc.<app>.x=…`
+  override never reaches it anyway.
+- **A config is discrete unless taskwarrior must read it** (make-awesome 4.19.0+). Discrete, the norm:
+  only the app reads it, so it stays out of the include chain, where it could only add a way to stop
+  `task` from starting. **Included**, the exception: a file that sets taskwarrior's own keys (`uda.`,
+  `report.`, `urgency.`, `alias.`, `context.`, `color.`, `holiday.`, …) or that something else reads
+  through the chain (`task _show`, sanity-check's `condition.*` walk). Declare it in the `.meta`:
+  `included=agenda.rc` (comma-separated). A generated installer includes only those; it includes a
+  `:config` that sets native keys anyway, warning you to declare it, and takes an older include of a
+  discrete config out (active or commented). A per-station override in `local.rc` reaches a discrete
+  app only if the app reads `local.rc` itself (mobilize does).
 - **Never leave a dangling `include`.** Taskwarrior refuses to start if an included file is missing, and so
   does every client. An installer's `remove` deletes the include with the file, or keeps both. `tw -r`
   (2.10.2+) comments out any include left dangling after a remove, as a safety net; `taskutil config check`
-  (daily timer, tw-web launch) reports one with its file and line. Generated installers re-enable a
+  (daily timer, tw-web launch) reports one with its file and line. Generated installers re-enable an included config's
   commented-out include on reinstall.
 - **A config file is the user's once installed.** A generated installer (make-awesome 4.18.0+) writes a
   `:config` file only when it's absent; otherwise it keeps the user's and puts the new default beside it

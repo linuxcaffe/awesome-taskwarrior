@@ -17,7 +17,7 @@ Pipeline order: debug → testing → timing → stdhelp → meta → install �
 Single command: make-awesome.py "commit message"  — runs full pipeline
 Flag combo:     make-awesome.py --meta --push "msg"  — runs selected stages in order
 
-Version: 4.18.1
+Version: 4.19.0
 """
 
 import ast
@@ -31,7 +31,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
 
-VERSION = "4.18.1"
+VERSION = "4.19.0"
 
 # Mode detection
 # Fleet mode  — running from the awesome-taskwarrior dir (where awesome.rc lives)
@@ -1339,6 +1339,8 @@ class ProjectInfo:
         # Symlinks the installer makes: (name, target, type), e.g. one hook file serving two
         # events: links=on-modify_recurrence.py:on-add_recurrence.py:hook
         self.links = []
+        # Config files taskwarrior itself must read (included=): the rest are discrete (4.19.0)
+        self.included = []
 
 
 def detect_project_info() -> ProjectInfo:
@@ -1515,6 +1517,71 @@ def man_section(filename: str) -> Optional[str]:
 LINK_DIRS = {'hook': '$HOOKS_DIR', 'script': '$SCRIPTS_DIR', 'config': '$CONFIG_DIR'}
 
 
+# Taskwarrior's own top-level setting names (2.6.2 `task _show` with an empty rc, plus context and
+# holiday, which it only shows once defined). A config that sets one must be in the include chain.
+NATIVE_RC_ROOTS = frozenset("""
+    abbreviation active alias allow avoidlastcolumn bulk calendar color column complete
+    confirmation context data date dateformat debug default defaultheight defaultwidth dependency
+    detection displayweeknumber due editor exit expressions fontunderline gc holiday hooks hyphenate
+    indent journal json limit list locking monthsperline nag news obfuscate print recurrence regex
+    report reserved row rule search sugar summary tag taskd uda undo urgency verbose weekstart xterm
+""".split())
+
+
+def native_rc_keys(path) -> list:
+    """The keys in an rc file that taskwarrior itself reads (uda.x.type, report.y.filter, ...)."""
+    try:
+        lines = Path(path).read_text(errors='replace').splitlines()
+    except OSError:
+        return []
+    keys = []
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith('#') or line.startswith('include') or '=' not in line:
+            continue
+        key = line.split('=', 1)[0].strip()
+        if key.split('.', 1)[0] in NATIVE_RC_ROOTS:
+            keys.append(key)
+    return keys
+
+
+def meta_included(meta_file) -> list:
+    """included= from a .meta: the config files taskwarrior must read (the rest are discrete)."""
+    try:
+        for line in Path(meta_file).read_text().splitlines():
+            if line.startswith('included='):
+                return [n.strip() for n in line.split('=', 1)[1].split(',') if n.strip()]
+    except OSError:
+        pass
+    return []
+
+
+def included_configs(info, configs: list) -> list:
+    """Which of the app's standard-place configs go in the include chain: those named in
+    included=, and any that sets a native key (included anyway, with a warning to declare it, so a
+    missed declaration can't drop an app's UDAs or reports). The rest are discrete (CONVENTIONS 7)."""
+    declared = set(getattr(info, 'included', None) or [])
+    out = []
+    for name, _, dest in configs:
+        if dest:
+            continue                      # a custom destination was never included
+        if name in declared:
+            out.append(name)
+            continue
+        native = native_rc_keys(name)
+        if native:
+            more = ', ...' if len(native) > 3 else ''
+            warn(f"{name} sets taskwarrior's own keys ({', '.join(native[:3])}{more}): "
+                 f"including it. Declare it in the .meta: included={name}")
+            out.append(name)
+    return out
+
+
+def _rc_name_pattern(name: str) -> str:
+    """A config filename as an ERE inside a double-quoted shell string: dots escaped."""
+    return re.sub(r'([.+?()\[\]{}^$|*])', r'\\\1', name)
+
+
 def parse_links(value: str) -> list:
     """links= value -> [(name, target, type)]: name:target:type, comma-separated."""
     links = []
@@ -1602,6 +1669,8 @@ def prompt_for_metadata(info: ProjectInfo) -> bool:
                         info.platforms = line.split('=', 1)[1].strip()
                     elif line.startswith('links='):
                         info.links = parse_links(line.split('=', 1)[1])
+                    elif line.startswith('included='):
+                        info.included = [n.strip() for n in line.split('=', 1)[1].split(',') if n.strip()]
                     elif line.startswith('wrapper.'):
                         # Indexed:  wrapper.1.keyword=theme
                         # Legacy:   wrapper.keyword=theme  (treated as index 1)
@@ -1848,6 +1917,8 @@ def generate_meta_file(info: ProjectInfo) -> bool:
             f.write(f"files={files_list}\n")
             if info.links:
                 f.write("links=" + ",".join(f"{n}:{t}:{ty}" for n, t, ty in info.links) + "\n")
+            if getattr(info, 'included', None):
+                f.write("included=" + ",".join(info.included) + "\n")
             f.write(f"tags={info.tags}\n\n")
             f.write(f"checksums={checksums_list}\n\n")
             f.write(f"author={info.author}\n")
@@ -2027,35 +2098,45 @@ def generate_installer(info: ProjectInfo) -> bool:
                 f.write(f'        tw_msg "Kept your {filename}; the new default is {filename}.new"\n')
                 f.write(f'    fi\n\n')
 
-            # Add config include — prefer included.rc if it exists, else .taskrc
-            std_configs = [(n, ft, d) for n, ft, d in configs if not d]
+            # The include chain: only for a config taskwarrior itself must read (included=, or one
+            # that sets native keys). Every other config is discrete: its app reads it directly, so
+            # an include only adds a way to stop `task` from starting; drop one an older version added.
+            std_configs = [n for n, _, d in configs if not d]
+            inc_names = included_configs(info, configs)
             if std_configs:
-                first_config = std_configs[0][0]
-                f.write('    # Add config include to included.rc (if present) or .taskrc\n')
                 f.write('    INCLUDED_RC="${TASK_DIR}/config/included.rc"\n')
+            for name in std_configs:
+                pat = _rc_name_pattern(name)
+                if name not in inc_names:
+                    f.write(f'    # {name} is discrete: no include (drop one an older version added)\n')
+                    f.write('    for rcfile in "$INCLUDED_RC" "$TASKRC"; do\n')
+                    f.write(f'        if grep -qE "^[[:space:]]*#?[[:space:]]*include[[:space:]].*/{pat}([[:space:]]|$)" "$rcfile" 2>/dev/null; then\n')
+                    f.write(f'            sed -i.bak -E "\\%^[[:space:]]*#?[[:space:]]*include[[:space:]].*/{pat}([[:space:]]|$)%d" "$rcfile"\n')
+                    f.write(f'            tw_msg "Took {name} out of the include chain: {info.name} reads its own settings"\n')
+                    f.write('        fi\n')
+                    f.write('    done\n\n')
+                    continue
+                f.write(f'    # {name} is included: taskwarrior reads it\n')
                 f.write('    if [ "$TASK_DIR" = "$HOME/.task" ]; then\n')
-                f.write(f'        INC_PATH="~/.task/config/{first_config}"\n')
+                f.write(f'        INC_PATH="~/.task/config/{name}"\n')
                 f.write('    else\n')
-                f.write(f'        INC_PATH="${{TASK_DIR}}/config/{first_config}"\n')
+                f.write(f'        INC_PATH="${{TASK_DIR}}/config/{name}"\n')
                 f.write('    fi\n')
                 # Only an active include counts; one commented out (e.g. by tw -r's dangling-include
                 # repair) is re-enabled rather than mistaken for "already included".
-                f.write(f'    if grep -qE "^[[:space:]]*include[[:space:]].*{first_config}" "$TASKRC" "$INCLUDED_RC" 2>/dev/null; then\n')
-                f.write(f'        tw_msg "Config already included"\n')
-                f.write(f'        debug_msg "Config already present: {first_config}" 2\n')
-                f.write(f'    elif grep -qE "^[[:space:]]*#[[:space:]]*include[[:space:]].*{first_config}" "$INCLUDED_RC" 2>/dev/null; then\n')
-                f.write(f'        sed -i.bak -E "s|^[[:space:]]*#[[:space:]]*(include[[:space:]].*{first_config})[[:space:]]*(#.*)?$|\\1|" "$INCLUDED_RC"\n')
-                f.write(f'        tw_msg "Re-enabled config include in included.rc"\n')
+                f.write(f'    if grep -qE "^[[:space:]]*include[[:space:]].*/{pat}([[:space:]]|$)" "$TASKRC" "$INCLUDED_RC" 2>/dev/null; then\n')
+                f.write(f'        tw_msg "Config already included: {name}"\n')
+                f.write(f'    elif grep -qE "^[[:space:]]*#[[:space:]]*include[[:space:]].*/{pat}([[:space:]]|$)" "$INCLUDED_RC" 2>/dev/null; then\n')
+                f.write(f'        sed -i.bak -E "s|^[[:space:]]*#[[:space:]]*(include[[:space:]].*/{pat})([[:space:]].*)?$|\\1|" "$INCLUDED_RC"\n')
+                f.write(f'        tw_msg "Re-enabled config include in included.rc: {name}"\n')
                 # ~/.task/... when the task dir is the usual one: included.rc is shared by every
                 # station (gittw), and another station's home isn't this one's /home/<user> (4.15.0)
                 f.write('    elif [ -f "$INCLUDED_RC" ]; then\n')
-                f.write(f'        echo "include $INC_PATH" >> "$INCLUDED_RC"\n')
-                f.write(f'        tw_msg "Added config include to included.rc"\n')
-                f.write(f'        debug_msg "Added to included.rc: include $INC_PATH" 2\n')
+                f.write('        echo "include $INC_PATH" >> "$INCLUDED_RC"\n')
+                f.write(f'        tw_msg "Added config include to included.rc: {name}"\n')
                 f.write('    else\n')
-                f.write(f'        echo "include $INC_PATH" >> "$TASKRC"\n')
-                f.write(f'        tw_msg "Added config include to .taskrc"\n')
-                f.write(f'        debug_msg "Added to .taskrc: include $INC_PATH" 2\n')
+                f.write('        echo "include $INC_PATH" >> "$TASKRC"\n')
+                f.write(f'        tw_msg "Added config include to .taskrc: {name}"\n')
                 f.write('    fi\n\n')
 
             # Download docs
@@ -2168,23 +2249,22 @@ def generate_installer(info: ProjectInfo) -> bool:
             f.write('    sed -i.bak "/^$APPNAME|/d" "$MANIFEST_FILE"\n')
             f.write('    debug_msg "Removed from manifest" 2\n\n')
             
-            # Remove config include from included.rc or .taskrc
-            if configs:
-                first_config = configs[0][0]
-                # NO NAME CHANGES! Use actual filename
-                # Match by filename only (path-format-agnostic)
-                f.write('    # Remove config include from included.rc or .taskrc\n')
+            # Remove every config's include: an included one's, or a stale one of a discrete config
+            std_configs = [n for n, _, d in configs if not d]
+            if std_configs:
+                f.write('    # Remove config includes from included.rc and .taskrc\n')
                 f.write('    INCLUDED_RC="${TASK_DIR}/config/included.rc"\n')
-                f.write(f'    if grep -q "{first_config}" "$INCLUDED_RC" 2>/dev/null; then\n')
-                f.write(f'        sed -i.bak "/{first_config}/d" "$INCLUDED_RC"\n')
-                f.write(f'        tw_msg "Removed config from included.rc"\n')
-                f.write(f'        debug_msg "Removed from included.rc: {first_config}" 2\n')
-                f.write(f'    elif grep -q "{first_config}" "$TASKRC" 2>/dev/null; then\n')
-                f.write(f'        sed -i.bak "/{first_config}/d" "$TASKRC"\n')
-                f.write(f'        tw_msg "Removed config from .taskrc"\n')
-                f.write(f'        debug_msg "Removed from .taskrc: {first_config}" 2\n')
-                f.write('    fi\n\n')
-            
+            for name in std_configs:
+                pat = _rc_name_pattern(name)
+                f.write('    for rcfile in "$INCLUDED_RC" "$TASKRC"; do\n')
+                f.write(f'        if grep -qE "^[[:space:]]*#?[[:space:]]*include[[:space:]].*/{pat}([[:space:]]|$)" "$rcfile" 2>/dev/null; then\n')
+                f.write(f'            sed -i.bak -E "\\%^[[:space:]]*#?[[:space:]]*include[[:space:]].*/{pat}([[:space:]]|$)%d" "$rcfile"\n')
+                f.write(f'            tw_msg "Removed include of {name} from $(basename "$rcfile")"\n')
+                f.write('        fi\n')
+                f.write('    done\n')
+            if std_configs:
+                f.write('\n')
+
             # Unregister wrappers if applicable
             if info.type == 'wrapper' and info.wrappers:
                 f.write('    # Unregister wrappers from tw\n')

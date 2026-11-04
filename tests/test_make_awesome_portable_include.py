@@ -21,6 +21,7 @@ def installer(tmp_path, monkeypatch):
     info.name, info.version, info.repo = 'demo', '1.0', 'someone/demo'
     info.files = [('demo.rc', 'config')]
     info.checksums = ['abc']
+    info.included = ['demo.rc']      # 4.19.0: a discrete config gets no include at all
     assert ma.generate_installer(info)
     assert subprocess.run(['bash', '-n', 'demo.install']).returncode == 0
     return tmp_path / 'demo.install'
