@@ -1,0 +1,17 @@
+# nbnotes.meta
+# Task notes in nb: a bare `nb:` annotation (or `nb: <notebook>:`) gets the task its note, made at once; a task that links a note keeps the note's status current. Calls nb-plugins' tw.nb-plugin.
+
+name=nbnotes
+version=1.0.0
+type=hook
+description=Task notes in nb: a bare `nb:` annotation (or `nb: <notebook>:`) gets the task its note, made at once; a task that links a note keeps the note's status current. Calls nb-plugins' tw.nb-plugin.
+repo=https://github.com/linuxcaffe/tw-nbnotes-hook
+base_url=https://raw.githubusercontent.com/linuxcaffe/tw-nbnotes-hook/main
+files=on-exit_nbnotes.py:hook,README.md:doc
+tags=nb, notes, tasknotes, hook
+
+checksums=820042a032e3c972bf9a8a152c3d1a56c3594698d49898db3b110f3c8d07ad79,7818d93486186673d5a38530ba568df89565d8fe543ace9c99098452bb6c213e
+
+author=Designed by linuxcaffe, implemented by Claude Code
+license=MIT
+requires_taskwarrior=2.6.0

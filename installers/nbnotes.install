@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# HANDCRAFTED
+set -euo pipefail
+
+# ============================================================================
+# nbnotes - Standalone Installer
+# Version: 1.0.0
+#
+# Installs:
+#   ~/.task/hooks/on-exit_nbnotes.py   (task notes in nb: makes requested notes, keeps status)
+#
+# Calls nb-plugins' tw.nb-plugin (nb tw), which is never copied or removed here.
+# Takes out tw2nb 1.4's on-exit_tw2nb.py, which did this job before.
+# ============================================================================
+
+VERSION="1.0.0"
+APPNAME="nbnotes"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+tw_msg()     { echo -e "${BLUE}[tw]${NC} $*"; }
+tw_success() { echo -e "${GREEN}[tw] [OK]${NC} $*"; }
+tw_error()   { echo -e "${RED}[tw] [FAIL]${NC} $*" >&2; }
+
+TASK_DIR="${HOME}/.task"
+HOOKS_DIR="${TASK_DIR}/hooks"
+MANIFEST_FILE="${TASK_DIR}/config/.tw_manifest"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+install() {
+    tw_msg "Installing ${APPNAME} v${VERSION}..."
+    mkdir -p "$HOOKS_DIR" "${TASK_DIR}/config"
+
+    cp "${SCRIPT_DIR}/on-exit_nbnotes.py" "${HOOKS_DIR}/on-exit_nbnotes.py"
+    chmod +x "${HOOKS_DIR}/on-exit_nbnotes.py"
+    tw_msg "Installed: ${HOOKS_DIR}/on-exit_nbnotes.py"
+
+    # tw2nb 1.4's copy of this hook: two would run nb tw twice per task
+    if [[ -f "${HOOKS_DIR}/on-exit_tw2nb.py" ]]; then
+        rm "${HOOKS_DIR}/on-exit_tw2nb.py"
+        tw_msg "Removed tw2nb's old on-exit_tw2nb.py: nbnotes does its job now"
+    fi
+
+    if command -v nb &>/dev/null; then
+        if [[ ! -e "${NB_DIR:-${HOME}/.nb}/.plugins/tw.nb-plugin" ]]; then
+            tw_msg "NOTE: task notes need the nb-plugin tw; install it:"
+            tw_msg "  nb plugins install https://raw.githubusercontent.com/linuxcaffe/nb-plugins/main/tw.nb-plugin"
+            tw_msg "  (mobilize init offers it too)"
+        fi
+    else
+        tw_msg "NOTE: nb not found here: the hook does nothing until it is"
+    fi
+
+    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    if [[ -f "$MANIFEST_FILE" ]]; then
+        grep -v "^${APPNAME}|" "$MANIFEST_FILE" > "${MANIFEST_FILE}.tmp" || true
+        mv "${MANIFEST_FILE}.tmp" "$MANIFEST_FILE"
+    fi
+    echo "${APPNAME}|${VERSION}|${HOOKS_DIR}/on-exit_nbnotes.py||${TIMESTAMP}" >> "$MANIFEST_FILE"
+
+    tw_success "Installed ${APPNAME} v${VERSION}"
+    tw_msg "Try it: task <id> annotate nb:   (makes the task's note in tasknotes, and links it)"
+}
+
+remove() {
+    tw_msg "Removing ${APPNAME}..."
+    if [[ -f "${HOOKS_DIR}/on-exit_nbnotes.py" ]]; then
+        rm "${HOOKS_DIR}/on-exit_nbnotes.py"
+        tw_msg "Removed: on-exit_nbnotes.py"
+    fi
+    if [[ -f "$MANIFEST_FILE" ]]; then
+        grep -v "^${APPNAME}|" "$MANIFEST_FILE" > "${MANIFEST_FILE}.tmp" || true
+        mv "${MANIFEST_FILE}.tmp" "$MANIFEST_FILE"
+    fi
+    tw_success "Removed ${APPNAME}"
+    tw_msg "Note: nb notes and the tw.nb-plugin (nb-plugins) are untouched."
+}
+
+case "${1:-install}" in
+    install)          install ;;
+    remove|uninstall) remove  ;;
+    *) echo "Usage: $0 {install|remove}"; exit 1 ;;
+esac
