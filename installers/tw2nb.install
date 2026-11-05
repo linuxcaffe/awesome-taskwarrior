@@ -4,11 +4,11 @@ set -euo pipefail
 
 # ============================================================================
 # tw2nb - Standalone Installer
-# Version: 1.4.3
+# Version: 1.5.0
 #
 # Installs:
 #   ~/.task/hooks/on-modify_tw2nb.py
-#   ~/.task/hooks/on-exit_tw2nb.py   (mirrors status into nb tw tasknotes)
+#   (1.5.0: on-exit_tw2nb.py is gone: task notes are the nbnotes app's, tw -I nbnotes)
 #   ~/.task/scripts/tw2nb_lib.py
 #   ~/.task/scripts/tw2nb-retro
 #   ~/.task/scripts/tw-runtime.sh    (from tw-lib, if available)
@@ -18,7 +18,7 @@ set -euo pipefail
 # removed here, so an installed (or symlinked dev) copy is left alone.
 # ============================================================================
 
-VERSION="1.4.3"
+VERSION="1.5.0"
 APPNAME="tw2nb"
 
 RED='\033[0;31m'
@@ -55,9 +55,14 @@ install() {
     chmod +x "${HOOKS_DIR}/on-add_tw2nb.py"
     tw_msg "Installed: ${HOOKS_DIR}/on-add_tw2nb.py"
 
-    cp "${SCRIPT_DIR}/on-exit_tw2nb.py" "${HOOKS_DIR}/on-exit_tw2nb.py"
-    chmod +x "${HOOKS_DIR}/on-exit_tw2nb.py"
-    tw_msg "Installed: ${HOOKS_DIR}/on-exit_tw2nb.py"
+    # 1.5.0: making and updating task notes (the old on-exit_tw2nb.py) is nbnotes' job now
+    if [[ -f "${HOOKS_DIR}/on-exit_tw2nb.py" ]]; then
+        rm "${HOOKS_DIR}/on-exit_tw2nb.py"
+        tw_msg "Removed: on-exit_tw2nb.py (task notes are the nbnotes app's now)"
+    fi
+    if [[ ! -f "${HOOKS_DIR}/on-exit_nbnotes.py" ]]; then
+        tw_msg "NOTE: a bare nb: annotation makes the task's note only with nbnotes: tw -I nbnotes"
+    fi
 
     # Shared library
     cp "${SCRIPT_DIR}/tw2nb_lib.py" "${SCRIPTS_DIR}/tw2nb_lib.py"
@@ -79,7 +84,7 @@ install() {
         tw_msg "NOTE: tw-runtime.sh not found — install awesome-taskwarrior first"
     fi
 
-    # nb plugins (only if nb is present). tw2nb installs none: they're nb-plugins' (1.4.3: it
+    # nb plugins (only if nb is present). tw2nb installs none: they're nb-plugins' (1.5.0: it
     # copied plugins/grep.nb-plugin, which `tw -u` never downloads, so set -e failed the update
     # wherever grep wasn't installed yet; tw2nb never used grep). The one it needs, it names.
     NB_PLUGINS_DIR="${NB_DIR:-${HOME}/.nb}/.plugins"
@@ -120,7 +125,6 @@ install() {
     fi
     echo "${APPNAME}|${VERSION}|${HOOKS_DIR}/on-modify_tw2nb.py||${TIMESTAMP}"    >> "$MANIFEST_FILE"
     echo "${APPNAME}|${VERSION}|${HOOKS_DIR}/on-add_tw2nb.py||${TIMESTAMP}"      >> "$MANIFEST_FILE"
-    echo "${APPNAME}|${VERSION}|${HOOKS_DIR}/on-exit_tw2nb.py||${TIMESTAMP}"     >> "$MANIFEST_FILE"
     echo "${APPNAME}|${VERSION}|${SCRIPTS_DIR}/tw2nb_lib.py||${TIMESTAMP}"      >> "$MANIFEST_FILE"
     echo "${APPNAME}|${VERSION}|${SCRIPTS_DIR}/tw2nb-retro||${TIMESTAMP}"       >> "$MANIFEST_FILE"
     echo "${APPNAME}|${VERSION}|${CONFIG_DIR}/tw2nb.rc||${TIMESTAMP}"           >> "$MANIFEST_FILE"
