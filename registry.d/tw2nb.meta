@@ -2,7 +2,7 @@
 # Archives Taskwarrior task events (done, log, delete, annotate) to nb as todos and running journal entries. Works with nb tw tasknotes: the tasknote is the archive and gets the task's status; a bare `nb:` annotation (or `nb: <notebook>:`) asks for the task's note, made at once.
 
 name=tw2nb
-version=1.4.2
+version=1.4.3
 type=hook
 description=Archives Taskwarrior task events (done, log, delete, annotate) to nb as todos and running journal entries. Works with nb tw tasknotes: the tasknote is the archive and gets the task's status; a bare `nb:` annotation (or `nb: <notebook>:`) asks for the task's note, made at once.
 repo=https://github.com/linuxcaffe/tw2nb
@@ -10,7 +10,7 @@ base_url=https://raw.githubusercontent.com/linuxcaffe/tw2nb/master
 files=on-add_tw2nb.py:hook,on-modify_tw2nb.py:hook,on-exit_tw2nb.py:hook,tw2nb_lib.py:script,tw2nb-retro:script,tw2nb.rc:config,README.md:doc
 tags=nb, archive, journal, notes, completed, hook
 
-checksums=ffd140a0c4e3eb0508a110fc7d48dc544a4d45aa6bfe6e2039154363700c85fc,cebb0a0770d4f5d2ea6bba3b0cf8c9017f59df88e6913da08533acb2a4ea53d4,23031d6c2abfe5084278bd38e3f5899e1c0bae080f2316b094c4da8dcc3ea327,0875f540ead043c820f290d5ebf63df94d7f552be554ff309ed39dca4a9145f9,8e4f4837725594ecf2a734dd388f9da5efe67f40f3d32f2c5d78c2519be526d2,115cc409412fe132f71c4f6403c044128a8a727b8d08c1fdf188250fd2df6cf1,4eca847c09b14a04f5d560c73f019513ac7a27217da172469a4032649ec66498
+checksums=ffd140a0c4e3eb0508a110fc7d48dc544a4d45aa6bfe6e2039154363700c85fc,cebb0a0770d4f5d2ea6bba3b0cf8c9017f59df88e6913da08533acb2a4ea53d4,ffb0376915622009d8932194eda83a10e99967f8b65ee83da40d0d908edcded3,0875f540ead043c820f290d5ebf63df94d7f552be554ff309ed39dca4a9145f9,8e4f4837725594ecf2a734dd388f9da5efe67f40f3d32f2c5d78c2519be526d2,115cc409412fe132f71c4f6403c044128a8a727b8d08c1fdf188250fd2df6cf1,4eca847c09b14a04f5d560c73f019513ac7a27217da172469a4032649ec66498
 
 author=Designed by linuxcaffe, implemented by Claude Code
 license=MIT

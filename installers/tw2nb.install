@@ -4,7 +4,7 @@ set -euo pipefail
 
 # ============================================================================
 # tw2nb - Standalone Installer
-# Version: 1.4.2
+# Version: 1.4.3
 #
 # Installs:
 #   ~/.task/hooks/on-modify_tw2nb.py
@@ -13,13 +13,12 @@ set -euo pipefail
 #   ~/.task/scripts/tw2nb-retro
 #   ~/.task/scripts/tw-runtime.sh    (from tw-lib, if available)
 #   ~/.task/config/tw2nb.rc          (only if not already present)
-#   ~/.nb/.plugins/grep.nb-plugin    (only if nb is present and it isn't installed)
 #
 # tw.nb-plugin (nb tw, nb info) belongs to nb-plugins now: never copied or
 # removed here, so an installed (or symlinked dev) copy is left alone.
 # ============================================================================
 
-VERSION="1.4.2"
+VERSION="1.4.3"
 APPNAME="tw2nb"
 
 RED='\033[0;31m'
@@ -80,19 +79,15 @@ install() {
         tw_msg "NOTE: tw-runtime.sh not found — install awesome-taskwarrior first"
     fi
 
-    # nb plugin (only if nb is present)
-    NB_PLUGINS_DIR="${HOME}/.nb/.plugins"
+    # nb plugins (only if nb is present). tw2nb installs none: they're nb-plugins' (1.4.3: it
+    # copied plugins/grep.nb-plugin, which `tw -u` never downloads, so set -e failed the update
+    # wherever grep wasn't installed yet; tw2nb never used grep). The one it needs, it names.
+    NB_PLUGINS_DIR="${NB_DIR:-${HOME}/.nb}/.plugins"
     if command -v nb &>/dev/null; then
-        mkdir -p "$NB_PLUGINS_DIR"
-        # grep.nb-plugin's home is nb-plugins too: only fill a gap, never replace a
-        # (possibly newer) installed copy (1.3.1: tw -u was downgrading nb g)
-        if [[ ! -e "${NB_PLUGINS_DIR}/grep.nb-plugin" ]]; then
-            cp "${SCRIPT_DIR}/plugins/grep.nb-plugin" "${NB_PLUGINS_DIR}/grep.nb-plugin"
-            tw_msg "Installed: ${NB_PLUGINS_DIR}/grep.nb-plugin"
-        fi
         if [[ ! -e "${NB_PLUGINS_DIR}/tw.nb-plugin" ]]; then
-            tw_msg "NOTE: for task notes in nb (nb tw), install the tw.nb-plugin:"
-            tw_msg "  nb plugin install https://raw.githubusercontent.com/linuxcaffe/nb-plugins/main/tw.nb-plugin"
+            tw_msg "NOTE: task notes in nb (nb tw) need the nb-plugin tw; install it:"
+            tw_msg "  nb plugins install https://raw.githubusercontent.com/linuxcaffe/nb-plugins/main/tw.nb-plugin"
+            tw_msg "  (mobilize init offers it too)"
         fi
     else
         tw_msg "NOTE: nb not found — skipping nb plugins"
