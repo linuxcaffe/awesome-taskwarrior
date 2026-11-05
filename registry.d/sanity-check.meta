@@ -2,7 +2,7 @@
 # Interactively review and fix common Taskwarrior problems (overdue, stale deps, date conflicts) with hotkeys to select (configurable) options, or edit the task directly.
 
 name=sanity-check
-version=0.5.8
+version=0.6.1
 type=script
 description=Interactively review and fix common Taskwarrior problems (overdue, stale deps, date conflicts) with hotkeys to select (configurable) options, or edit the task directly.
 repo=https://github.com/linuxcaffe/tw-sanity-check

@@ -4,10 +4,10 @@ set -euo pipefail
 
 # ============================================================================
 # tw-sanity-check — Installer
-# Version: 0.5.7
+# Version: 0.6.1
 # ============================================================================
 
-VERSION="0.5.8"
+VERSION="0.6.1"
 APPNAME="sanity-check"
 BASE_URL="https://raw.githubusercontent.com/linuxcaffe/tw-sanity-check/master"
 
@@ -41,13 +41,15 @@ install() {
         tw_msg "Installed: ${CONFIG_DIR}/sanity.rc"
     fi
 
-    TASKRC="${HOME}/.taskrc"
-    if ! grep -q "sanity.rc" "$TASKRC" 2>/dev/null; then
-        echo "include ~/.task/config/sanity.rc" >> "$TASKRC"
-        tw_msg "Added include to .taskrc"
-    else
-        tw_msg "Config include already in .taskrc"
-    fi
+    # No include (0.6.1): sanity.rc is discrete (awesome-taskwarrior CONVENTIONS 7). sanity-check
+    # reads it itself, so an include only adds a way to stop `task` from starting. Take out one an
+    # older version added, from .taskrc or included.rc.
+    for rcfile in "${HOME}/.taskrc" "${CONFIG_DIR}/included.rc"; do
+        if grep -qE '^[[:space:]]*#?[[:space:]]*include[[:space:]].*/sanity\.rc([[:space:]]|$)' "$rcfile" 2>/dev/null; then
+            sed -i -E '\%^[[:space:]]*#?[[:space:]]*include[[:space:]].*/sanity\.rc([[:space:]]|$)%d' "$rcfile"
+            tw_msg "Took sanity.rc out of the include chain: sanity-check reads its own settings"
+        fi
+    done
 
     TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     if [[ -f "$MANIFEST_FILE" ]]; then
@@ -72,10 +74,12 @@ remove() {
     done
     grep -v "^${APPNAME}|" "$MANIFEST_FILE" > "${MANIFEST_FILE}.tmp" || true
     mv "${MANIFEST_FILE}.tmp" "$MANIFEST_FILE"
-    TASKRC="${HOME}/.taskrc"
-    grep -q "sanity.rc" "$TASKRC" 2>/dev/null \
-        && sed -i "/sanity.rc/d" "$TASKRC" \
-        && tw_msg "Removed config include from .taskrc"
+    for rcfile in "${HOME}/.taskrc" "${CONFIG_DIR}/included.rc"; do
+        if grep -qE '^[[:space:]]*#?[[:space:]]*include[[:space:]].*/sanity\.rc([[:space:]]|$)' "$rcfile" 2>/dev/null; then
+            sed -i -E '\%^[[:space:]]*#?[[:space:]]*include[[:space:]].*/sanity\.rc([[:space:]]|$)%d' "$rcfile"
+            tw_msg "Removed include of sanity.rc from $(basename "$rcfile")"
+        fi
+    done
     tw_success "Removed ${APPNAME}"
 }
 

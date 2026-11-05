@@ -4,7 +4,7 @@ set -euo pipefail
 
 # ============================================================================
 # tw2nb - Standalone Installer
-# Version: 1.4.0
+# Version: 1.4.2
 #
 # Installs:
 #   ~/.task/hooks/on-modify_tw2nb.py
@@ -19,7 +19,7 @@ set -euo pipefail
 # removed here, so an installed (or symlinked dev) copy is left alone.
 # ============================================================================
 
-VERSION="1.4.0"
+VERSION="1.4.2"
 APPNAME="tw2nb"
 
 RED='\033[0;31m'
@@ -107,8 +107,15 @@ install() {
         tw_msg "EDIT ${CONFIG_DIR}/tw2nb.rc to set your nb notebook names."
     fi
 
-    # No .taskrc include (1.4.0): the hooks read ~/.task/config/tw2nb.rc themselves, and an
-    # include put tw2nb's keys into every `task` run for nothing (djp removed it after 1.3.1).
+    # No include (1.4.0): tw2nb.rc is discrete (CONVENTIONS 7): the hooks read it themselves, and
+    # an include only adds a way to stop `task` from starting. Take out one an older version (or a
+    # hand repair) left in .taskrc or included.rc (1.4.1).
+    for rcfile in "${HOME}/.taskrc" "${CONFIG_DIR}/included.rc"; do
+        if grep -qE '^[[:space:]]*#?[[:space:]]*include[[:space:]].*/tw2nb\.rc([[:space:]]|$)' "$rcfile" 2>/dev/null; then
+            sed -i -E '\%^[[:space:]]*#?[[:space:]]*include[[:space:]].*/tw2nb\.rc([[:space:]]|$)%d' "$rcfile"
+            tw_msg "Took tw2nb.rc out of the include chain: tw2nb reads its own settings"
+        fi
+    done
 
     # Manifest
     TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -156,11 +163,12 @@ remove() {
     grep -v "^${APPNAME}|" "$MANIFEST_FILE" > "${MANIFEST_FILE}.tmp" || true
     mv "${MANIFEST_FILE}.tmp" "$MANIFEST_FILE"
 
-    TASKRC="${HOME}/.taskrc"
-    if grep -q "tw2nb.rc" "$TASKRC" 2>/dev/null; then
-        sed -i "/tw2nb.rc/d" "$TASKRC"
-        tw_msg "Removed config include from .taskrc"
-    fi
+    for rcfile in "${HOME}/.taskrc" "${CONFIG_DIR}/included.rc"; do
+        if grep -qE '^[[:space:]]*#?[[:space:]]*include[[:space:]].*/tw2nb\.rc([[:space:]]|$)' "$rcfile" 2>/dev/null; then
+            sed -i -E '\%^[[:space:]]*#?[[:space:]]*include[[:space:]].*/tw2nb\.rc([[:space:]]|$)%d' "$rcfile"
+            tw_msg "Removed include of tw2nb.rc from $(basename "$rcfile")"
+        fi
+    done
 
     tw_success "Removed ${APPNAME}"
     tw_msg "Note: nb notebooks, notes and the tw.nb-plugin (nb-plugins) are untouched."

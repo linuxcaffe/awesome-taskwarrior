@@ -2,7 +2,7 @@
 # Calendar and grep plugins for nb and a task hook
 
 name=nb-plugins
-version=1.2.0
+version=1.2.1
 type=hook
 description=Calendar and grep plugins for nb and a task hook
 repo=https://github.com/linuxcaffe/nb-plugins
@@ -10,7 +10,7 @@ base_url=https://raw.githubusercontent.com/linuxcaffe/nb-plugins/main
 files=README.md:doc
 tags=nb, cal, grep, plugins, hook
 
-checksums=87e3b18351e7c48bd460d303b15b422474061c5ae3321e07370e0e91cfac10ac
+checksums=e5b0c3bbfdf6bb577e864f3bf7fe0d699444938aa6affe211cdd8e45aff3e849
 
 author=linuxcaffe + claude 4.6
 license=MIT
