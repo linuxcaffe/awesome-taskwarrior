@@ -11,6 +11,16 @@ A unified wrapper for Taskwarrior that provides:
 - Checksum verification
 - Dev mode indicator for local development
 
+Updates in v2.22.0:
+- Fixed: a manifest merged by gittw (union: both stations' lines kept) listed an app at two
+  versions when two stations updated it (tw2nb on s5 and yoga, 2026-11-04). tw now reads it
+  settled, the newer version's lines (by their date) and each line once, rewrites it, and says so
+- Changed: tw -I/-u/-r pull a gittw-shared ~/.task first (gittw pull), so a station changes the
+  latest manifest; a failed pull goes on with this station's copy
+- Added: tw.update_station = <gittw.device> (a shared rc key) names the one station that installs
+  and updates; on another, tw -I/-u/-r say so and ask (refuse without a terminal). Not tw itself
+- Tests: tests/test_tw_shared_station.py
+
 Updates in v2.21.1:
 - Changed: tw -u tw (or awesome-taskwarrior) says tw updates by re-running install.sh, with the
   curl line, instead of "Not installed"
@@ -280,7 +290,7 @@ import tempfile
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 
-VERSION = "2.21.1"
+VERSION = "2.22.0"
 
 # GitHub configuration
 GITHUB_REPO = "linuxcaffe/awesome-taskwarrior"
@@ -1309,6 +1319,7 @@ class Manifest:
         self.manifest_path = Path(manifest_path)
         self.entries = []
         self.portable_on_disk = True     # every line already written the portable way
+        self.settled = {}                # what _settle dropped from a merged manifest
         self._load()
     
     def _load(self):
@@ -1332,6 +1343,33 @@ class Manifest:
                         'checksum': parts[3],
                         'date': parts[4]
                     })
+        self.settled = self._settle()
+
+    def _settle(self):
+        """gittw merges the manifest with git's union rule (both stations' lines kept), so two
+        stations updating one app leave both versions' lines (s5 and yoga, tw2nb, 2026-11-04).
+        Keep the newer version's (by the date on its lines) and each line once. Returns
+        {app: (kept version, [dropped versions])}; the file is rewritten by normalize()."""
+        newest = {}
+        for e in self.entries:
+            if e['app'] not in newest or e['date'] > newest[e['app']]['date']:
+                newest[e['app']] = e
+        keep, seen, dropped = [], set(), {}
+        for e in self.entries:
+            kept = newest[e['app']]['version']
+            if e['version'] != kept:
+                dropped.setdefault(e['app'], (kept, set()))[1].add(e['version'])
+                continue
+            if (e['app'], e['file']) in seen:
+                dropped.setdefault(e['app'], (kept, set()))
+                continue
+            seen.add((e['app'], e['file']))
+            keep.append(e)
+        if len(keep) == len(self.entries):
+            return {}
+        self.entries = keep
+        self.portable_on_disk = False          # normalize() writes it back
+        return {app: (v, sorted(old)) for app, (v, old) in dropped.items()}
     
     def add(self, app, version, file_path, checksum=''):
         """Add an entry to the manifest"""
@@ -1465,18 +1503,81 @@ def _repair_after_remove(paths, app_name):
         print(f"[tw] [!] Commented out an include whose file is gone: {item}")
 
 
+def _shared_station_ok(app_manager, action, app_name, dry_run=False):
+    """tw -I/-u/-r on a shared ~/.task: the update station only (or asked), then pull first.
+    Not for tw itself (it updates by re-running install.sh) or a dry run."""
+    if dry_run or app_name in ('tw', 'awesome-taskwarrior'):
+        return True
+    if not app_manager.may_change_here(action, app_name):
+        return False
+    app_manager.pull_shared()
+    return True
+
+
 class AppManager:
     """Manages application installation, removal, and updates"""
     
     def __init__(self, paths):
         self.paths = paths
         self.manifest = Manifest(paths.manifest_file)
+        self._normalize_manifest()
+        self.registry = RegistryManager(paths)
+        self.rc = TaskRC()
+
+    def _normalize_manifest(self):
+        """Write the manifest back when it was read settled or not portable; say what settled."""
         try:
             self.manifest.normalize()
         except OSError:
-            pass
-        self.registry = RegistryManager(paths)
-        self.rc = TaskRC()
+            return
+        for app, (kept, old) in self.manifest.settled.items():
+            was = f" was listed at {', '.join(old)} and {kept}" if old else ' had lines listed twice'
+            print(f"[tw] Manifest: {app}{was} (two stations' installs merged by gittw); kept v{kept}")
+
+    def pull_shared(self):
+        """Before tw -I/-u/-r on a ~/.task shared by gittw: pull, so this station changes the
+        latest manifest (s5 updated tw2nb from one older than yoga's, 2026-11-04). True when it
+        pulled; a failed pull goes on with this station's copy."""
+        task = self.paths.task_dir
+        if not (task / '.git').exists():
+            return False
+        own = task / 'scripts' / 'gittw'
+        gittw = str(own) if os.access(own, os.X_OK) else shutil.which('gittw')
+        if not gittw:
+            return False
+        print("[tw] Pulling ~/.task first (gittw pull), to work on the latest manifest")
+        try:
+            r = subprocess.run([gittw, 'pull'], capture_output=True, text=True, timeout=180,
+                               stdin=subprocess.DEVNULL)
+        except (OSError, subprocess.SubprocessError):
+            r = None
+        if r is None or r.returncode != 0:
+            lines = ((r.stderr or r.stdout) if r else '').strip().splitlines()
+            why = lines[-1] if lines else "it didn't run"
+            print(f"[tw] [!] gittw pull failed ({why}); going on with this station's copy")
+            return False
+        self.manifest = Manifest(self.paths.manifest_file)
+        self._normalize_manifest()
+        return True
+
+    def may_change_here(self, action, app_name):
+        """tw.update_station (a shared rc key) names the one station that installs and updates;
+        the others get it through gittw (djp 2026-11-05). Elsewhere (gittw.device): say so, ask at
+        a terminal, refuse without one. Unset, or an unnamed station: go ahead."""
+        chosen = self._rc_value('tw.update_station')
+        here = self._rc_value('gittw.device')
+        if not chosen or not here or chosen == here:
+            return True
+        print(f"[tw] [!] {chosen} is the station that installs and updates (tw.update_station); this is {here}.")
+        print(f"[tw]     ~/.task is shared: run tw there, and {here} gets it with gittw sync.")
+        if not sys.stdin.isatty():
+            print(f"[tw] Not going to {action} {app_name} here without a terminal to ask.")
+            return False
+        try:
+            answer = input(f"[tw] {action.capitalize()} {app_name} on {here} anyway? [y/N]: ")
+        except EOFError:
+            answer = ''
+        return answer.strip().lower() == 'y'
     
     def _installer_env(self, dry_run=False):
         """What an installer is told: where everything goes."""
@@ -4354,6 +4455,8 @@ def main():
         # Tag filter applies to install
         if tag_filter:
             print(f"[tw] Note: Tag filtering not implemented for --install yet")
+        if not _shared_station_ok(app_manager, 'install', args.install, args.dry_run):
+            return 1
         return 0 if app_manager.install(args.install, dry_run=args.dry_run) else 1
     
     if args.remove:
@@ -4361,6 +4464,8 @@ def main():
         # Tag filter applies to remove
         if tag_filter:
             print(f"[tw] Note: Tag filtering not implemented for --remove yet")
+        if not _shared_station_ok(app_manager, 'remove', args.remove):
+            return 1
         return 0 if app_manager.remove(args.remove) else 1
     
     if args.update:
@@ -4368,6 +4473,8 @@ def main():
         # Tag filter applies to update
         if tag_filter:
             print(f"[tw] Note: Tag filtering not implemented for --update yet")
+        if not _shared_station_ok(app_manager, 'update', args.update):
+            return 1
         return 0 if app_manager.update(args.update) else 1
     
     if args.list:
