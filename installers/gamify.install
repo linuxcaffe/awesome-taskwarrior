@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ============================================================================
+# gamify - Installer Script
+# Version: 0.1.0
+#
+# HANDCRAFTED — do not overwrite with make-awesome.py --install
+# Adds a merge=union line for the ledger to ~/.task/.gitattributes and registers the
+# wrapper keyword. Keeps gamify.rc and the ledger, your score, across tw -u.
+# Run beside its files, it installs those; otherwise it fetches them.
+# ============================================================================
+
+VERSION="0.1.0"
+APPNAME="gamify"
+BASE_URL="https://raw.githubusercontent.com/linuxcaffe/tw-gamify-hook/master"
+
+GREEN='\033[0;32m'; RED='\033[0;31m'; BLUE='\033[0;34m'; NC='\033[0m'
+tw_msg() { echo -e "${BLUE}[tw]${NC} $*"; }
+tw_success() { echo -e "${GREEN}[tw] [OK]${NC} $*"; }
+tw_error() { echo -e "${RED}[tw] [FAIL]${NC} $*" >&2; }
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TASK_DIR="${TW_TASK_DIR:-$HOME/.task}"
+HOOKS_DIR="$TASK_DIR/hooks"
+SCRIPTS_DIR="$TASK_DIR/scripts"
+CONFIG_DIR="$TASK_DIR/config"
+DOCS_DIR="$TASK_DIR/docs"
+MANIFEST_FILE="$CONFIG_DIR/.tw_manifest"
+WRAPPERS_FILE="$CONFIG_DIR/.tw_wrappers"
+ATTRS="$TASK_DIR/.gitattributes"
+ATTR_LINE="config/gamify-ledger.jsonl merge=union"
+HOOKS="on-add_zz-gamify.sh on-modify_zz-gamify.sh on-launch_gamify.sh"
+
+fetch() {
+    if [ -f "$HERE/$1" ] && [ "$HERE/$1" != "$2" ]; then
+        cp "$HERE/$1" "$2"
+    else
+        curl -fsSL "$BASE_URL/$1" -o "$2" || { tw_error "Failed to download $1"; return 1; }
+    fi
+}
+
+install() {
+    tw_msg "Installing gamify v$VERSION..."
+    mkdir -p "$HOOKS_DIR" "$SCRIPTS_DIR" "$CONFIG_DIR" "$DOCS_DIR"
+
+    # The command first: the hooks pass tasks through untouched until it's there
+    fetch gamify "$SCRIPTS_DIR/gamify"
+    chmod +x "$SCRIPTS_DIR/gamify"
+    for hook in $HOOKS; do
+        fetch "$hook" "$HOOKS_DIR/$hook"
+        chmod +x "$HOOKS_DIR/$hook"
+    done
+
+    if [ -f "$CONFIG_DIR/gamify.rc" ]; then
+        fetch gamify.rc "$CONFIG_DIR/gamify.rc.new"
+        if cmp -s "$CONFIG_DIR/gamify.rc" "$CONFIG_DIR/gamify.rc.new"; then
+            rm -f "$CONFIG_DIR/gamify.rc.new"
+        else
+            tw_msg "Kept your gamify.rc; the new defaults are in gamify.rc.new"
+        fi
+    else
+        fetch gamify.rc "$CONFIG_DIR/gamify.rc"
+    fi
+    fetch README.md "$DOCS_DIR/gamify_README.md" || true
+
+    # Two stations each add to the ledger: a merge keeps both sides' lines
+    if [ -d "$TASK_DIR/.git" ] && ! grep -qxF "$ATTR_LINE" "$ATTRS" 2>/dev/null; then
+        { echo "# gamify: the ledger keeps both stations' entries; a repeated entry counts once"
+          echo "$ATTR_LINE"; } >> "$ATTRS"
+        tw_msg "Ledger merges as a union: $ATTRS"
+    fi
+
+    if ! grep -q "^gamify|" "$WRAPPERS_FILE" 2>/dev/null; then
+        echo "gamify|gamify|gamify: the board (gamify), the ledger (gamify log), prizes (gamify shop)|command" >> "$WRAPPERS_FILE"
+    fi
+
+    # Listed files go on remove; the settings and the ledger aren't listed, so they stay
+    local stamp file
+    stamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    [ -f "$MANIFEST_FILE" ] && sed -i.bak "/^$APPNAME|/d" "$MANIFEST_FILE"
+    for file in "$SCRIPTS_DIR/gamify" "$HOOKS_DIR/on-add_zz-gamify.sh" "$HOOKS_DIR/on-modify_zz-gamify.sh" \
+                "$HOOKS_DIR/on-launch_gamify.sh" "$DOCS_DIR/gamify_README.md"; do
+        echo "$APPNAME|$VERSION|$file||$stamp" >> "$MANIFEST_FILE"
+    done
+
+    tw_success "Installed gamify v$VERSION"
+    tw_msg "Your next task action starts the game. Try: gamify    Settings: gamify -e"
+}
+
+remove() {
+    tw_msg "Removing gamify..."
+    if [ -f "$MANIFEST_FILE" ]; then
+        grep "^$APPNAME|" "$MANIFEST_FILE" | cut -d"|" -f3 | while read -r file; do
+            rm -f "$file"
+        done
+        sed -i.bak "/^$APPNAME|/d" "$MANIFEST_FILE"
+    fi
+    rm -f "$TASK_DIR/logs/gamify-snapshot.json" "$TASK_DIR/logs/gamify.stamp" \
+          "$TASK_DIR/logs/gamify-recap.txt" "$TASK_DIR/logs/gamify.lock"
+    [ -f "$WRAPPERS_FILE" ] && sed -i.bak "/^gamify|/d" "$WRAPPERS_FILE"
+    tw_msg "Kept: $CONFIG_DIR/gamify.rc and $CONFIG_DIR/gamify-ledger.jsonl (your score)"
+    tw_success "Removed gamify"
+}
+
+case "${1:-install}" in
+    install) install ;;
+    remove|uninstall) remove ;;
+    *) echo "Usage: $0 {install|remove}"; exit 1 ;;
+esac
