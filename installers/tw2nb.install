@@ -4,7 +4,7 @@ set -euo pipefail
 
 # ============================================================================
 # tw2nb - Standalone Installer
-# Version: 1.5.0
+# Version: 1.5.1
 #
 # Installs:
 #   ~/.task/hooks/on-modify_tw2nb.py
@@ -18,7 +18,7 @@ set -euo pipefail
 # removed here, so an installed (or symlinked dev) copy is left alone.
 # ============================================================================
 
-VERSION="1.5.0"
+VERSION="1.5.1"
 APPNAME="tw2nb"
 
 RED='\033[0;31m'
@@ -84,18 +84,10 @@ install() {
         tw_msg "NOTE: tw-runtime.sh not found — install awesome-taskwarrior first"
     fi
 
-    # nb plugins (only if nb is present). tw2nb installs none: they're nb-plugins' (1.5.0: it
-    # copied plugins/grep.nb-plugin, which `tw -u` never downloads, so set -e failed the update
-    # wherever grep wasn't installed yet; tw2nb never used grep). The one it needs, it names.
-    NB_PLUGINS_DIR="${NB_DIR:-${HOME}/.nb}/.plugins"
-    if command -v nb &>/dev/null; then
-        if [[ ! -e "${NB_PLUGINS_DIR}/tw.nb-plugin" ]]; then
-            tw_msg "NOTE: task notes in nb (nb tw) need the nb-plugin tw; install it:"
-            tw_msg "  nb plugins install https://raw.githubusercontent.com/linuxcaffe/nb-plugins/main/tw.nb-plugin"
-            tw_msg "  (mobilize init offers it too)"
-        fi
-    else
-        tw_msg "NOTE: nb not found — skipping nb plugins"
+    # No nb-plugin: tw2nb calls nb itself (1.5.1). Task notes, which need the nb-plugin tw, are
+    # nbnotes' since 1.5.0, and its installer installs that plugin.
+    if ! command -v nb &>/dev/null; then
+        tw_msg "NOTE: nb not found: tw2nb archives nothing until it is"
     fi
 
     # Config (never overwrite existing)
