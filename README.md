@@ -237,13 +237,14 @@ Run `tw -l` to see the current registry, or browse:
 - [agenda-edate](https://github.com/linuxcaffe/tw-agenda-hook) v1.0.0 — Creates an "effective date" from `due`, `sched`, `wait`, and `until`; adds agenda reports
 - [deps-mgmt](https://github.com/linuxcaffe/tw-deps-mgmt-hook) v0.2.0 — Manage completion and deletion of tasks with dependencies; display dependency trees
 - [hledger-add](https://github.com/linuxcaffe/tw-hledger-add-hook) v0.1.0 — Fires `hledger add` interactively when a transaction-tagged task is completed
+- [nbnotes](https://github.com/linuxcaffe/tw-nbnotes-hook) v1.0.1 — Task notes in nb: a bare `nb:` annotation gets the task its note; a linked note keeps the task's status ([how it fits together](https://github.com/linuxcaffe/tw-mobilize/blob/main/docs/task-notes.md))
 - [need-priority](https://github.com/linuxcaffe/tw-need_priority-hook) v0.4.6 — Replaces `pri:H/M/L` with `pri:1–6` based on Maslow's Human Needs hierarchy
 - [recurrence-overhaul](https://github.com/linuxcaffe/tw-recurrence_overhaul-hook) v2.7.4 — Replaces native recurrence with periodic and chain-type patterns supporting `due`, `sched`, `wait`, and `until`
 - [smart-nag](https://github.com/linuxcaffe/tw-smart-nag-hook) v1.0.0 — Dynamically generated nag messages based on configurable task conditions
 - [subtask](https://github.com/linuxcaffe/tw-subtask-hook) v1.2.4 — Activates `- [ ] …` annotations as real dependent tasks when a parent task is started
 - [timelog](https://github.com/linuxcaffe/tw-timelog-hook) v2.0.1 — Records task start/stop times to an hledger-compatible timeclock file
 - [tod-filter](https://github.com/linuxcaffe/tod-filter) v0.1.2 — Defines time-of-day blocks and applies matching tag filters automatically
-- [tw2nb](https://github.com/linuxcaffe/tw2nb) v0.1.0 — Archives completed/deleted task events to nb as todos and running journal entries
+- [tw2nb](https://github.com/linuxcaffe/tw2nb) v1.5.1 — Archives completed/deleted task events to nb as todos and running journal entries
 - [wikitags](https://github.com/linuxcaffe/tw-wikitags-hook) v1.0.0 — Allows `:tag:` wiki-style inline tags when adding tasks
 
 ### Wrappers
