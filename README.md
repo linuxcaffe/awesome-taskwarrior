@@ -275,7 +275,7 @@ Run `tw -l` to see the current registry, or browse:
 - [tw-tui](https://github.com/linuxcaffe/tw-tui) v25.4-tw26 — Terminal UI for Taskwarrior 2.6.x: a fork of taskwarrior-tui pinned to the last version for Taskwarrior 2
 - [tw-web](https://github.com/linuxcaffe/tw-web) v2.0.0 — A web and phone app for Taskwarrior 2.6.2: List, Kanban, Agenda and Calendar, installable as a PWA, updated in place by tw -u
 - [urgency-tweaker](https://github.com/linuxcaffe/urgency-tweaker) v1.0.0 — A terminal app to understand and tune your urgency coefficients
-- [vit](https://github.com/linuxcaffe/vit) v1.4.7 — Full-screen terminal interface for Taskwarrior 2.6.x with Vim key bindings (VIT 1.x, Perl/Curses)
+- [vit](https://github.com/linuxcaffe/vit) v1.4.8 — Full-screen terminal interface for Taskwarrior 2.6.x with Vim key bindings (VIT 1.x, Perl/Curses)
 
 <!-- /extensions -->
 
