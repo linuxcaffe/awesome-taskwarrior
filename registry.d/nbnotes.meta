@@ -10,7 +10,7 @@ base_url=https://raw.githubusercontent.com/linuxcaffe/tw-nbnotes-hook/main
 files=on-exit_nbnotes.py:hook,README.md:doc
 tags=nb, notes, tasknotes, hook
 
-checksums=dfa5b0d8326399f84480fb0e4bf35ea09186529b79d58f5bb43d1e92e4b78da2,aa40874e05c29144e9c29a997414fbe07d5a54ef279e23e4e1cb0e989c775232
+checksums=dfa5b0d8326399f84480fb0e4bf35ea09186529b79d58f5bb43d1e92e4b78da2,fb08feb28d0c18449a40e31abd828fbc9c81e5278c0c72a10f21d151cf83d905
 
 author=Designed by linuxcaffe, implemented by Claude Code
 license=MIT

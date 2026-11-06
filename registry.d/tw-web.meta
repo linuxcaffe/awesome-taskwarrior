@@ -10,7 +10,7 @@ base_url=https://raw.githubusercontent.com/linuxcaffe/tw-web/main
 files=README.md:doc
 tags=web,ui,pwa,gui,android,termux,calendar,kanban,agenda
 
-checksums=f26fc04a6a53524de01c04bdef533f638b97e37c840f88ec203d2841f8f17e6c
+checksums=6bb88746e69faee873957c83e7d4dfd54f402c763a6e34d0a1d625d8845c4d1a
 
 author=linuxcaffe + Claude
 license=MIT

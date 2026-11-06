@@ -10,7 +10,7 @@ base_url=https://raw.githubusercontent.com/linuxcaffe/nb-plugins/main
 files=README.md:doc
 tags=nb, cal, grep, plugins, hook
 
-checksums=6e27c7f882b3d3ed2abbb5c09b62d41745d7a5c087e670a5f786ac70c4ca8c40
+checksums=f9c652d34fed89f20cd2ee8da6f2d3370557fe05a7ce42558ce53ee622df239f
 
 author=linuxcaffe + claude 4.6
 license=MIT

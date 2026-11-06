@@ -256,7 +256,7 @@ Run `tw -l` to see the current registry, or browse:
 
 ### Wrappers
 
-- [annn](https://github.com/linuxcaffe/tw-ann-hook) v0.8.0 — Opens a task's annotations in your editor: add, list, label or remove them with short commands
+- [annn](https://github.com/linuxcaffe/annnotate) v0.8.0 — Opens a task's annotations in your editor: add, list, label or remove them with short commands
 - [deps-mgmt](https://github.com/linuxcaffe/tw-deps-mgmt-hook) v0.3.0 — Manages finishing and deleting tasks that have dependencies, and shows dependency trees
 - [events](https://github.com/linuxcaffe/tw-events) v0.4.0 — Puts the calendar's non-task entries into Taskwarrior as holidays: public holidays, moon phases, seasons, clock changes and your own events
 - [mobilize](https://github.com/linuxcaffe/tw-mobilize) v0.10.3 — Sets up a station (an Android phone in Termux, or Linux) from your gittw repo, with tw-web, m-sync and task notes

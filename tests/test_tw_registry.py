@@ -311,3 +311,34 @@ def test_verify_says_when_versions_differ(home, capsys):
 def test_help_topics_keep_their_indentation():
     assert '\n    tw> exec ls -la\n' in tw.HELP_TOPICS['shell']
     assert '\n     manifest says the installer put them' in tw.HELP_TOPICS['verify']
+
+
+# ── checksums against the app repos on this machine (djp 2026-11-05) ─────────
+# Five READMEs were edited without their .meta's checksums=, so tw -I/-u of tw-web, tw2nb,
+# nb-plugins, nbnotes and mobilize said "Checksum mismatch" until it was caught. tw checks each file
+# it downloads (base_url) against checksums=, in files= order. Where the app's repo is checked out
+# in ~/dev (the one whose .meta matches name=), its files must match. Apps not here are skipped.
+
+def _app_repo(name):
+    for meta in (Path.home() / 'dev').glob(f'*/{name}.meta'):
+        if meta.parent.name != 'awesome-taskwarrior':
+            return meta.parent
+    return None
+
+
+def test_registry_checksums_match_the_app_repos_here():
+    ma = load_make_awesome()
+    stale = []
+    for meta in sorted((ROOT / 'registry.d').glob('*.meta')):
+        f = ma._meta_fields(meta.read_text())
+        repo = _app_repo(f.get('name') or meta.stem)
+        if repo is None or not f.get('checksums'):
+            continue
+        files = [e.split(':')[0] for e in f.get('files', '').split(',') if e]
+        sums = [s.strip() for s in f['checksums'].split(',')]
+        for name, want in zip(files, sums):
+            path = repo / name
+            if path.is_file() and hashlib.sha256(path.read_bytes()).hexdigest() != want:
+                stale.append(f'{meta.stem}: {name}')
+    assert not stale, ("checksums= doesn't match the file tw will download; fix the app's .meta "
+                       "(make-awesome --push does it) and the registry's copy: " + ', '.join(stale))

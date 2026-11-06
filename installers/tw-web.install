@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ============================================================================
 # tw-web - Installer Script (hand-written)
-# A git clone of tw-web (Codeberg, else GitHub) in ~/.local/share/tw-web, with its Python packages.
+# A git clone of tw-web (GitHub, else Codeberg) in ~/.local/share/tw-web, with its Python packages.
 # A station whose local.rc names a checkout (tw-web.dir, or mobilize.web.dir) uses that one and never
 # touches it: that's a development copy, and maybe the live server.
 #
@@ -15,7 +15,8 @@ set -euo pipefail
 VERSION="2.0.0"
 APPNAME="tw-web"
 BASE_URL="https://raw.githubusercontent.com/linuxcaffe/tw-web/main"
-REPOS=("https://codeberg.org/linuxcaffe/tw-web.git" "https://github.com/linuxcaffe/tw-web.git")
+# GitHub first: everything public lives there; Codeberg is the backup (djp 2026-11-05)
+REPOS=("https://github.com/linuxcaffe/tw-web.git" "https://codeberg.org/linuxcaffe/tw-web.git")
 MODULES="flask, flask_cors, flask_sock, tabulate"
 
 RED='\033[0;31m'
@@ -68,14 +69,14 @@ clone() {
         fi
         tw_msg "${repo} didn't answer"
     done
-    tw_error "Couldn't clone tw-web from Codeberg or GitHub (offline?)"
+    tw_error "Couldn't clone tw-web from GitHub or Codeberg (offline?)"
     return 1
 }
 
 # update DIR: fast-forward a clone of ours on a clean main; 0 also when it's left as it is.
 # Sets REQS_CHANGED when requirements.txt changed.
 update() {
-    local dir="$1" branch before repo
+    local dir="$1" branch before repo origin pulled=
     branch=$(git -C "$dir" rev-parse --abbrev-ref HEAD)
     if [[ "$branch" != main ]]; then
         tw_msg "${dir} is on ${branch}, not main: not updated"; return 0
@@ -85,10 +86,14 @@ update() {
     fi
     before=$(git -C "$dir" rev-parse HEAD)
     if ! "${GIT[@]}" -C "$dir" pull -q --ff-only; then
-        repo="${REPOS[1]}"
-        tw_msg "its remote didn't answer; trying ${repo}"
-        "${GIT[@]}" -C "$dir" pull -q --ff-only "$repo" main \
-            || { tw_msg "not updated (offline, or not a fast-forward)"; return 0; }
+        # the other mirror: a clone from Codeberg (older stations) falls back to GitHub, and back
+        origin=$(git -C "$dir" remote get-url origin 2>/dev/null || true)
+        for repo in "${REPOS[@]}"; do
+            [[ "$repo" == "$origin" || "$repo" == "${origin}.git" ]] && continue
+            tw_msg "its remote didn't answer; trying ${repo}"
+            if "${GIT[@]}" -C "$dir" pull -q --ff-only "$repo" main; then pulled=1; break; fi
+        done
+        [[ -n "$pulled" ]] || { tw_msg "not updated (offline, or not a fast-forward)"; return 0; }
     fi
     if [[ "$(git -C "$dir" rev-parse HEAD)" == "$before" ]]; then
         tw_msg "tw-web $(describe "$dir"): up to date"

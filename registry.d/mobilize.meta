@@ -10,7 +10,7 @@ base_url=https://raw.githubusercontent.com/linuxcaffe/tw-mobilize/main
 files=mobilize.py:script:~/.task/scripts/mobilize,README.md:doc
 tags=android, termux, setup, stations, sync, gittw, tw-web
 
-checksums=31017233c577d487acc3ac180f17c4c97189d1473bb0ba357be97eab3ae304bb,8c2af60faef8533246ada594932c77a62060d685e8fea1170ecf570dcd971e16
+checksums=31017233c577d487acc3ac180f17c4c97189d1473bb0ba357be97eab3ae304bb,7c8a2a68eaecb53737cf81f68bc53aa7827297f0ed926d301a39ba76788c039e
 
 author=linuxcaffe + Claude
 license=MIT
