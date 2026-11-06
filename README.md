@@ -241,7 +241,7 @@ Run `tw -l` to see the current registry, or browse:
 - [gittw](https://github.com/linuxcaffe/gittw) v0.3.8 — Shares ~/.task between stations through git, merging by task UUID, with a hook that commits after every change
 - [hledger-add](https://github.com/linuxcaffe/tw-hledger-add-hook) v0.1.3 — Runs hledger add when a +txn or +acct task (or one starting "pay" or "buy") is done, pre-filled from the task, and annotates the task with the entry
 - [nb-plugins](https://github.com/linuxcaffe/nb-plugins) v1.3.0 — Plugins for nb: cal (a calendar), grep, send, and tw (task notes, nb tw); installs them into nb
-- [nbnotes](https://github.com/linuxcaffe/tw-nbnotes-hook) v1.0.1 — Task notes in nb: a bare nb: annotation gets the task its own note, made at once, and a linked note keeps the task's status
+- [nbnotes](https://github.com/linuxcaffe/tw-nbnotes-hook) v1.1.0 — Task notes in nb: a bare nb: annotation gets the task its own note, made at once, and a linked note keeps the task's status
 - [need-priority](https://github.com/linuxcaffe/tw-need_priority-hook) v0.6.3 — Replaces pri:H/M/L with pri:1-6, after Maslow's hierarchy of needs, with filters to match
 - [recurrence-overhaul](https://github.com/linuxcaffe/tw-recurrence_overhaul-hook) v3.1.1 — Replaces Taskwarrior's recurrence with periodic and chained recurrences that carry due, scheduled, wait and until
 - [smart-nag](https://github.com/linuxcaffe/tw-smart-nag-hook) v1.3.3 — Shows nag messages built from conditions you configure

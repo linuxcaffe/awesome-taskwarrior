@@ -4,7 +4,7 @@ set -euo pipefail
 
 # ============================================================================
 # nbnotes - Standalone Installer
-# Version: 1.0.1
+# Version: 1.1.0
 #
 # Installs:
 #   ~/.task/hooks/on-exit_nbnotes.py   (task notes in nb: makes requested notes, keeps status)
@@ -13,7 +13,7 @@ set -euo pipefail
 # Takes out tw2nb 1.4's on-exit_tw2nb.py, which did this job before.
 # ============================================================================
 
-VERSION="1.0.1"
+VERSION="1.1.0"
 APPNAME="nbnotes"
 
 RED='\033[0;31m'
@@ -46,7 +46,7 @@ install() {
     fi
 
     # The nb-plugin tw does the work (nb tw note, nb tw status): installed here when it's missing
-    # (1.0.1, djp 2026-11-05: "any part of the program that needs an nb-plugin should install
+    # (1.1.0, djp 2026-11-05: "any part of the program that needs an nb-plugin should install
     # it"). One already there is kept, a symlink into a dev repo too; a dangling one is missing.
     PLUGIN="${NB_DIR:-${HOME}/.nb}/.plugins/tw.nb-plugin"
     if ! command -v nb &>/dev/null; then
