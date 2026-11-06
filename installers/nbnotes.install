@@ -4,7 +4,7 @@ set -euo pipefail
 
 # ============================================================================
 # nbnotes - Standalone Installer
-# Version: 1.1.0
+# Version: 1.1.1
 #
 # Installs:
 #   ~/.task/hooks/on-exit_nbnotes.py   (task notes in nb: makes requested notes, keeps status)
@@ -13,7 +13,7 @@ set -euo pipefail
 # Takes out tw2nb 1.4's on-exit_tw2nb.py, which did this job before.
 # ============================================================================
 
-VERSION="1.1.0"
+VERSION="1.1.1"
 APPNAME="nbnotes"
 
 RED='\033[0;31m'
@@ -46,19 +46,36 @@ install() {
     fi
 
     # The nb-plugin tw does the work (nb tw note, nb tw status): installed here when it's missing
-    # (1.1.0, djp 2026-11-05: "any part of the program that needs an nb-plugin should install
+    # (1.1.1, djp 2026-11-05: "any part of the program that needs an nb-plugin should install
     # it"). One already there is kept, a symlink into a dev repo too; a dangling one is missing.
     PLUGIN="${NB_DIR:-${HOME}/.nb}/.plugins/tw.nb-plugin"
     if ! command -v nb &>/dev/null; then
         tw_msg "NOTE: nb not found here: the hook does nothing until it is. Once nb is installed:"
         tw_msg "  nb plugins install ${TW_NB_PLUGIN_URL}"
-    elif [[ -e "$PLUGIN" ]]; then
-        tw_msg "nb-plugin tw: already installed"
-    elif nb plugins install "$TW_NB_PLUGIN_URL" </dev/null >/dev/null 2>&1 && [[ -e "$PLUGIN" ]]; then
-        tw_msg "Installed the nb-plugin tw (nb tw), which makes the notes"
+    elif [[ -L "$PLUGIN" && -e "$PLUGIN" ]]; then
+        tw_msg "nb-plugin tw: a link, left as it is"                       # a dev checkout's
+    elif [[ -f "$PLUGIN" ]]; then
+        # 1.1.1: an ordinary copy is brought up to date (the phone's had fallen behind yoga's)
+        tmp="$(mktemp "${PLUGIN}.XXXXXX")"
+        if ! curl -fsSL "$TW_NB_PLUGIN_URL" -o "$tmp" 2>/dev/null || [[ ! -s "$tmp" ]]; then
+            rm -f "$tmp"
+            tw_msg "NOTE: couldn't check the nb-plugin tw for an update (no network?): kept as it is"
+        elif cmp -s "$tmp" "$PLUGIN"; then
+            rm -f "$tmp"
+            tw_msg "nb-plugin tw: up to date"
+        else
+            chmod --reference="$PLUGIN" "$tmp" 2>/dev/null || chmod 755 "$tmp"
+            mv -f "$tmp" "$PLUGIN"
+            tw_msg "Updated the nb-plugin tw"
+        fi
     else
-        tw_msg "NOTE: couldn't install the nb-plugin tw (no network?). Try again later with:"
-        tw_msg "  nb plugins install ${TW_NB_PLUGIN_URL}"
+        [[ -L "$PLUGIN" ]] && rm -f "$PLUGIN"                              # a dangling link
+        if nb plugins install "$TW_NB_PLUGIN_URL" </dev/null >/dev/null 2>&1 && [[ -e "$PLUGIN" ]]; then
+            tw_msg "Installed the nb-plugin tw (nb tw), which makes the notes"
+        else
+            tw_msg "NOTE: couldn't install the nb-plugin tw (no network?). Try again later with:"
+            tw_msg "  nb plugins install ${TW_NB_PLUGIN_URL}"
+        fi
     fi
 
     TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")

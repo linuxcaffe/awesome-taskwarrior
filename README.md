@@ -240,8 +240,8 @@ Run `tw -l` to see the current registry, or browse:
 - [daily-email](https://github.com/linuxcaffe/tw-daily-email) v0.1.1 — Send a daily Taskwarrior report by email via msmtp and systemd timer
 - [gittw](https://github.com/linuxcaffe/gittw) v0.3.8 — Shares ~/.task between stations through git, merging by task UUID, with a hook that commits after every change
 - [hledger-add](https://github.com/linuxcaffe/tw-hledger-add-hook) v0.1.3 — Runs hledger add when a +txn or +acct task (or one starting "pay" or "buy") is done, pre-filled from the task, and annotates the task with the entry
-- [nb-plugins](https://github.com/linuxcaffe/nb-plugins) v1.3.0 — Plugins for nb: cal (a calendar), grep, send, and tw (task notes, nb tw); installs them into nb
-- [nbnotes](https://github.com/linuxcaffe/tw-nbnotes-hook) v1.1.0 — Task notes in nb: a bare nb: annotation gets the task its own note, made at once, and a linked note keeps the task's status
+- [nb-plugins](https://github.com/linuxcaffe/nb-plugins) v1.3.1 — Plugins for nb: cal (a calendar), grep, send, and tw (task notes, nb tw); installs them into nb
+- [nbnotes](https://github.com/linuxcaffe/tw-nbnotes-hook) v1.1.1 — Task notes in nb: a bare nb: annotation gets the task its own note, made at once, and a linked note keeps the task's status
 - [need-priority](https://github.com/linuxcaffe/tw-need_priority-hook) v0.6.3 — Replaces pri:H/M/L with pri:1-6, after Maslow's hierarchy of needs, with filters to match
 - [recurrence-overhaul](https://github.com/linuxcaffe/tw-recurrence_overhaul-hook) v3.1.1 — Replaces Taskwarrior's recurrence with periodic and chained recurrences that carry due, scheduled, wait and until
 - [smart-nag](https://github.com/linuxcaffe/tw-smart-nag-hook) v1.3.3 — Shows nag messages built from conditions you configure
@@ -259,7 +259,7 @@ Run `tw -l` to see the current registry, or browse:
 - [annn](https://github.com/linuxcaffe/annnotate) v0.8.0 — Opens a task's annotations in your editor: add, list, label or remove them with short commands
 - [deps-mgmt](https://github.com/linuxcaffe/tw-deps-mgmt-hook) v0.3.0 — Manages finishing and deleting tasks that have dependencies, and shows dependency trees
 - [events](https://github.com/linuxcaffe/tw-events) v0.4.0 — Puts the calendar's non-task entries into Taskwarrior as holidays: public holidays, moon phases, seasons, clock changes and your own events
-- [mobilize](https://github.com/linuxcaffe/tw-mobilize) v0.10.3 — Sets up a station (an Android phone in Termux, or Linux) from your gittw repo, with tw-web, m-sync and task notes
+- [mobilize](https://github.com/linuxcaffe/tw-mobilize) v0.10.4 — Sets up a station (an Android phone in Termux, or Linux) from your gittw repo, with tw-web, m-sync and task notes
 - [theme-select](https://github.com/linuxcaffe/tw-theme-select) v0.6.3 — ncurses TUI for previewing and selecting Taskwarrior color themes, with per-report theme switching
 
 ### Scripts

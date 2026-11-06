@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# HANDCRAFTED (1.3.0: installs the plugins into nb; make-awesome must not regenerate it)
+# HANDCRAFTED (1.3.0: installs the plugins into nb, 1.3.1: updates them; make-awesome must not regenerate it)
 set -euo pipefail
 
 # ============================================================================
 # nb-plugins - Installer Script
-# Version: 1.3.0
+# Version: 1.3.1
 # Hand-written since 1.3.0
 # ============================================================================
 
-VERSION="1.3.0"
+VERSION="1.3.1"
 APPNAME="nb-plugins"
 BASE_URL="https://raw.githubusercontent.com/linuxcaffe/nb-plugins/main"
 
@@ -72,12 +72,30 @@ install() {
     if command -v nb &>/dev/null; then
         for plugin in cal grep send tw; do
             url="$BASE_URL/${plugin}.nb-plugin"
-            if [[ -e "$PLUGINS_DIR/${plugin}.nb-plugin" ]]; then
-                tw_msg "nb-plugin ${plugin}: already installed"
-            elif nb plugins install "$url" </dev/null >/dev/null 2>&1 && [[ -e "$PLUGINS_DIR/${plugin}.nb-plugin" ]]; then
-                tw_msg "Installed nb-plugin ${plugin}"
+            path="$PLUGINS_DIR/${plugin}.nb-plugin"
+            if [[ -L "$path" && -e "$path" ]]; then
+                tw_msg "nb-plugin ${plugin}: a link, left as it is"          # a dev checkout's
+            elif [[ -f "$path" ]]; then
+                # 1.3.1: an ordinary copy is brought up to date (the phone's had fallen behind)
+                tmp="$(mktemp "${path}.XXXXXX")"
+                if ! curl -fsSL "$url" -o "$tmp" 2>/dev/null || [[ ! -s "$tmp" ]]; then
+                    rm -f "$tmp"
+                    tw_msg "NOTE: couldn't check nb-plugin ${plugin} for an update (no network?): kept as it is"
+                elif cmp -s "$tmp" "$path"; then
+                    rm -f "$tmp"
+                    tw_msg "nb-plugin ${plugin}: up to date"
+                else
+                    chmod --reference="$path" "$tmp" 2>/dev/null || chmod 755 "$tmp"
+                    mv -f "$tmp" "$path"
+                    tw_msg "Updated nb-plugin ${plugin}"
+                fi
             else
-                tw_msg "NOTE: couldn't install nb-plugin ${plugin} (no network?): nb plugins install $url"
+                [[ -L "$path" ]] && rm -f "$path"                            # a dangling link
+                if nb plugins install "$url" </dev/null >/dev/null 2>&1 && [[ -e "$path" ]]; then
+                    tw_msg "Installed nb-plugin ${plugin}"
+                else
+                    tw_msg "NOTE: couldn't install nb-plugin ${plugin} (no network?): nb plugins install $url"
+                fi
             fi
         done
     else

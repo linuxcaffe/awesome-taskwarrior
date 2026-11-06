@@ -2,7 +2,7 @@
 # Task notes in nb: a bare nb: annotation gets the task its own note, made at once, and a linked note keeps the task's status
 
 name=nbnotes
-version=1.1.0
+version=1.1.1
 type=hook
 description=Task notes in nb: a bare nb: annotation gets the task its own note, made at once, and a linked note keeps the task's status
 repo=https://github.com/linuxcaffe/tw-nbnotes-hook
@@ -10,7 +10,7 @@ base_url=https://raw.githubusercontent.com/linuxcaffe/tw-nbnotes-hook/main
 files=on-exit_nbnotes.py:hook,README.md:doc
 tags=nb, notes, tasknotes, hook
 
-checksums=608ba73afd866f27f7fa87e35da4b3eaf281ec488080781149b46a6a94f53daa,935981e25e77cc2c176cf71ac114b3ffd4fc93f47245db909c5f97b2362d25ee
+checksums=61f3b9c2f2f7df394bc0eb90d1677a7c50ccc71f931a0134db17038a19f7b1c5,935981e25e77cc2c176cf71ac114b3ffd4fc93f47245db909c5f97b2362d25ee
 
 author=Designed by linuxcaffe, implemented by Claude Code
 license=MIT
