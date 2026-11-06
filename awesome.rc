@@ -71,6 +71,15 @@ status      = release
 envar_ready = no
 tw_web      = partial  # nag message won't reach web user; won't hang
 
+[gamify]
+path        = ~/dev/tw-gamify
+type        = hook
+timing      = no
+debug       = no
+status      = testing
+envar_ready = yes
+tw_web      = yes      # remarks arrive as hook feedback; never interactive
+
 [wikitags]
 path        = ~/dev/tw-wikitags-hook
 type        = hook
