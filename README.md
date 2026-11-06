@@ -238,7 +238,7 @@ Run `tw -l` to see the current registry, or browse:
 
 - [agenda-edate](https://github.com/linuxcaffe/tw-agenda-hook) v1.1.1 — Adds an "effective date" taken from due, scheduled, wait and until, and agenda reports that sort by it
 - [daily-email](https://github.com/linuxcaffe/tw-daily-email) v0.1.1 — Send a daily Taskwarrior report by email via msmtp and systemd timer
-- [gamify](https://github.com/linuxcaffe/tw-gamify-hook) v0.1.0 — Scores what you do and what you ignore, with points, ranks and prizes
+- [gamify](https://github.com/linuxcaffe/tw-gamify-hook) v0.2.0 — Scores what you do and what you ignore, with points, ranks and prizes
 - [gittw](https://github.com/linuxcaffe/gittw) v0.3.8 — Shares ~/.task between stations through git, merging by task UUID, with a hook that commits after every change
 - [hledger-add](https://github.com/linuxcaffe/tw-hledger-add-hook) v0.1.3 — Runs hledger add when a +txn or +acct task (or one starting "pay" or "buy") is done, pre-filled from the task, and annotates the task with the entry
 - [nb-plugins](https://github.com/linuxcaffe/nb-plugins) v1.3.1 — Plugins for nb: cal (a calendar), grep, send, and tw (task notes, nb tw); installs them into nb

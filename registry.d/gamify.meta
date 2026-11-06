@@ -2,15 +2,15 @@
 # Scores task actions, and inaction, with points, ranks and prizes
 
 name=gamify
-version=0.1.0
+version=0.2.0
 type=hook
 description=Scores what you do and what you ignore, with points, ranks and prizes
 repo=https://github.com/linuxcaffe/tw-gamify-hook
 base_url=https://raw.githubusercontent.com/linuxcaffe/tw-gamify-hook/master
-files=on-add_zz-gamify.sh:hook,on-modify_zz-gamify.sh:hook,on-launch_gamify.sh:hook,gamify:script,gamify.rc:config,README.md:doc
+files=on-add_zz-gamify.sh:hook,on-modify_zz-gamify.sh:hook,on-launch_gamify.sh:hook,gamify:script,gamify-score:script,gamify.rc:config,README.md:doc
 tags=game, points, prizes, motivation, hook
 
-checksums=da8642571466fa50e8d935e07a1fb54f764a0eca2e84d504d921628cc02da698,cab4b0a12bb4cad8058056cf191165f7556a047dc2fe0c82ed77009fea792fb6,8e80a8a7222ef370d1b46fd744a74ae87471ca8b8f232a3195f4a40e93d74984,26adadfe9f4d3b67d8ebd0c86004fd1873de7b8bc308b570e56436637b233d7c,5179a27e39310660c8eec0a7ffd77e931153669d0723701bfbb6be834f57c147,eed4f3d2d1b4447ec3a4fdabea8ceb1a66113cd47e48d85877ed85adcd0a9354
+checksums=da8642571466fa50e8d935e07a1fb54f764a0eca2e84d504d921628cc02da698,cab4b0a12bb4cad8058056cf191165f7556a047dc2fe0c82ed77009fea792fb6,96df68321f5cf91cb727a903fe993095a26571fdfd7f1a3cbee9f727f14c107e,990c1bdff85cb95e158604815c1aaae3732e042a83d1248e04b2bc971a8618ec,bba9f8ead9dda7e5e4c9d589fcd7b3734eadcd8c721f60e48d44d59fc76293b4,ea927cbad884d3d282358bd918e54b670943feff8e20cb8f59ce4efccbdd4e87,09f7d5cdcef2def2dafb91f9269df9adc9a9d9d1d7af4eab3008d6a6de38a320
 
 author=Designed by linuxcaffe, implemented by claude-code
 license=MIT

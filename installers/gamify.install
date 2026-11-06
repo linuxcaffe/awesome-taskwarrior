@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ============================================================================
 # gamify - Installer Script
-# Version: 0.1.0
+# Version: 0.2.0
 #
 # HANDCRAFTED — do not overwrite with make-awesome.py --install
 # Adds a merge=union line for the ledger to ~/.task/.gitattributes and registers the
@@ -11,7 +11,7 @@ set -euo pipefail
 # Run beside its files, it installs those; otherwise it fetches them.
 # ============================================================================
 
-VERSION="0.1.0"
+VERSION="0.2.0"
 APPNAME="gamify"
 BASE_URL="https://raw.githubusercontent.com/linuxcaffe/tw-gamify-hook/master"
 
@@ -46,7 +46,8 @@ install() {
 
     # The command first: the hooks pass tasks through untouched until it's there
     fetch gamify "$SCRIPTS_DIR/gamify"
-    chmod +x "$SCRIPTS_DIR/gamify"
+    fetch gamify-score "$SCRIPTS_DIR/gamify-score"
+    chmod +x "$SCRIPTS_DIR/gamify" "$SCRIPTS_DIR/gamify-score"
     for hook in $HOOKS; do
         fetch "$hook" "$HOOKS_DIR/$hook"
         chmod +x "$HOOKS_DIR/$hook"
@@ -75,17 +76,21 @@ install() {
         echo "gamify|gamify|gamify: the board (gamify), the ledger (gamify log), prizes (gamify shop)|command" >> "$WRAPPERS_FILE"
     fi
 
+    if ! grep -q "^score|" "$WRAPPERS_FILE" 2>/dev/null; then
+        echo "score|gamify-score|gamify: the full scoreboard, trophies and Most Wanted|command" >> "$WRAPPERS_FILE"
+    fi
+
     # Listed files go on remove; the settings and the ledger aren't listed, so they stay
     local stamp file
     stamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     [ -f "$MANIFEST_FILE" ] && sed -i.bak "/^$APPNAME|/d" "$MANIFEST_FILE"
-    for file in "$SCRIPTS_DIR/gamify" "$HOOKS_DIR/on-add_zz-gamify.sh" "$HOOKS_DIR/on-modify_zz-gamify.sh" \
+    for file in "$SCRIPTS_DIR/gamify" "$SCRIPTS_DIR/gamify-score" "$HOOKS_DIR/on-add_zz-gamify.sh" "$HOOKS_DIR/on-modify_zz-gamify.sh" \
                 "$HOOKS_DIR/on-launch_gamify.sh" "$DOCS_DIR/gamify_README.md"; do
         echo "$APPNAME|$VERSION|$file||$stamp" >> "$MANIFEST_FILE"
     done
 
     tw_success "Installed gamify v$VERSION"
-    tw_msg "Your next task action starts the game. Try: gamify    Settings: gamify -e"
+    tw_msg "Your next task action starts the game. Try: tw score    Settings: gamify -e"
 }
 
 remove() {
@@ -97,8 +102,8 @@ remove() {
         sed -i.bak "/^$APPNAME|/d" "$MANIFEST_FILE"
     fi
     rm -f "$TASK_DIR/logs/gamify-snapshot.json" "$TASK_DIR/logs/gamify.stamp" \
-          "$TASK_DIR/logs/gamify-recap.txt" "$TASK_DIR/logs/gamify.lock"
-    [ -f "$WRAPPERS_FILE" ] && sed -i.bak "/^gamify|/d" "$WRAPPERS_FILE"
+          "$TASK_DIR/logs/gamify-recap.txt" "$TASK_DIR/logs/gamify-lastword.txt" "$TASK_DIR/logs/gamify.lock"
+    [ -f "$WRAPPERS_FILE" ] && sed -i.bak "/^gamify|/d; /^score|/d" "$WRAPPERS_FILE"
     tw_msg "Kept: $CONFIG_DIR/gamify.rc and $CONFIG_DIR/gamify-ledger.jsonl (your score)"
     tw_success "Removed gamify"
 }
