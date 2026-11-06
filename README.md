@@ -232,31 +232,52 @@ the working version is restored automatically.
 
 Run `tw -l` to see the current registry, or browse:
 
+<!-- extensions: written by make-awesome.py --index from registry.d/*.meta; edit those, not this list -->
+
 ### Hooks
 
-- [agenda-edate](https://github.com/linuxcaffe/tw-agenda-hook) v1.0.0 — Creates an "effective date" from `due`, `sched`, `wait`, and `until`; adds agenda reports
-- [deps-mgmt](https://github.com/linuxcaffe/tw-deps-mgmt-hook) v0.2.0 — Manage completion and deletion of tasks with dependencies; display dependency trees
-- [hledger-add](https://github.com/linuxcaffe/tw-hledger-add-hook) v0.1.0 — Fires `hledger add` interactively when a transaction-tagged task is completed
-- [nbnotes](https://github.com/linuxcaffe/tw-nbnotes-hook) v1.0.1 — Task notes in nb: a bare `nb:` annotation gets the task its note; a linked note keeps the task's status ([how it fits together](https://github.com/linuxcaffe/tw-mobilize/blob/main/docs/task-notes.md))
-- [need-priority](https://github.com/linuxcaffe/tw-need_priority-hook) v0.4.6 — Replaces `pri:H/M/L` with `pri:1–6` based on Maslow's Human Needs hierarchy
-- [recurrence-overhaul](https://github.com/linuxcaffe/tw-recurrence_overhaul-hook) v2.7.4 — Replaces native recurrence with periodic and chain-type patterns supporting `due`, `sched`, `wait`, and `until`
-- [smart-nag](https://github.com/linuxcaffe/tw-smart-nag-hook) v1.0.0 — Dynamically generated nag messages based on configurable task conditions
-- [subtask](https://github.com/linuxcaffe/tw-subtask-hook) v1.2.4 — Activates `- [ ] …` annotations as real dependent tasks when a parent task is started
-- [timelog](https://github.com/linuxcaffe/tw-timelog-hook) v2.0.1 — Records task start/stop times to an hledger-compatible timeclock file
-- [tod-filter](https://github.com/linuxcaffe/tod-filter) v0.1.2 — Defines time-of-day blocks and applies matching tag filters automatically
-- [tw2nb](https://github.com/linuxcaffe/tw2nb) v1.5.1 — Archives completed/deleted task events to nb as todos and running journal entries
-- [wikitags](https://github.com/linuxcaffe/tw-wikitags-hook) v1.0.0 — Allows `:tag:` wiki-style inline tags when adding tasks
+- [agenda-edate](https://github.com/linuxcaffe/tw-agenda-hook) v1.1.1 — Creates "effective date" from due, sched, wait and until, Adds new agenda reports
+- [daily-email](https://github.com/linuxcaffe/tw-daily-email) v0.1.1 — Send a daily Taskwarrior report by email via msmtp and systemd timer
+- [gittw](https://github.com/linuxcaffe/gittw) v0.3.8 — Git-based sync and history for ~/.task across stations (merge by task UUID, station-tagged commits, last seen, gc at sync): gittw sync/push/pull/undo/status/setup, plus an on-exit hook that commits after every change (gittw.autocommit in config/gittw.rc; hook-ctrl to remove it)
+- [hledger-add](https://github.com/linuxcaffe/tw-hledger-add-hook) v0.1.3 — Fires hledger add interactively on completion of +txn/+acct tasks or tasks starting with a trigger verb (pay, buy). Pre-fills date and payee from task description; maps TW project/priority/tags to hledger inline tags. Annotates task with ledger reference on success.
+- [nb-plugins](https://github.com/linuxcaffe/nb-plugins) v1.3.0 — nb plugins: cal (a calendar), grep, send, and tw (Taskwarrior task notes: nb tw). Installs them into nb when nb is here
+- [nbnotes](https://github.com/linuxcaffe/tw-nbnotes-hook) v1.0.1 — Task notes in nb: a bare `nb:` annotation (or `nb: <notebook>:`) gets the task its note, made at once; a task that links a note keeps the note's status current. Calls nb-plugins' tw.nb-plugin.
+- [need-priority](https://github.com/linuxcaffe/tw-need_priority-hook) v0.6.3 — Replace pri:H,M,L with pri:1-6, Mazlow's Human Needs, and filter accordingly
+- [recurrence-overhaul](https://github.com/linuxcaffe/tw-recurrence_overhaul-hook) v3.1.1 — Replaces task recurrence, offers periodic and chain type recurrences, supporting due, sched, wait and until attributes
+- [smart-nag](https://github.com/linuxcaffe/tw-smart-nag-hook) v1.3.3 — Dynamically generated nag massages, based on configurable conditions
+- [stop-started](https://github.com/linuxcaffe/tw-stop-started-hook) v1.1.0 — Stop other active tasks when a new task is started — enforces one active task at a time
+- [subtask](https://github.com/linuxcaffe/tw-subtask-hook) v1.2.5 — Activates subtask annotations (- [ ] …) as real dependent tasks when a parent task is started; updates annotation state when children complete or are deleted
+- [time-defaults](https://github.com/linuxcaffe/tw-time-defaults-hook) v1.0.2 — Apply configurable default times to date-only due, scheduled, wait, and until fields
+- [timelog](https://github.com/linuxcaffe/tw-timelog-hook) v2.2.0 — Records task start/ stop times to an hledger-compatible timeclock file
+- [tod-filter](https://github.com/linuxcaffe/tod-filter) v0.1.2 — Define blocks of time, add corresponding filters, apply context tod, hide non-matching tags
+- [tw2ical](https://github.com/linuxcaffe/tw-ical-hook) v0.2.0 — Export Taskwarrior tasks to VTODO .ics files for CalDAV/khal/Radicale
+- [tw2nb](https://github.com/linuxcaffe/tw2nb) v1.5.1 — Archives Taskwarrior task events (done, log, delete, annotate) to nb as todos and running journal entries. Works with nb tw tasknotes: the tasknote is the archive (the nbnotes hook makes and updates task notes).
+- [wikitags](https://github.com/linuxcaffe/tw-wikitags-hook) v1.0.0 — task add :tags: :in-line: with desc - same as task add tags in-line with desc +tags +in-line
 
 ### Wrappers
 
-- [annn](https://github.com/linuxcaffe/tw-ann-hook) v0.7.0 — Manage annotations in your editor: add, list, label, and remove with concise syntax
+- [annn](https://github.com/linuxcaffe/tw-ann-hook) v0.8.0 — Opens annotations in your editor, add, list or remove them with easy syntax
+- [deps-mgmt](https://github.com/linuxcaffe/tw-deps-mgmt-hook) v0.3.0 — Manage completion and deletion of tasks with dependencies and display dep trees
+- [events](https://github.com/linuxcaffe/tw-events) v0.4.0 — The calendar's non-task entries as Taskwarrior holiday.* entries (task calendar, tw-web): holidays from holidata.net, moon phases, solstices and equinoxes, clock changes, your own events and ghosts of tasks; events init/refresh/show/check/add, task events
+- [mobilize](https://github.com/linuxcaffe/tw-mobilize) v0.10.3 — Set up a Taskwarrior 2.6.2 station (Android in Termux, or Linux) from your gittw repo, with tw-web on it: mobilize init/check/hooks/stations/android/-e; mobilize.rc (shared) and local.rc (per station)
+- [theme-select](https://github.com/linuxcaffe/tw-theme-select) v0.6.3 — ncurses TUI for previewing and selecting Taskwarrior color themes, with per-report theme switching
 
 ### Scripts
 
-- [resched](https://github.com/linuxcaffe/tw-sched-sh) v1.0.0 — Review and update stale-dated tasks interactively
-- [sanity-check](https://github.com/linuxcaffe/tw-sanity-check) v0.5.7 — Interactively review and fix common problems: overdue tasks, date conflicts, broken dependencies
-- [t](https://github.com/linuxcaffe/t) v2.0.2 — CLI for hledger timeclock files: clock in/out, check status, query periods
-- [urgency-tweaker](https://github.com/linuxcaffe/urgency-tweaker) v1.0.0 — Interactive ncurses tool to understand and tune your urgency coefficients
+- [gtk](https://github.com/linuxcaffe/tw-gtk) v1.2.2 — GTK GUI library and extensions for Taskwarrior, powered by YAD
+- [hook-ctrl](https://github.com/linuxcaffe/tw-hook-ctrl) v0.3.3 — Three-panel TUI dashboard: toggle hooks (chmod), scripts (chmod), and config includes (comment toggle) — unified control over all installed Taskwarrior capabilities
+- [matrix-taskbot](https://github.com/linuxcaffe/tw-matrix-bot) v0.2.0 — Matrix bot for Taskwarrior — query and add tasks from any Matrix client
+- [powerline-taskwarrior](https://github.com/linuxcaffe/powerline-taskwarrior) v2.0.2 — Powerline segments for Taskwarrior — context, active task, next task, pending count
+- [resched](https://github.com/linuxcaffe/tw-sched-sh) v1.0.0 — Review and update stale-dated tasks
+- [sanity-check](https://github.com/linuxcaffe/tw-sanity-check) v0.6.1 — Interactively review and fix common Taskwarrior problems (overdue, stale deps, date conflicts) with hotkeys to select (configurable) options, or edit the task directly.
+- [t](https://github.com/linuxcaffe/t) v1.4.0 — t is for timelog. A handy script to track your time using hledger timelog files
+- [taskwarrior](https://github.com/linuxcaffe/taskwarrior-2.6) v2.6.2-2 — Taskwarrior 2.6.2 on this station, from the taskwarrior-2.6 repo: the task2 deb on Termux (pkg upgrade never swaps it for 3.x), a build of the 2.6.2 release into ~/.local on Linux (no sudo); a 3.x is replaced only on a yes, its tasks saved first. taskwarrior-2.6 does it again on any station sharing ~/.task
+- [tw-tui](https://github.com/linuxcaffe/tw-tui) v25.4-tw26 — Terminal UI for Taskwarrior 2.6.x — fork of taskwarrior-tui pinned to last TW2 compatible version
+- [tw-web](https://codeberg.org/linuxcaffe/tw-web) v2.0.0 — tw-web, the web and phone UI for Taskwarrior 2.6.2 (List, Kanban, Agenda, Calendar; a PWA): a git clone from Codeberg (else GitHub) in ~/.local/share/tw-web with its Python packages (a venv where pip is refused), updated in place by tw -u (fast-forward, clean main); a checkout named in local.rc (tw-web.dir) is used as it is
+- [urgency-tweaker](https://github.com/linuxcaffe/urgency-tweaker) v1.0.0 — ncurses app to help you understand and tweak your urgency coefficients
+- [vit](https://github.com/linuxcaffe/vit) v1.4.5 — Full-screen terminal interface for Taskwarrior 2.6.x with Vim key bindings: any report in curses, a key per change, acts by UUID, no shell between vit and task, the fleet's client contract (VIT 1.x, Perl/Curses)
+
+<!-- /extensions -->
 
 ---
 

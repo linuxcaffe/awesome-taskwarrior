@@ -2739,12 +2739,74 @@ def write_registry_index(registry_path: Path) -> bool:
     return True
 
 
+# README.md's list of extensions is written from registry.d/*.meta, between these two lines
+# (djp 2026-11-05: the hand-kept list had drifted, tw2nb v0.1.0 when 1.5.1 was out). Wherever
+# index.json is written, so is this; edit the .meta files, never the list.
+README_LIST_START = '<!-- extensions: written by make-awesome.py --index from registry.d/*.meta; edit those, not this list -->'
+README_LIST_END = '<!-- /extensions -->'
+_README_TYPE_ORDER = ('hook', 'wrapper', 'script')
+
+
+def _meta_fields(text: str) -> dict:
+    """A .meta's key=value lines (the first of each key; comments and blanks skipped)."""
+    out = {}
+    for line in text.splitlines():
+        if line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        out.setdefault(key.strip(), value.strip())
+    return out
+
+
+def readme_extensions_text(registry_path: Path) -> str:
+    """The README's list: one ### group per type (hooks, wrappers, scripts, then any other),
+    one line per app by name: [name](repo) vVERSION — description."""
+    groups = {}
+    for p in sorted((registry_path / 'registry.d').glob('*.meta')):
+        f = _meta_fields(p.read_text())
+        name = f.get('name') or p.stem
+        head = f"[{name}]({f['repo']})" if f.get('repo') else name
+        line = f"- {head} v{f.get('version', '?')} — {f.get('description', '')}".rstrip(' —')
+        groups.setdefault(f.get('type', 'other') or 'other', []).append((name.lower(), line))
+    order = [t for t in _README_TYPE_ORDER if t in groups] + sorted(set(groups) - set(_README_TYPE_ORDER))
+    parts = []
+    for t in order:
+        parts.append(f"### {t.capitalize()}s\n\n" + '\n'.join(l for _, l in sorted(groups[t])) + '\n')
+    return '\n'.join(parts)
+
+
+def readme_with_extensions(text: str, registry_path: Path) -> str:
+    """text with the list between the markers rewritten; unchanged when the markers aren't there."""
+    if README_LIST_START not in text or README_LIST_END not in text:
+        return text
+    head, rest = text.split(README_LIST_START, 1)
+    _, tail = rest.split(README_LIST_END, 1)
+    return f"{head}{README_LIST_START}\n\n{readme_extensions_text(registry_path)}\n{README_LIST_END}{tail}"
+
+
+def write_readme_extensions(registry_path: Path) -> bool:
+    """Rewrite README.md's list of extensions from registry.d/*.meta. True when it changed."""
+    readme = registry_path / 'README.md'
+    if not readme.exists():
+        return False
+    text = readme.read_text()
+    new = readme_with_extensions(text, registry_path)
+    if new == text:
+        return False
+    readme.write_text(new)
+    return True
+
+
 def cmd_index() -> int:
-    """--index: regenerate registry.d/index.json [fleet-mode only]."""
+    """--index: regenerate registry.d/index.json and README.md's list of extensions [fleet-mode only]."""
     if write_registry_index(SCRIPT_DIR):
         success("registry.d/index.json updated")
     else:
         msg("registry.d/index.json already current")
+    if write_readme_extensions(SCRIPT_DIR):
+        success("README.md's list of extensions updated")
+    else:
+        msg("README.md's list of extensions already current")
     return 0
 
 
@@ -2785,6 +2847,8 @@ def push_registry(project_name: str) -> bool:
         success(f"Copied {meta_file.name} -> registry.d/")
         if write_registry_index(registry_path):
             success("Updated registry.d/index.json")
+        if write_readme_extensions(registry_path):
+            success("Updated README.md's list of extensions")
 
         # Switch to registry repo
         os.chdir(registry_path)
@@ -2792,13 +2856,13 @@ def push_registry(project_name: str) -> bool:
         # Stage only our files
         subprocess.run(['git', 'add',
                        f'installers/{install_file.name}',
-                       f'registry.d/{meta_file.name}', 'registry.d/index.json'], check=True)
+                       f'registry.d/{meta_file.name}', 'registry.d/index.json', 'README.md'], check=True)
 
         # Commit --only so other dirty files in the registry are untouched
         result = subprocess.run(['git', 'commit', '--only', '-m',
                                f"Updated {project_name}",
                                f'installers/{install_file.name}',
-                               f'registry.d/{meta_file.name}', 'registry.d/index.json'],
+                               f'registry.d/{meta_file.name}', 'registry.d/index.json', 'README.md'],
                               capture_output=True, text=True)
 
         if result.returncode != 0:
@@ -4003,6 +4067,8 @@ def _sync_fleet_registry(apps: list, pushed_names: list, message: str):
         return
     if write_registry_index(registry_path):
         synced.append('registry.d/index.json')
+    if write_readme_extensions(registry_path):
+        synced.append('README.md')
 
     msg(f"\n[registry] Syncing {len(synced)} file(s) to awesome-taskwarrior...")
     r = _git(registry_path, 'add', *synced)

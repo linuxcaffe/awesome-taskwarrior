@@ -127,6 +127,44 @@ def test_index_round_trips_through_tw(tmp_path):
     assert tw.MetaFile.from_text(metas['a']).get_tags() == ['hook', 'python']
 
 
+
+# ── the README's list of extensions, from the registry (djp 2026-11-05) ───────
+# It was hand-kept and had drifted (tw2nb v0.1.0 when 1.5.1 was out). Written by make-awesome.py
+# wherever it writes index.json, between two markers; edit the .meta files, never the list.
+
+def test_readme_list_matches_registry():
+    ma = load_make_awesome()
+    text = (ROOT / 'README.md').read_text()
+    assert ma.readme_with_extensions(text, ROOT) == text, \
+        "README.md's list of extensions is stale: run python3 make-awesome.py --index"
+
+
+def test_readme_list_groups_by_type_and_links_each(tmp_path):
+    ma = load_make_awesome()
+    reg = tmp_path / 'registry.d'
+    reg.mkdir()
+    (reg / 'b.meta').write_text('name=b\nversion=2.0\ntype=script\nrepo=https://x/b\ndescription=Bee\n')
+    (reg / 'a.meta').write_text('name=a\nversion=1.0\ntype=hook\nrepo=https://x/a\ndescription=Ay\n')
+    (reg / 'c.meta').write_text('name=c\nversion=0.1\ntype=hook\ndescription=No repo\n')
+    (tmp_path / 'README.md').write_text(f'# x\n\n{ma.README_LIST_START}\nold\n{ma.README_LIST_END}\n\nafter\n')
+    assert ma.write_readme_extensions(tmp_path) is True
+    out = (tmp_path / 'README.md').read_text()
+    body = out.split(ma.README_LIST_START)[1].split(ma.README_LIST_END)[0]
+    assert body.index('### Hooks') < body.index('### Scripts')
+    assert '- [a](https://x/a) v1.0 — Ay' in body and '- c v0.1 — No repo' in body
+    assert body.index('[a]') < body.index('c v0.1')                       # by name in a group
+    assert 'old' not in body and out.endswith('after\n')
+    assert ma.write_readme_extensions(tmp_path) is False                  # unchanged: no rewrite
+
+
+def test_readme_without_markers_is_left_alone(tmp_path):
+    ma = load_make_awesome()
+    (tmp_path / 'registry.d').mkdir()
+    (tmp_path / 'README.md').write_text('# no markers\n')
+    assert ma.write_readme_extensions(tmp_path) is False
+    assert (tmp_path / 'README.md').read_text() == '# no markers\n'
+
+
 # ── the manifest ─────────────────────────────────────────────────────────────
 
 def test_manifest_apps(home):
