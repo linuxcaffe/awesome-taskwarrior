@@ -4,16 +4,16 @@ set -euo pipefail
 
 # ============================================================================
 # nbnotes - Standalone Installer
-# Version: 1.0.0
+# Version: 1.0.1
 #
 # Installs:
 #   ~/.task/hooks/on-exit_nbnotes.py   (task notes in nb: makes requested notes, keeps status)
 #
-# Calls nb-plugins' tw.nb-plugin (nb tw), which is never copied or removed here.
+# Installs nb-plugins' tw.nb-plugin (nb tw) when nb is here and it's missing; never removes it.
 # Takes out tw2nb 1.4's on-exit_tw2nb.py, which did this job before.
 # ============================================================================
 
-VERSION="1.0.0"
+VERSION="1.0.1"
 APPNAME="nbnotes"
 
 RED='\033[0;31m'
@@ -28,6 +28,7 @@ tw_error()   { echo -e "${RED}[tw] [FAIL]${NC} $*" >&2; }
 TASK_DIR="${HOME}/.task"
 HOOKS_DIR="${TASK_DIR}/hooks"
 MANIFEST_FILE="${TASK_DIR}/config/.tw_manifest"
+TW_NB_PLUGIN_URL="https://raw.githubusercontent.com/linuxcaffe/nb-plugins/main/tw.nb-plugin"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 install() {
@@ -44,14 +45,20 @@ install() {
         tw_msg "Removed tw2nb's old on-exit_tw2nb.py: nbnotes does its job now"
     fi
 
-    if command -v nb &>/dev/null; then
-        if [[ ! -e "${NB_DIR:-${HOME}/.nb}/.plugins/tw.nb-plugin" ]]; then
-            tw_msg "NOTE: task notes need the nb-plugin tw; install it:"
-            tw_msg "  nb plugins install https://raw.githubusercontent.com/linuxcaffe/nb-plugins/main/tw.nb-plugin"
-            tw_msg "  (mobilize init offers it too)"
-        fi
+    # The nb-plugin tw does the work (nb tw note, nb tw status): installed here when it's missing
+    # (1.0.1, djp 2026-11-05: "any part of the program that needs an nb-plugin should install
+    # it"). One already there is kept, a symlink into a dev repo too; a dangling one is missing.
+    PLUGIN="${NB_DIR:-${HOME}/.nb}/.plugins/tw.nb-plugin"
+    if ! command -v nb &>/dev/null; then
+        tw_msg "NOTE: nb not found here: the hook does nothing until it is. Once nb is installed:"
+        tw_msg "  nb plugins install ${TW_NB_PLUGIN_URL}"
+    elif [[ -e "$PLUGIN" ]]; then
+        tw_msg "nb-plugin tw: already installed"
+    elif nb plugins install "$TW_NB_PLUGIN_URL" </dev/null >/dev/null 2>&1 && [[ -e "$PLUGIN" ]]; then
+        tw_msg "Installed the nb-plugin tw (nb tw), which makes the notes"
     else
-        tw_msg "NOTE: nb not found here: the hook does nothing until it is"
+        tw_msg "NOTE: couldn't install the nb-plugin tw (no network?). Try again later with:"
+        tw_msg "  nb plugins install ${TW_NB_PLUGIN_URL}"
     fi
 
     TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
