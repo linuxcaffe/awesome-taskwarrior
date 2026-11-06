@@ -1,10 +1,10 @@
 # smart-nag.meta
-# Dynamically generated nag massages, based on configurable conditions
+# Shows nag messages built from conditions you configure
 
 name=smart-nag
 version=1.3.3
 type=hook
-description=Dynamically generated nag massages, based on configurable conditions
+description=Shows nag messages built from conditions you configure
 repo=https://github.com/linuxcaffe/tw-smart-nag-hook
 base_url=https://raw.githubusercontent.com/linuxcaffe/tw-smart-nag-hook/master
 files=on-launch_smart-nag.py:hook,nag:script,tw-smart-nag-popup.service:systemd,tw-smart-nag-popup.timer:systemd,smart-nag.rc:config,README.md:doc

@@ -1,10 +1,10 @@
 # t.meta
-# t is for timelog. A handy script to track your time using hledger timelog files
+# A command-line time log: clock in and out, check status, and query periods in hledger timeclock files
 
 name=t
 version=1.4.0
 type=script
-description=t is for timelog. A handy script to track your time using hledger timelog files
+description=A command-line time log: clock in and out, check status, and query periods in hledger timeclock files
 repo=https://github.com/linuxcaffe/t
 base_url=https://raw.githubusercontent.com/linuxcaffe/t/master
 files=t:script,README.md:doc

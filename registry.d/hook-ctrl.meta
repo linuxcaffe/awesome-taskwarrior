@@ -1,10 +1,10 @@
 # hook-ctrl.meta
-# Three-panel TUI dashboard: toggle hooks (chmod), scripts (chmod), and config includes (comment toggle) — unified control over all installed Taskwarrior capabilities
+# A three-panel terminal dashboard to turn installed hooks, scripts and config includes on and off
 
 name=hook-ctrl
 version=0.3.3
 type=script
-description=Three-panel TUI dashboard: toggle hooks (chmod), scripts (chmod), and config includes (comment toggle) — unified control over all installed Taskwarrior capabilities
+description=A three-panel terminal dashboard to turn installed hooks, scripts and config includes on and off
 repo=https://github.com/linuxcaffe/tw-hook-ctrl
 base_url=https://raw.githubusercontent.com/linuxcaffe/tw-hook-ctrl/main
 files=hook-ctrl.py:script:~/.task/scripts/hook-ctrl,README.md:doc

@@ -4,7 +4,7 @@
 name=taskwarrior
 version=2.6.2-2
 type=script
-description=Taskwarrior 2.6.2 on this station, from the taskwarrior-2.6 repo: the task2 deb on Termux (pkg upgrade never swaps it for 3.x), a build of the 2.6.2 release into ~/.local on Linux (no sudo); a 3.x is replaced only on a yes, its tasks saved first. taskwarrior-2.6 does it again on any station sharing ~/.task
+description=Installs Taskwarrior 2.6.2: the task2 deb on Termux, or a build into ~/.local on Linux (no sudo); a 3.x is replaced only if you say yes
 repo=https://github.com/linuxcaffe/taskwarrior-2.6
 base_url=https://raw.githubusercontent.com/linuxcaffe/taskwarrior-2.6/main
 files=install.sh:script:~/.task/scripts/taskwarrior-2.6,README.md:doc

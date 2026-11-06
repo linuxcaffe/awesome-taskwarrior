@@ -1,10 +1,10 @@
 # recurrence-overhaul.meta
-# Replaces task recurrence, offers periodic and chain type recurrences, supporting due, sched, wait and until attributes
+# Replaces Taskwarrior's recurrence with periodic and chained recurrences that carry due, scheduled, wait and until
 
 name=recurrence-overhaul
 version=3.1.1
 type=hook
-description=Replaces task recurrence, offers periodic and chain type recurrences, supporting due, sched, wait and until attributes
+description=Replaces Taskwarrior's recurrence with periodic and chained recurrences that carry due, scheduled, wait and until
 repo=https://github.com/linuxcaffe/tw-recurrence_overhaul-hook
 base_url=https://raw.githubusercontent.com/linuxcaffe/tw-recurrence_overhaul-hook/main
 files=on-add_recurrence.py:hook,on-exit_recurrence.py:hook,recurrence_common_hook.py:hook,recurrence_rules.py:hook,rr:script,recurrence.rc:config,README.md:doc

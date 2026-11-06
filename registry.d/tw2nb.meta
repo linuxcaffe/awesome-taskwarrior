@@ -1,10 +1,10 @@
 # tw2nb.meta
-# Archives Taskwarrior task events (done, log, delete, annotate) to nb as todos and running journal entries. Works with nb tw tasknotes: the tasknote is the archive (the nbnotes hook makes and updates task notes).
+# Archives finished, logged and deleted tasks to nb, with a running daily journal; a task's own note (nbnotes) is its archive
 
 name=tw2nb
 version=1.5.1
 type=hook
-description=Archives Taskwarrior task events (done, log, delete, annotate) to nb as todos and running journal entries. Works with nb tw tasknotes: the tasknote is the archive (the nbnotes hook makes and updates task notes).
+description=Archives finished, logged and deleted tasks to nb, with a running daily journal; a task's own note (nbnotes) is its archive
 repo=https://github.com/linuxcaffe/tw2nb
 base_url=https://raw.githubusercontent.com/linuxcaffe/tw2nb/master
 files=on-add_tw2nb.py:hook,on-modify_tw2nb.py:hook,tw2nb_lib.py:script,tw2nb-retro:script,tw2nb.rc:config,README.md:doc

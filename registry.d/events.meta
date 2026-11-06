@@ -1,10 +1,10 @@
 # events.meta
-# The calendar's non-task entries as Taskwarrior holiday.* entries (task calendar, tw-web): holidays from holidata.net, moon phases, solstices and equinoxes, clock changes, your own events and ghosts of tasks; events init/refresh/show/check/add, task events
+# Puts the calendar's non-task entries into Taskwarrior as holidays: public holidays, moon phases, seasons, clock changes and your own events
 
 name=events
 version=0.4.0
 type=wrapper
-description=The calendar's non-task entries as Taskwarrior holiday.* entries (task calendar, tw-web): holidays from holidata.net, moon phases, solstices and equinoxes, clock changes, your own events and ghosts of tasks; events init/refresh/show/check/add, task events
+description=Puts the calendar's non-task entries into Taskwarrior as holidays: public holidays, moon phases, seasons, clock changes and your own events
 repo=https://github.com/linuxcaffe/tw-events
 base_url=https://raw.githubusercontent.com/linuxcaffe/tw-events/main
 files=events.py:script:~/.task/scripts/events,README.md:doc

@@ -1,10 +1,10 @@
 # need-priority.meta
-# Replace pri:H,M,L with pri:1-6, Mazlow's Human Needs, and filter accordingly
+# Replaces pri:H/M/L with pri:1-6, after Maslow's hierarchy of needs, with filters to match
 
 name=need-priority
 version=0.6.3
 type=hook
-description=Replace pri:H,M,L with pri:1-6, Mazlow's Human Needs, and filter accordingly
+description=Replaces pri:H/M/L with pri:1-6, after Maslow's hierarchy of needs, with filters to match
 repo=https://github.com/linuxcaffe/tw-need_priority-hook
 base_url=https://raw.githubusercontent.com/linuxcaffe/tw-need_priority-hook/main
 files=on-add_need-priority.py:hook,on-modify_need-priority.py:hook,on-exit_need-priority.py:hook,nn:script,need.rc:config,README.md:doc

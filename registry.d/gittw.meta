@@ -1,10 +1,10 @@
 # gittw.meta
-# Git-based sync and history for ~/.task across stations (merge by task UUID, station-tagged commits, last seen, gc at sync): gittw sync/push/pull/undo/status/setup, plus an on-exit hook that commits after every change (gittw.autocommit in config/gittw.rc; hook-ctrl to remove it)
+# Shares ~/.task between stations through git, merging by task UUID, with a hook that commits after every change
 
 name=gittw
 version=0.3.8
 type=hook
-description=Git-based sync and history for ~/.task across stations (merge by task UUID, station-tagged commits, last seen, gc at sync): gittw sync/push/pull/undo/status/setup, plus an on-exit hook that commits after every change (gittw.autocommit in config/gittw.rc; hook-ctrl to remove it)
+description=Shares ~/.task between stations through git, merging by task UUID, with a hook that commits after every change
 repo=https://github.com/linuxcaffe/gittw
 base_url=https://raw.githubusercontent.com/linuxcaffe/gittw/main
 files=gittw.py:script:~/.task/scripts/gittw,on-exit_gittw.py:hook,gittw.rc:config,README.md:doc

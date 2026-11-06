@@ -1,10 +1,10 @@
 # subtask.meta
-# Activates subtask annotations (- [ ] …) as real dependent tasks when a parent task is started; updates annotation state when children complete or are deleted
+# Turns "- [ ] ..." annotations into real dependent tasks when the parent starts, and ticks them off as the subtasks finish
 
 name=subtask
 version=1.2.5
 type=hook
-description=Activates subtask annotations (- [ ] …) as real dependent tasks when a parent task is started; updates annotation state when children complete or are deleted
+description=Turns "- [ ] ..." annotations into real dependent tasks when the parent starts, and ticks them off as the subtasks finish
 repo=https://github.com/linuxcaffe/tw-subtask-hook
 base_url=https://raw.githubusercontent.com/linuxcaffe/tw-subtask-hook/master
 files=on-exit_subtask.py:hook,on-modify_subtask.py:hook,subtask.rc:config,README.md:doc

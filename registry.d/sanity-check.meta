@@ -1,10 +1,10 @@
 # sanity-check.meta
-# Interactively review and fix common Taskwarrior problems (overdue, stale deps, date conflicts) with hotkeys to select (configurable) options, or edit the task directly.
+# Finds and fixes common Taskwarrior problems (overdue tasks, stale dependencies, date conflicts), a key per fix, or edit the task
 
 name=sanity-check
 version=0.6.1
 type=script
-description=Interactively review and fix common Taskwarrior problems (overdue, stale deps, date conflicts) with hotkeys to select (configurable) options, or edit the task directly.
+description=Finds and fixes common Taskwarrior problems (overdue tasks, stale dependencies, date conflicts), a key per fix, or edit the task
 repo=https://github.com/linuxcaffe/tw-sanity-check
 base_url=https://raw.githubusercontent.com/linuxcaffe/tw-sanity-check/master
 files=sanity-check:script,sanity.rc:config,README.md:doc

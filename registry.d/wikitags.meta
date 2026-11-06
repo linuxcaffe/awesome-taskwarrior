@@ -1,10 +1,10 @@
 # wikitags.meta
-# task add :tags: :in-line: with desc - same as task add tags in-line with desc +tags +in-line
+# Lets you write :tags: inline in the description when adding a task, the same as +tags
 
 name=wikitags
 version=1.0.0
 type=hook
-description=task add :tags: :in-line: with desc - same as task add tags in-line with desc +tags +in-line
+description=Lets you write :tags: inline in the description when adding a task, the same as +tags
 repo=https://github.com/linuxcaffe/tw-wikitags-hook
 base_url=https://raw.githubusercontent.com/linuxcaffe/tw-wikitags-hook/master
 files=on-add_wikitags.py:hook,check_wikitags.sh:script,README.md:doc

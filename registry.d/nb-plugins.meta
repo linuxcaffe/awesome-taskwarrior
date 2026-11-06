@@ -1,10 +1,10 @@
 # nb-plugins.meta
-# nb plugins: cal (a calendar), grep, send, and tw (Taskwarrior task notes: nb tw). Installs them into nb when nb is here
+# Plugins for nb: cal (a calendar), grep, send, and tw (task notes, nb tw); installs them into nb
 
 name=nb-plugins
 version=1.3.0
 type=hook
-description=nb plugins: cal (a calendar), grep, send, and tw (Taskwarrior task notes: nb tw). Installs them into nb when nb is here
+description=Plugins for nb: cal (a calendar), grep, send, and tw (task notes, nb tw); installs them into nb
 repo=https://github.com/linuxcaffe/nb-plugins
 base_url=https://raw.githubusercontent.com/linuxcaffe/nb-plugins/main
 files=README.md:doc
