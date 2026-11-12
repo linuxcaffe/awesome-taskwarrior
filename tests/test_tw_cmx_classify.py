@@ -165,6 +165,56 @@ def test_main_routes_at_forms(env, monkeypatch):
     assert env.keys()['context'] == 'work'
 
 
+
+def test_failed_rebuild_keeps_the_marker_and_says_why(env, capsys):
+    """A set member that isn't defined any more (s5's empty tod.rc, 2026-11-11): the rebuild can't
+    run, so the marker stays and every tw start says which context is missing."""
+    tw.Cmx().activate(['work', 'home'], silent=True)
+    env.rc.write_text(env.rc.read_text().replace('context.home.read=project:home\n', ''))
+    tw.CMX_STALE_MARKER.touch()
+    tw.Cmx().rebuild_if_stale()
+    assert tw.CMX_STALE_MARKER.exists()
+    assert "'home'" in capsys.readouterr().err
+
+
+def test_show_flags_a_stale_combined_filter(env, capsys):
+    tw.Cmx().activate(['work', 'home'], silent=True)
+    env.rc.write_text(env.rc.read_text().replace('context.work.read=+work', 'context.work.read=+job'))
+    capsys.readouterr()
+    assert at('@') == 0
+    out = capsys.readouterr().out
+    assert 'stale' in out and '( +job ) and ( project:home )' in out
+
+
+def test_show_is_quiet_about_a_current_filter(env, capsys):
+    tw.Cmx().activate(['work', 'home'], silent=True)
+    capsys.readouterr()
+    at('@')
+    assert 'stale' not in capsys.readouterr().out
+
+
+def test_new_keys_go_above_a_trailing_include(env):
+    """The last include (the device's local.rc) must stay last, so its settings win."""
+    env.rc.write_text(env.rc.read_text() + '\n# This device only: last, so it wins\ninclude local.rc\n')
+    (env.tmp / 'local.rc').write_text('')
+    tw.Cmx().activate(['work', 'home'], silent=True)
+    lines = env.rc.read_text().splitlines()
+    assert lines[-2:] == ['# This device only: last, so it wins', 'include local.rc']
+    assert 'context=cmx:work,home' in lines
+
+
+def test_unescaped_hash_starts_a_comment(tmp_path, monkeypatch):
+    rc = tmp_path / 'a.rc'
+    (tmp_path / 'b.rc').write_text('context.b.read=+b\n')
+    rc.write_text('context.x.read=+a   # a note\ncontext.y.read=desc.has:\\#1\n'
+                  'include b.rc  # why\n')
+    monkeypatch.setenv('TASKRC', str(rc))
+    r = tw.TaskRC()
+    assert r.get('context.x.read') == '+a'
+    assert r.get('context.y.read') == 'desc.has:\\#1'
+    assert r.get('context.b.read') == '+b'
+
+
 # ── TaskRC includes ──────────────────────────────────────────────────────────
 
 def test_circular_include_is_read_once(tmp_path, monkeypatch):

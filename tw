@@ -11,6 +11,18 @@ A unified wrapper for Taskwarrior that provides:
 - Checksum verification
 - Dev mode indicator for local development
 
+Updates in v2.22.1:
+- Fixed: a cmx rebuild (stale marker) whose set names an undefined context (s5's empty tod.rc,
+  2026-11-11) failed silently and dropped the marker; it keeps the marker and says which context
+  is missing on every start until it's fixed
+- Fixed: TaskRC added new keys after the taskrc's trailing include (the device's local.rc, which
+  must stay last to win); they go above it and its comment now
+- Fixed: TaskRC read `key=value  # note` as the whole line; an unescaped '#' starts a comment, as
+  in task 2.6.2 (includes too)
+- Added: `tw @` says when the stored combined filter no longer matches its contexts (stale), and
+  what they give now
+- Tests: tests/test_tw_cmx_classify.py (37)
+
 Updates in v2.22.0:
 - Fixed: a manifest merged by gittw (union: both stations' lines kept) listed an app at two
   versions when two stations updated it (tw2nb on s5 and yoga, 2026-11-04). tw now reads it
@@ -290,7 +302,7 @@ import tempfile
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 
-VERSION = "2.22.0"
+VERSION = "2.22.1"
 
 # GitHub configuration
 GITHUB_REPO = "linuxcaffe/awesome-taskwarrior"
@@ -518,8 +530,8 @@ class TaskRC:
             lines = raw  # preserve for later writing
         
         for line in raw:
-            stripped = line.strip()
-            if not stripped or stripped.startswith('#'):
+            stripped = _strip_comment(line).strip()
+            if not stripped:
                 continue
             
             # Follow include directives
@@ -573,9 +585,15 @@ class TaskRC:
                     continue
             new_lines.append(line)
         
-        # Append any keys that weren't already in the file
-        for key, value in remaining.items():
-            new_lines.append(f"{key}={value}\n")
+        # Add the keys that weren't in the file at the end, but above a trailing include and its
+        # comment: the last include is the device's local.rc, which must stay last to win
+        at = len(new_lines)
+        body = [i for i, l in enumerate(new_lines) if _strip_comment(l).strip()]
+        if body and _INCLUDE_RE.match(_strip_comment(new_lines[body[-1]]).strip()):
+            at = body[-1]
+            while at > 0 and new_lines[at - 1].lstrip().startswith('#'):
+                at -= 1
+        new_lines[at:at] = [f"{key}={value}\n" for key, value in remaining.items()]
         
         # Write atomically via a temp file next to the real file (through a symlink, not over it)
         target = self.TASKRC_PATH.resolve()
@@ -1455,6 +1473,11 @@ class Manifest:
 
 _INCLUDE_RE = re.compile(r'^(\s*)include\s+(\S.*?)\s*$')
 _SYSTEM_RC_DIR = Path('/usr/share/taskwarrior')
+
+
+def _strip_comment(line):
+    """The line up to its first unescaped '#', as task 2.6.2 reads it (`key=value  # note`)."""
+    return re.split(r'(?<!\\)#', line, maxsplit=1)[0]
 
 
 def _include_target(value, including_file):
@@ -3062,8 +3085,11 @@ class Cmx:
         """@ alone: the active set and its filter, else task's own `context` output."""
         if self.saved and self.active:
             print(f"Context multiplexing active: {self.rc.get('cmx.contexts')}")
-            if self.rc.get('context.cmx.read'):
-                print(f"Combined filter: {self.rc.get('context.cmx.read')}")
+            stored, now = self.rc.get('context.cmx.read'), self.combined(self.saved)
+            if stored:
+                print(f"Combined filter: {stored}")
+            if stored != now:
+                print(f"  stale: the contexts now give {now or '(no filter)'}  (tw @@ rebuilds it)")
             return 0
         return run_task(['context']).returncode
 
@@ -3074,10 +3100,16 @@ class Cmx:
         if not CMX_STALE_MARKER.exists():
             return
         if self.active and self.saved:      # paused or off: @@ rebuilds when it comes back
+            missing = [n for n in self.saved if not self.defined(n)]
+            if missing:                     # keep the marker: say so on every start until it's fixed
+                print(f"[tw] cmx: can't rebuild {','.join(self.saved)}: context "
+                      f"{', '.join(repr(n) for n in missing)} isn't defined (filter left as it was)",
+                      file=sys.stderr)
+                return
             try:
                 self.activate(self.saved, silent=True)
             except Exception:
-                pass                        # never break normal tw operation over a rebuild
+                return                      # never break normal tw operation over a rebuild
             debug(f"cmx rebuilt from stale marker: {self.saved}", 1)
         CMX_STALE_MARKER.unlink(missing_ok=True)
 
