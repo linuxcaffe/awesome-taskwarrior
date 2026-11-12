@@ -250,7 +250,7 @@ Run `tw -l` to see the current registry, or browse:
 - [subtask](https://github.com/linuxcaffe/tw-subtask-hook) v1.2.5 — Turns "- [ ] ..." annotations into real dependent tasks when the parent starts, and ticks them off as the subtasks finish
 - [time-defaults](https://github.com/linuxcaffe/tw-time-defaults-hook) v1.0.2 — Gives date-only due, scheduled, wait and until values a default time of day
 - [timelog](https://github.com/linuxcaffe/tw-timelog-hook) v2.2.1 — Records task start and stop times in an hledger timeclock file
-- [tod-filter](https://github.com/linuxcaffe/tod-filter) v0.1.2 — Defines blocks of the day and switches tag filters (context tod) to match the time
+- [tod-filter](https://github.com/linuxcaffe/tod-filter) v0.1.2 — Defines blocks of the day and switches filters to hide non-actionable tasks
 - [tw2ical](https://github.com/linuxcaffe/tw-ical-hook) v0.2.0 — Export Taskwarrior tasks to VTODO .ics files for CalDAV/khal/Radicale
 - [tw2nb](https://github.com/linuxcaffe/tw2nb) v1.5.1 — Archives finished, logged and deleted tasks to nb, with a running daily journal; a task's own note (nbnotes) is its archive
 - [wikitags](https://github.com/linuxcaffe/tw-wikitags-hook) v1.0.0 — Lets you write :tags: inline in the description when adding a task, the same as +tags

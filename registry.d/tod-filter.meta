@@ -1,17 +1,17 @@
 # tod-filter.meta
-# Defines blocks of the day and switches tag filters (context tod) to match the time
+# Defines blocks of the day and switches filters to hide non-actionable tasks
 
 name=tod-filter
 version=0.1.2
 type=hook
-description=Defines blocks of the day and switches tag filters (context tod) to match the time
+description=Defines blocks of the day and switches filters to hide non-actionable tasks
 repo=https://github.com/linuxcaffe/tod-filter
 base_url=https://raw.githubusercontent.com/linuxcaffe/tod-filter/main
 files=on-exit_tod.py:hook,on-launch_tod.py:hook,tod.rc:config,README.md:doc
 included=tod.rc
 tags=time, blocks, tags, filter, focus, hook
 
-checksums=75b86937420e065d6cbad5e58e03202e2f4b4e7a41a15c09acbb3b8e4f471cb9,6cbfc22f26f4a8a68c1adf7e97e0dd2930ac492e076560401d950c416c57b418,cf979b4766494308195ff38133ee64d75e22358866a2074d501356609d2b0462,2e2e83588dd28ca06fba4d5e473e3b12b8b3e987a331cfe9e7e468f7e0b24cfc
+checksums=4d81f8adc63ea5fb6d549450df8f49826795300f2b263dcd14ba5f7c3ca545b0,1e5291a92c7a4ac9d8f5dd89b93420bb6fe515769adb11a8be0246766c0cfddd,cf979b4766494308195ff38133ee64d75e22358866a2074d501356609d2b0462,c06a49f80f1fc45af83e6f69362b1f1d8209fcbdb6802e1dab42f52c833739bd
 
 author=Designed by linuxcaffe, implemented by Claude Sonnet 4.5
 license=MIT
