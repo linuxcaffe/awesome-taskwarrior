@@ -2,7 +2,7 @@
 # Full-screen terminal interface for Taskwarrior 2.6.x with Vim key bindings (VIT 1.x, Perl/Curses)
 
 name=vit
-version=1.4.9
+version=1.4.10
 type=script
 description=Full-screen terminal interface for Taskwarrior 2.6.x with Vim key bindings (VIT 1.x, Perl/Curses)
 repo=https://github.com/linuxcaffe/vit
@@ -10,7 +10,7 @@ base_url=https://raw.githubusercontent.com/linuxcaffe/vit/1.3
 files=vit:script,vit.1:doc,vitrc.5:doc,README.md:doc
 tags=tui,terminal,ui,interface,vim,curses
 
-checksums=6250bbaea2a35d9dc49ff684a62a75b3a5d40f4509d031bbb98547b8d7982914,c3b95ee509d211fc6183f37ff09f61afd471946ff9ee44c09e75f0005575cd03,f8ac7d2ad9d23d60844f6fc6721475c210780d730baad0529933309610942a6c,4e6781086a64c5afdee061d3ada368ac20a8c9998def4354a2c6ef77941a38bf
+checksums=7d5d247ea3c527319e16d7d26318943768c45e7be29b646d91946740c9ad7199,c3b95ee509d211fc6183f37ff09f61afd471946ff9ee44c09e75f0005575cd03,f8ac7d2ad9d23d60844f6fc6721475c210780d730baad0529933309610942a6c,1bfb99dc68cc3351eec795a59226a4bed3fe1d6d92aa3a124b0a61e78b948ae6
 
 author=Steve Rader (original), Scott Kostyshak (maintainer to 2018), linuxcaffe + Claude (fleet)
 license=GPL-3.0-or-later
